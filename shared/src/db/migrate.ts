@@ -2,6 +2,7 @@ import "dotenv/config";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import pg from "pg";
 
 // =============================================================================
@@ -33,9 +34,70 @@ import pg from "pg";
 // any migration is considered. NULL checksums (schema.sql's seed inserts
 // filenames only; pre-checksum prod rows) are backfilled from the current
 // file contents on first sight.
+//
+// Config defaults: after the chain, every run applies config-defaults.sql (the
+// canonical default of every platform_config tuning dial) with ON CONFLICT DO
+// NOTHING. This is NOT a migration and deliberately does NOT live in
+// migrations/ — a dial seeded by a migration is skipped forever on any DB
+// booted from schema.sql, because schema.sql is structure-only yet seeds
+// _migrations with every filename. See that file's header for the full story.
 // =============================================================================
 
 const { Pool } = pg;
+
+// Resolved against this module, not process.cwd(): the defaults file is owned
+// by the runner and must be found however the runner is invoked.
+const CONFIG_DEFAULTS_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "config-defaults.sql",
+);
+
+/**
+ * Seed any platform_config dial that is missing its default.
+ *
+ * Runs on EVERY invocation, including when no migrations are pending — that is
+ * the point: an existing DB that never received a pre-genesis seed is repaired
+ * by the next ordinary `migrate.ts` run, with no separate remediation step.
+ *
+ * Every statement in the file carries ON CONFLICT (key) DO NOTHING, so this can
+ * never overwrite a value an operator has tuned. A missing file is FATAL, not a
+ * skip: silently proceeding without the defaults is exactly the failure mode
+ * this mechanism exists to end.
+ */
+async function applyConfigDefaults(client: pg.PoolClient): Promise<void> {
+  if (!fs.existsSync(CONFIG_DEFAULTS_PATH)) {
+    throw new Error(
+      `config-defaults.sql not found at ${CONFIG_DEFAULTS_PATH}. ` +
+        `It carries the default value of every platform_config dial and must ` +
+        `be applied on every run — refusing to continue without it.`,
+    );
+  }
+  const sql = fs.readFileSync(CONFIG_DEFAULTS_PATH, "utf8");
+  const count = async () =>
+    Number(
+      (
+        await client.query<{ n: string }>(
+          "SELECT count(*)::text AS n FROM platform_config",
+        )
+      ).rows[0].n,
+    );
+  const before = await count();
+  await client.query("BEGIN");
+  try {
+    await client.query(sql);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("  ✗ config-defaults.sql — rolled back");
+    throw err;
+  }
+  const seeded = (await count()) - before;
+  console.log(
+    seeded > 0
+      ? `Config defaults: seeded ${seeded} missing dial(s).`
+      : "Config defaults: all dials already present.",
+  );
+}
 
 async function migrate() {
   const pool = new Pool({
@@ -129,12 +191,14 @@ async function migrate() {
 
     const pending = files.filter((f) => !appliedSet.has(f));
 
+    // NOTE: no early return on an empty pending set — config defaults are
+    // applied on every run (see applyConfigDefaults), which is how a DB that
+    // never received a pre-genesis seed repairs itself without a special step.
     if (pending.length === 0) {
       console.log("All migrations already applied.");
-      return;
+    } else {
+      console.log(`Found ${pending.length} pending migration(s):`);
     }
-
-    console.log(`Found ${pending.length} pending migration(s):`);
 
     for (const filename of pending) {
       const filepath = path.join(migrationsDir, filename);
@@ -221,7 +285,13 @@ async function migrate() {
       }
     }
 
-    console.log(`\nDone. ${pending.length} migration(s) applied.`);
+    if (pending.length > 0) {
+      console.log(`\nDone. ${pending.length} migration(s) applied.`);
+    }
+
+    // Always last: a dial introduced by a pending migration's own DDL must
+    // exist before its default is seeded.
+    await applyConfigDefaults(client);
   } finally {
     await client
       .query("SELECT pg_advisory_unlock($1)", [MIGRATE_LOCK_KEY])

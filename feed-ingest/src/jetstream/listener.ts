@@ -802,8 +802,18 @@ export class JetstreamListener {
     if (this.healthy === healthy) return;
     this.healthy = healthy;
     try {
+      // UPSERT, not UPDATE. A bare UPDATE matches zero rows when the key is
+      // absent and reports no error, so the flag silently never persisted on
+      // any DB booted from schema.sql (which seeds _migrations with every
+      // filename, so migration 055's INSERT never ran). The consumer reads
+      // `!== "false"`, i.e. a missing row means healthy — so the listener could
+      // never mark itself DOWN and the atproto polling fallback in
+      // feed-ingest-poll.ts never engaged. config-defaults.sql now seeds the
+      // row, but a write path must not depend on a seed having happened.
       await pool.query(
-        `UPDATE platform_config SET value = $1, updated_at = now() WHERE key = 'jetstream_healthy'`,
+        `INSERT INTO platform_config (key, value, updated_at)
+         VALUES ('jetstream_healthy', $1, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
         [healthy ? "true" : "false"],
       );
     } catch (err) {

@@ -23,6 +23,75 @@ starts.
 
 ## Progress
 
+- **2026-07-20** — **`platform_config` defaults never landed on a fresh DB —
+  fixed, and the hole closed in CI.** (Found during resonance step 5;
+  CONSOLIDATED-TODO §9.13, now struck.)
+  - **The bug.** `schema.sql` is the genesis base and is structure-only
+    (`pg_dump`, no data), but it *also* seeds `_migrations` with every migration
+    filename — so `migrate.ts` skips those migrations as already-applied and
+    their `INSERT INTO platform_config` never executes. Every dial seeded by a
+    migration older than the current genesis dump was therefore **absent** on
+    any DB booted from `schema.sql`. Measured on dev: **31 of 45 missing** —
+    `feed_gravity`, all four `feed_weight_*`, all nineteen `feed_ingest_*`,
+    the `outbound_*` set, `admin_account_ids`, `jetstream_healthy`,
+    `publication_payout_threshold_pence`, `max_subscriptions_per_user`.
+  - **Mostly masked, but not entirely.** Every consumer carries a code fallback
+    equal to the seeded value, so *reads* behaved correctly — but that silently
+    demotes an operator dial to a constant (an `UPDATE` on a missing row changes
+    nothing and reports no error). It was **not** masked for `jetstream_healthy`:
+    the listener's `setHealthy` was a bare `UPDATE … WHERE key =
+    'jetstream_healthy'`, which matched zero rows and threw nothing, so the
+    listener could never record itself unhealthy — and since the consumer reads
+    `!== "false"` (absent ⇒ healthy), **the atproto polling fallback in
+    `feed-ingest-poll.ts` could never engage**. A Jetstream outage meant silent
+    ingestion loss with no fallback, on every fresh DB.
+  - **The fix.** Defaults move out of migrations into
+    **`shared/src/db/config-defaults.sql`**, applied by `migrate.ts` on **every**
+    run (after the chain, including when nothing is pending — that is how an
+    existing DB self-repairs with no remediation step), always with `ON CONFLICT
+    (key) DO NOTHING`, so a tuned value is never overwritten. The file is
+    resolved against the module, not `process.cwd()`, and a missing file is
+    **fatal** rather than a skip. The 11 historical seed statements were folded
+    in verbatim, extracted with a real SQL statement splitter rather than a grep
+    — several descriptions contain a `;` ("reserved; inert until zap
+    ingestion"), which silently truncated 6 of migration 158's 10 keys on the
+    first naive pass. Two of them (038, 052) had no `ON CONFLICT` clause; added,
+    since the file is re-applied every run.
+  - **`setHealthy` is now an upsert**, independently of the seed — a write path
+    must not depend on a seed having happened.
+  - **Not in the defaults file, deliberately:** `payouts_halted`, which is
+    runtime *state* whose absence means "not halted" and which `resumePayouts`
+    DELETEs. A seeded default would fight the resume path. Only tuning dials
+    belong there. (It is also the only key in dev not covered by a migration
+    seed — verified, not assumed.)
+  - **Scope check:** the other data-writing migrations (`ledger_entries`,
+    `feed_items`, `external_authors`, `trust_layer1`) are all `INSERT … SELECT`
+    **backfills** over pre-existing rows. On a fresh DB there is nothing to
+    backfill, so skipping them is correct — the bug class really is
+    `platform_config`-only.
+  - **CI, three new drift-guard checks** (`scripts/check-schema-drift.sh`):
+    **4a** no migration outside the closed historical allowlist may
+    `INSERT INTO platform_config` (comment-stripped, so prose doesn't trip it);
+    **4b** the Check-1 fresh DB carries every key `config-defaults.sql` defines,
+    i.e. `migrate.ts` really applies it — ground truth derived by applying the
+    file to an empty table in a second throwaway DB, so no SQL parsing in bash;
+    **4c** replaying every migration seed on top of the defaults inserts
+    nothing, i.e. the defaults file lost no key in the fold and loses none to a
+    later edit (uses `scripts/extract-config-seeds.ts`, the same splitter).
+    All three **mutation-verified**: a seed added to an existing migration trips
+    4a, removing the `applyConfigDefaults` call trips 4b, and deleting one key
+    from the defaults file trips 4c.
+  - **Verified:** dev repaired (31 seeded, second run a clean no-op); an
+    operator-tuned `feed_gravity=9.9` survives a migrate run untouched; full
+    suite green, lint 0 errors, `tsc` clean across shared/feed-ingest/gateway.
+  - **Rule added to CLAUDE.md** (tuning-dial section): dials go in
+    `config-defaults.sql`, never a migration; never `UPDATE platform_config`,
+    upsert.
+  - **Outstanding, needs the operator:** whether **prod** was affected. It may
+    have been migrated incrementally from before genesis, in which case its rows
+    exist and the two environments differed. The next prod `migrate.ts` run
+    repairs it either way and prints the count — compare against dev's 31.
+
 - **2026-07-20** — **Resonance step 5: the D6 read-time proof blend, shipped
   dark.** (SOCIAL-PROOF-RESONANCE-ADR Sequencing step 5 / D6;
   CONSOLIDATED-TODO §9.12.)

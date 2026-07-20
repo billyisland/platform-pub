@@ -13,9 +13,20 @@
 # re-runs old migrations against the already-built schema and dies. This guard
 # turns "remember to regenerate schema.sql" into a checkable invariant.
 #
-# It runs four checks, cheapest first:
+# It runs six checks, cheapest first:
 #   0. SEED COMPLETENESS (no DB): schema.sql's _migrations seed lists exactly
 #      the files in migrations/.
+#   4a. NO CONFIG SEEDS IN MIGRATIONS (no DB): only the closed historical
+#      allowlist may INSERT INTO platform_config. A dial seeded by a migration
+#      never lands on a schema.sql-booted DB (structure-only dump + a full
+#      _migrations seed ⇒ the INSERT is skipped forever); defaults live in
+#      shared/src/db/config-defaults.sql, applied by migrate.ts on every run.
+#   4b. CONFIG DIALS PRESENT (DB): the Check-1 database ends up carrying every
+#      key config-defaults.sql defines — i.e. migrate.ts really applies it.
+#   4c. CONFIG DEFAULTS COMPLETE (DB): replaying every migration's
+#      platform_config seed on top of the defaults inserts nothing — so the
+#      defaults file lost no key when the historical seeds were folded in, and
+#      loses none to a later edit.
 #   3. OBJECT PRESENCE (no DB): every object a migration CREATEs and does not
 #      later DROP/RENAME-away is present by name in schema.sql. Closes the one
 #      gap the other three miss — a migration seeded as applied (Check 0 green)
@@ -80,6 +91,7 @@ cd "$(dirname "$0")/.."
 CONTAINER="${PG_CONTAINER:-platform-pub-dev-postgres-1}"
 PGUSER="platformpub"
 DB_SCHEMA="schemacheck_from_schema"
+DB_CONFIG="schemacheck_config_defaults"
 PGPORT="${PG_HOST_PORT:-5432}"   # host port the container's 5432 is published on
 
 red()  { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -112,6 +124,50 @@ if ! diff <(printf '%s\n' "$on_disk") <(printf '%s\n' "$in_seed") >/tmp/schema-s
   die "regenerate schema.sql (or fix the seed block) so the two agree."
 fi
 grn "✓ Check 0: _migrations seed lists all $(printf '%s\n' "$on_disk" | wc -l | tr -d ' ') migration files"
+
+# =============================================================================
+# Check 4a — no NEW migration seeds platform_config (fast, no DB)
+#
+# A dial seeded by a migration is skipped forever on any DB booted from
+# schema.sql: schema.sql is structure-only, yet it seeds _migrations with every
+# filename, so migrate.ts never executes those INSERTs. Measured on dev
+# 2026-07-20: 31 of 45 dials absent. Defaults therefore live in
+# shared/src/db/config-defaults.sql, applied by migrate.ts on every run.
+#
+# The allowlist below is the historical set, and it is CLOSED — migrations are
+# immutable, so no file can join it. Their keys are already folded into
+# config-defaults.sql.
+# =============================================================================
+CONFIG_SEED_GRANDFATHERED="033_admin_account_ids_config.sql
+035_feed_scores.sql
+038_publications.sql
+052_universal_feed_external.sql
+055_universal_feed_atproto.sql
+056_universal_feed_activitypub.sql
+057_universal_feed_outbound.sql
+106_feed_ingest_enqueue_cap.sql
+158_resonance_baselines.sql
+160_resonance_band_thresholds.sql
+161_feed_proof_floor.sql"
+
+offenders=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  # Comment-stripped, so prose mentioning the table doesn't trip the check.
+  if sed -E 's/--.*$//' "migrations/$f" | grep -qiE 'INSERT[[:space:]]+INTO[[:space:]]+platform_config'; then
+    printf '%s\n' "$CONFIG_SEED_GRANDFATHERED" | grep -qx "$f" || offenders="$offenders  $f"$'\n'
+  fi
+done <<< "$on_disk"
+
+if [ -n "$offenders" ]; then
+  red "Check 4a FAILED: migration(s) seed platform_config directly"
+  printf '%s' "$offenders" >&2
+  echo "  A dial seeded in a migration never lands on a DB booted from schema.sql." >&2
+  echo "  Add it to shared/src/db/config-defaults.sql instead (migrate.ts applies" >&2
+  echo "  that on every run, ON CONFLICT DO NOTHING)." >&2
+  die "move the platform_config seed out of the migration."
+fi
+grn "✓ Check 4a: no new migration seeds platform_config"
 
 # =============================================================================
 # Check 3 — object presence: every migration-created object that survives the
@@ -196,6 +252,8 @@ docker exec "$CONTAINER" pg_isready -U "$PGUSER" >/dev/null 2>&1 \
 drop_dbs() {
   docker exec "$CONTAINER" psql -U "$PGUSER" -d postgres \
     -c "DROP DATABASE IF EXISTS $DB_SCHEMA WITH (FORCE);" >/dev/null 2>&1 || true
+  docker exec "$CONTAINER" psql -U "$PGUSER" -d postgres \
+    -c "DROP DATABASE IF EXISTS $DB_CONFIG WITH (FORCE);" >/dev/null 2>&1 || true
 }
 trap drop_dbs EXIT
 drop_dbs   # clear leftovers from any killed prior run
@@ -217,6 +275,58 @@ if ! printf '%s\n' "$migrate_out" | grep -q "All migrations already applied"; th
   die "migrate.ts found pending migrations on a schema.sql-built DB — schema.sql is stale relative to migrations/"
 fi
 grn "✓ Check 1: migrate.ts is a no-op on a schema.sql-built DB"
+
+# =============================================================================
+# Check 4b — a fresh DB ends up with EVERY config dial
+#
+# The mechanism half of 4a: assert migrate.ts actually applied
+# config-defaults.sql to the Check-1 database. Ground truth is derived by
+# applying that same file to an empty table in a second throwaway DB and
+# diffing the key sets — no SQL parsing in bash, so a reformatted defaults file
+# can't quietly weaken the check.
+# =============================================================================
+docker exec "$CONTAINER" psql -U "$PGUSER" -d postgres -c "CREATE DATABASE $DB_CONFIG;" >/dev/null
+docker exec "$CONTAINER" psql -U "$PGUSER" -d "$DB_CONFIG" -q -c \
+  "CREATE TABLE platform_config (key text PRIMARY KEY, value text NOT NULL, description text, updated_at timestamptz NOT NULL DEFAULT now());" >/dev/null
+docker exec -i "$CONTAINER" psql -U "$PGUSER" -d "$DB_CONFIG" -q -v ON_ERROR_STOP=1 \
+  < shared/src/db/config-defaults.sql >/dev/null \
+  || die "config-defaults.sql failed to apply to an empty platform_config table"
+
+keys_expected="$(docker exec "$CONTAINER" psql -U "$PGUSER" -d "$DB_CONFIG" -t -A \
+  -c "SELECT key FROM platform_config ORDER BY key")"
+keys_actual="$(docker exec "$CONTAINER" psql -U "$PGUSER" -d "$DB_SCHEMA" -t -A \
+  -c "SELECT key FROM platform_config ORDER BY key")"
+missing="$(comm -23 <(printf '%s\n' "$keys_expected") <(printf '%s\n' "$keys_actual"))"
+if [ -n "$missing" ]; then
+  red "Check 4b FAILED: a fresh schema.sql DB is missing config dial(s) after migrate"
+  printf '%s\n' "$missing" | sed 's/^/    /' >&2
+  die "migrate.ts should apply shared/src/db/config-defaults.sql on every run."
+fi
+grn "✓ Check 4b: fresh DB carries all $(printf '%s\n' "$keys_expected" | wc -l | tr -d ' ') config dials"
+
+# =============================================================================
+# Check 4c — config-defaults.sql covers every dial the migrations ever seeded
+#
+# 4a stops NEW seeds entering migrations; 4b proves the defaults file is
+# applied. This closes the third side: that nothing was LOST when the historical
+# seeds were folded into the defaults file, and that nothing is lost later by an
+# edit to it. Replays every migration seed on top of the already-defaulted
+# DB_CONFIG with ON CONFLICT DO NOTHING — if the row count moves, a key exists
+# in a migration but not in config-defaults.sql.
+# =============================================================================
+before_n="$(docker exec "$CONTAINER" psql -U "$PGUSER" -d "$DB_CONFIG" -t -A -c "SELECT count(*) FROM platform_config")"
+node_modules/.bin/tsx scripts/extract-config-seeds.ts 2>/dev/null \
+  | docker exec -i "$CONTAINER" psql -U "$PGUSER" -d "$DB_CONFIG" -q -v ON_ERROR_STOP=1 >/dev/null \
+  || die "replaying migration platform_config seeds failed"
+after_n="$(docker exec "$CONTAINER" psql -U "$PGUSER" -d "$DB_CONFIG" -t -A -c "SELECT count(*) FROM platform_config")"
+if [ "$before_n" != "$after_n" ]; then
+  red "Check 4c FAILED: config-defaults.sql is missing $((after_n - before_n)) dial(s) that a migration seeds"
+  docker exec "$CONTAINER" psql -U "$PGUSER" -d "$DB_CONFIG" -t -A \
+    -c "SELECT key FROM platform_config ORDER BY updated_at DESC, key LIMIT $((after_n - before_n))" \
+    | sed 's/^/    /' >&2
+  die "add the missing key(s) to shared/src/db/config-defaults.sql."
+fi
+grn "✓ Check 4c: config-defaults.sql covers every migration-seeded dial"
 
 # =============================================================================
 # Check 2 — schema.sql round-trips: load it, dump it back, must be identical
