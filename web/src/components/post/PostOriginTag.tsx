@@ -82,7 +82,7 @@ export function PostOriginTag({
           e.stopPropagation();
           window.open(href, "_blank", "noopener,noreferrer");
         }}
-        className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2 text-left hover:opacity-80"
+        className="font-mono text-[0.625rem] uppercase tracking-[0.06em] mt-2 text-left hover:opacity-80"
         style={{
           color: palette.cardMeta,
           background: "none",
@@ -107,7 +107,7 @@ function TagText({
 }) {
   return (
     <div
-      className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2"
+      className="font-mono text-[0.625rem] uppercase tracking-[0.06em] mt-2"
       style={{ color: palette.cardMeta }}
     >
       {children}

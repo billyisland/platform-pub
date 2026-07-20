@@ -202,28 +202,21 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 3. `confidence` recorded but never consulted by suppression — a 0.6 auto link hides content as hard as a 1.0 user assertion; make it a real dial. (MEDIUM)
 4. Deferred detectors/features: `cross_link` bio-parse detector (needs cached bio metadata first); quorum promotion (explicitly don't-build-v1); route-layer Vitest suite; `EXPLAIN ANALYZE` the dedup CTE against a seeded large feed (fold in with §8.4's #15). → `SLICE-8-IDENTITY-LINKING-PLAN.md`.
 
-## 7. Cleanup cluster (cheap, batchable — one afternoon-scale pass)
+## 7. Cleanup cluster (mostly closed)
 
-All re-verified in source 2026-07-07 unless marked. (The stale ForallMenu z-50 comment from the old list is RESOLVED — removed by the ∀-mark work.)
+**Batch-closed 2026-07-20** — fourteen of the eighteen items shipped in one pass, two dispositioned without code, two narrowed (FIX-PROGRAMME 2026-07-20 "§7 cleanup cluster" entry has the item-by-item record + validation). Closed: 1 (Composer dead chip/DM machinery), 2 (ParentContextTile + `PostCard.header` + `reply_group`), 3 (`expandedByFeed` leak), 4 (stale `reply_to_author` — passes 5/6, empirically verified), 5 (njump permalinks), 7 (per-host skip logging), 8 (lint suppressions), 9 (infinite-scroll race — ref latch), 12 (migrate guard — comment-stripping + multi-statement refusal, mutation-verified), 13 (Bluesky handle renames — Jetstream identity events, premise verified live), 15 (card chassis → rem), 16 (live hairline debt), 17-part-1 (publications PATCH column allowlist + exhaustiveness guard).
 
-1. Composer dead chip/`messagesApi` machinery (D7) — `web/src/components/workspace/Composer.tsx:98` `const [chips] = useState<ToChip[]>([])` has no setter, so the private-send branch (251-257) is unreachable.
-2. Orphaned `web/src/components/workspace/ParentContextTile.tsx` (C4, zero imports) + unused `PostCard` `header` prop (`PostCard.tsx:70`) + its stale header-slot comment (`:68`) + dead `reply_group` type (`web/src/lib/ndk.ts:163`).
-3. `expandedByFeed` key leak on feed delete/merge (C5) — `WorkspaceView.tsx` `onDeleted` (~1424) and `handleMergeConfirm` (~375) clean layout but never the `expandedByFeed[feedId]` key.
-4. Stale `reply_to_author` never re-NULLed when the parent is deleted/unresolvable (D10 — data correctness); `feed-items-author-refresh.ts` only ever writes non-null names.
-5. njump.me permalink for external-Nostr quotes (C3) — **narrowed**: `QuotedEmbed` now renders links from `originWebUrl`, so the only gap is `web/src/lib/post/origin-url.ts:14-15` returning `null` for nostr event-id URIs.
-6. `FeedComposer` account source row (D8) — renders a raw `<Link>` + `openProfileHref`/`isModifiedClick` (`FeedComposer.tsx:1218`), which is CLAUDE.md's sanctioned fallback pattern; decide close-as-compliant or swap to `<ProfileLink>`.
-7. Per-host enqueue throttle: add a skipped-due-to-host log (D9 — full relocation is Tranche C).
-8. Restore the five lint suppressions dropped as stray `{ }` JSX (C2 — will error when `next lint` is wired).
-9. B2 — infinite-scroll duplicate-fetch race: `WorkspaceView.tsx:449/457` guards on vessel-state `loadingMore` set via `setVessels` — replace with a synchronous ref latch.
-10. Inline `<video>` missing `referrerPolicy="no-referrer"` (D12) — `PostMedia.tsx:282-299` (the poster `<img>` has it; the `<video>` doesn't).
-11. D11 comment (`signAndEnqueue` signs outside the enqueue txn — flag, no fix); D13 overlay history/scroll-lock edge cases (unreachable today); D14 feed-batching test coverage. Absorbed from the retired feature-debt: cross-overlay supersede (reader→profile) can orphan a history entry so Back lands on a stale URL (pre-existing); migrations 122/123 carry non-idempotent bare statements (low risk under the run-once guard).
-12. Migrate runner `CONCURRENTLY` guard matches comments and runs multi-statement files in one query (C1 — latent; `shared/src/db/migrate.ts:143` — confirmed untouched by the 2026-07-06 hardening, which fixed sort/checksums only).
-13. **Bluesky changed handles never refresh** — the enrichment self-heal fires only on NULL handles, so a renamed account keeps its old `@handle` forever. → Wave-3 P2 tail.
-14. Nits carried from the 2026-06-13 audit: native note-replies hard-dropped regardless of per-source `exclude_replies` (pre-existing); profile self-delete dropped (documented scope cut); `TagBrowser` not on `PageShell` (verified); pre-existing `collision.test.ts` flake ("pushes upward…").
-15. Feed-card chassis: byline/dialogue pinned at `text-[11px]`/`text-[14.5px]` px — migrate to rem tokens so the global type-size control scales cards; amend the chassis spec in CLAUDE.md.
-16. Pre-existing hairline debt (PipPanel/NewFeedPrompt 1px borders, globals.css comment hit) — burn down opportunistically per the no-new-hairlines rule.
-17. `AUDIT-REPORT.md` residue: publications PATCH interpolates Zod-parsed keys as SQL column names (#6 — verified, `gateway/src/routes/publications/core.ts:134-149`; injection-bounded by the schema but fragile); stale CLAUDE.md doc refs (#14); inconsistent error shapes (#19 — see §8.8; note the `sendError` helper was **deleted** in the Day-6 P2 pass, so this now needs a fresh helper); pervasive `as any` (#20, ~23 in web); `requirePublicationPermission()` no-args (#21) and no note soft-delete (#24) — both carried unverified; naming (#25–27; `platform-pub`/`platformpub` vs all.haus in compose/package/credentials).
-18. **BalanceHeader sub-copy muddled** (flagged in the Explain C3 review, 2026-07-16) — `web/src/components/account/BalanceHeader.tsx:26` shows "In credit — settles when threshold reached" for a *positive* net balance, but positive means the platform owes the reader (earnings exceed tab); the threshold-settlement clause describes the *negative* (outstanding-tab) case. Swap/reword the two branches. (The `ledger.balance` Explain caption already describes the intended meaning.)
+**Dispositioned, no code:**
+- **6 — closed as compliant.** The FeedComposer source row is CLAUDE.md's sanctioned `ref` fallback and routes account vs pub/source/tag separately; `<ProfileLink>` would mis-classify `/pub`, `/source`, `/tag` as native profiles. Do not "fix" this.
+- **10 — rejected, not implementable.** `referrerPolicy` is not valid on `<video>` (HTML allows it on `a`/`area`/`iframe`/`img`/`link`/`script` only); it fails typecheck. Bounded already by nginx's document-level `Referrer-Policy: strict-origin-when-cross-origin`.
+
+**Still open:**
+
+1. **Card body px → rem (narrowed from item 15).** The card BODY is sized by the per-feed text-size control as an inline px number (`ctx.bodyPx` ← `TEXT_SIZE_PX`), so it doesn't scale with the global type-size control. Converting it would COMPOUND two user-facing size controls — a design decision (do they multiply? does per-feed become a relative offset?), not cleanup. Everything else in the chassis is now rem.
+2. **PipPanel hairline debt (8 literal 1px).** Left deliberately: the component is dormant (trust parked, `PipTrigger` not mounted), so it renders nothing. Burn down if/when the pip panel is revived — restoring it must not reintroduce them.
+3. **§7.11 residue (flag-only, unreachable today):** D11 `signAndEnqueue` signs outside the enqueue txn (flagged, no fix); D13 overlay history/scroll-lock edge cases; D14 feed-batching test coverage; cross-overlay supersede (reader→profile) can orphan a history entry so Back lands on a stale URL (pre-existing); migrations 122/123 carry non-idempotent bare statements (low risk under the run-once guard).
+4. **§7.14 carried nits:** native note-replies hard-dropped regardless of per-source `exclude_replies` (pre-existing); profile self-delete dropped (documented scope cut); `TagBrowser` not on `PageShell`; pre-existing `collision.test.ts` flake ("pushes upward…").
+5. **§7.17 remainder** (`AUDIT-REPORT.md` residue): stale CLAUDE.md doc refs (#14); inconsistent error shapes (#19 — see §8.8; the `sendError` helper was deleted in the Day-6 P2 pass, so this needs a fresh helper); pervasive `as any` (#20, ~23 in web); `requirePublicationPermission()` no-args (#21) and no note soft-delete (#24) — both still carried unverified; naming (#25–27; `platform-pub`/`platformpub` vs all.haus in compose/package/credentials). (#6, the publications PATCH interpolation, closed 2026-07-20.)
 
 ## 8. Performance, scaling & infrastructure
 
@@ -305,6 +298,6 @@ All re-verified in source 2026-07-07 unless marked. (The stale ForallMenu z-50 c
 2. ~~Publication-subscription distribution~~ — **done 2026-07-10** (§1.3; runtime verify in §11).
 3. **Owner dashboard** (§3.1 — before real money; the ledger views make it cheap now).
 4. **Small-money batch** (§1.5–§1.6 calendar + provisional-reads; §1.9 reconcile-ledger run; §1.10 grant-mode decision).
-5. **Cleanup cluster** (§7) as a palate-cleanser batch; **Slice-8 dedup design session** (§6) separately.
+5. ~~**Cleanup cluster** (§7) as a palate-cleanser batch~~ — **done 2026-07-20** (14 of 18 items in one pass; 2 dispositioned without code, 2 narrowed to design calls — see §7). **Slice-8 dedup design session** (§6) still outstanding, separately.
 6. **Landing page + onboarding + subscriptions Phase 2** (the launch-cohort conversion set).
 7. Everything in §8 by measurement, not vibes — CDN + measurement first.

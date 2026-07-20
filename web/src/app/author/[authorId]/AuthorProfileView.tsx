@@ -256,6 +256,7 @@ export function AuthorProfileView({
                   aria-label="View picture"
                   className="focus-ring flex-shrink-0 cursor-zoom-in"
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={profile.avatarUrl}
                     alt=""

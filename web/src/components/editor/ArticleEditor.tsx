@@ -502,7 +502,7 @@ export function ArticleEditor({
               className="w-32 sm:w-40 bg-grey-200"
               style={{ aspectRatio: '16 / 9' }}
             >
-              { }
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={coverImageUrl}
                 alt=""

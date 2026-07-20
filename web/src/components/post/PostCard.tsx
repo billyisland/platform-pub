@@ -46,7 +46,6 @@ export function PostCard({
   onOpenReader,
   isOwnContent,
   interactions,
-  header,
   footer,
 }: {
   post: Post;
@@ -66,9 +65,8 @@ export function PostCard({
   // External interact-back (usePostInteractions), supplied by PostCardInteractive
   // when the card is interactive. Absent ⇒ read-only counters + read-only poll.
   interactions?: PostInteractions;
-  // Slots rendered inside the shell: `header` above the byline (parent-context
-  // tile), `footer` below the actions (inline reply box). Owned by the container.
-  header?: React.ReactNode;
+  // Slot rendered inside the shell, below the actions (inline reply box).
+  // Owned by the container.
   footer?: React.ReactNode;
 }) {
   const spec = resolveSpec(level, post.biddabilityTier, post);
@@ -114,7 +112,6 @@ export function PostCard({
 
   return (
     <PostCardShell ctx={ctx} indentPx={spec.indentPx} gapBelowPx={spec.gapBelowPx} onClick={onClick} explainParam={explainCardFlavour(post)}>
-      {header}
       <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} feedId={ctx.feedId} />
       <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} pollVote={pollVote} />
       <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />

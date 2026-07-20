@@ -126,12 +126,28 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
     byHost.set(hostname, group);
   }
 
-  // Enqueue jobs respecting per-host and global limits
+  // Enqueue jobs respecting per-host and global limits.
+  //
+  // Every drop below is counted and logged (§7.7): a source that silently fails
+  // to be enqueued is indistinguishable from one that has nothing to fetch, so a
+  // host starving behind the cap looked identical to a healthy idle host. The
+  // counters make the cap visible without changing what it does.
   let totalEnqueued = 0;
-  for (const [_hostname, hostSources] of byHost) {
+  let skippedByHostCap = 0;
+  let skippedByTickCap = 0;
+  let skippedNoTask = 0;
+  const hostsCapped = new Set<string>();
+  for (const [hostname, hostSources] of byHost) {
     const toEnqueue = hostSources.slice(0, maxPerHost);
+    if (hostSources.length > toEnqueue.length) {
+      skippedByHostCap += hostSources.length - toEnqueue.length;
+      hostsCapped.add(hostname);
+    }
     for (const source of toEnqueue) {
-      if (totalEnqueued >= maxEnqueuePerTick) break;
+      if (totalEnqueued >= maxEnqueuePerTick) {
+        skippedByTickCap += toEnqueue.length - toEnqueue.indexOf(source);
+        break;
+      }
 
       const taskName =
         source.protocol === "rss"
@@ -143,7 +159,10 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
               : source.protocol === "atproto" && !jetstreamHealthy
                 ? "feed_ingest_atproto_backfill"
                 : null;
-      if (!taskName) continue;
+      if (!taskName) {
+        skippedNoTask++;
+        continue;
+      }
 
       await helpers.addJob(
         taskName,
@@ -158,7 +177,25 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
     if (totalEnqueued >= maxEnqueuePerTick) break;
   }
 
-  if (totalEnqueued > 0) {
-    logger.info({ count: totalEnqueued }, "Enqueued feed ingest jobs");
+  const totalSkipped = skippedByHostCap + skippedByTickCap + skippedNoTask;
+  if (totalEnqueued > 0 || totalSkipped > 0) {
+    logger.info(
+      {
+        count: totalEnqueued,
+        ...(totalSkipped > 0
+          ? {
+              skippedByHostCap,
+              skippedByTickCap,
+              skippedNoTask,
+              // Named so a persistently-starved host is greppable, not just a
+              // number that moves.
+              hostsCapped: [...hostsCapped],
+              maxPerHost,
+              maxEnqueuePerTick,
+            }
+          : {}),
+      },
+      "Enqueued feed ingest jobs",
+    );
   }
 };

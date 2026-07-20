@@ -23,6 +23,117 @@ starts.
 
 ## Progress
 
+- **2026-07-20** — **§7 cleanup cluster: one batched pass.** Fourteen of the
+  eighteen items closed; two dispositioned without code; two narrowed. Every
+  fix re-verified in source first, and the three with a testable premise were
+  proved empirically rather than asserted.
+  - **1** Composer dead chip/DM machinery deleted — `chips` had no setter, so
+    `isPrivate` and the whole `messagesApi` send branch were unreachable;
+    removed the state, the `ToChip` type, `isMixed`/`isPrivate`/`hasPersonChip`/
+    `hasBroadcastChip`, the mixed/private hint copy, and the "Sending…"/"Send"
+    button branches. `broadcastProtocols` collapses to `enabledProtocols`.
+  - **2** `ParentContextTile.tsx` deleted (zero imports); `PostCard`'s unused
+    `header` prop, its render slot and stale comment removed; dead
+    `ReplyGroupItem`/`reply_group` type dropped from `ndk.ts` (not in the
+    `FeedItem` union, zero references) — the one-post-per-card residue.
+  - **3** `expandedByFeed` key leak closed — the drop-the-key idiom is now the
+    shared `clearExpandedFor(feedId)` callback, called on refresh (as before)
+    **and** on feed delete + merge, where the key used to survive its vessel.
+  - **4** Stale `reply_to_author` now re-NULLed: passes 3/4 are inner joins and
+    could only ever WRITE a name, so a deleted/unresolvable parent pinned its
+    byline forever. Added passes 5/6 mirroring each sibling's join chain
+    exactly (and the trigger's — there is no third resolution path). **Verified
+    against dev data:** 0 of 13,271 resolved replies touched (no false
+    positives), then a positive control in a rolled-back transaction — deleting
+    a parent flipped exactly 1 row to NULL.
+  - **5** njump.me permalink for external-Nostr: `originWebUrl` returns
+    `https://njump.me/<uri>` for bech32 `nevent1`/`naddr1`/`note1`. Scoped to
+    bech32 deliberately — native posts hold a raw hex event id and must keep
+    linking to all.haus, and the relay-free identity invariant guarantees
+    external-Nostr URIs are bech32.
+  - **6** **Closed as compliant, no change.** The FeedComposer source row is
+    the documented `ref` fallback (`openProfileHref`/`isModifiedClick`), and it
+    routes account vs publication/source/tag separately — swapping to
+    `<ProfileLink>` would be a REGRESSION, mis-classifying `/pub/:slug`,
+    `/source/:id` and `/tag/:name` as native profiles.
+  - **7** Per-host enqueue throttle now logs what it dropped
+    (`skippedByHostCap`/`skippedByTickCap`/`skippedNoTask` + the capped host
+    names and both limits) — a starved host was previously indistinguishable
+    from an idle one. Counting only; the cap itself is unchanged.
+  - **8** Lint suppressions restored. Of the five stray `{ }` from `f9cbf3f`,
+    three files were since retired (legacy `components/feed/` cards) and
+    Composer's was already gone, leaving `ArticleEditor`'s — restored, plus the
+    `AuthorProfileView` suppression that commit deleted outright rather than
+    braced. Both are `@next/next/no-img-element` (will error when `next lint`
+    is wired).
+  - **9** Infinite-scroll duplicate-fetch race fixed with a synchronous
+    `loadingMoreRef` latch. The old guard read `loadingMore` off `vesselsRef`,
+    which only catches up on re-render, so two scroll events in one tick both
+    saw `false` and fetched the same cursor twice. Vessel `loadingMore` is now
+    presentation-only (the spinner); the ref is the concurrency guard, cleared
+    in `finally`.
+  - **10** **Rejected — the finding is not implementable.** `referrerPolicy` is
+    not a valid attribute on `<video>` (HTML allows it only on
+    `a`/`area`/`iframe`/`img`/`link`/`script`); adding it fails typecheck. The
+    poster `<img>` correctly carries it. Residual leak is bounded by nginx's
+    document-level `Referrer-Policy: strict-origin-when-cross-origin`, so a
+    cross-origin media host sees the origin, never the path.
+  - **12** Migrate-runner guard fixed, **both halves proved empirically.**
+    Detection now runs against a comment-stripped copy (never executed): the
+    raw match routed any migration whose PROSE mentions CONCURRENTLY onto the
+    no-transaction path, silently giving up rollback — **live on two real
+    migrations**, 022 and 083, whose comments both say "CONCURRENTLY removed".
+    Added a pre-flight refusal for a multi-statement CONCURRENTLY file with an
+    actionable message (Postgres wraps multi-statement files in an implicit
+    transaction, which CONCURRENTLY refuses — confirmed against PG16, as was
+    the fact that ALTER TYPE ADD VALUE is permitted in a transaction since
+    PG12, so that guard is now documented as conservative rather than
+    required). Both behaviours driven end-to-end against a throwaway DB, and
+    the comment-stripping **mutation-verified** (reverting detection to raw SQL
+    changes the outcome). Note the earlier "partial application" worry was
+    checked and is FALSE — the implicit block rolls back cleanly.
+  - **13** Bluesky handle renames now heal. Two gaps: nothing triggered
+    (enrichment self-heal fires only on a NULL handle) and `repairAtprotoAuthors`
+    is fill-only. Added an `identity`-event branch to the Jetstream listener
+    that re-enqueues enrichment under the existing job key, plus a DID-keyed
+    `external_authors.handle` refresh-on-change (the byline reads `xa_handle`
+    ahead of the per-item snapshot). **Premise verified against live
+    jetstream1.us-east:** identity events ARE delivered alongside
+    `wantedCollections` (9 in 2,160 messages) and frequently carry NO handle —
+    hence re-resolve rather than trust the event. Per-item `author_handle` stays
+    a historical snapshot; `display_name` keeps fill-only semantics (an account
+    with no displayName resolves to "@handle", which must not overwrite a name).
+  - **15** Card chassis migrated off px so the global type-size control reaches
+    it: mono action/counter/origin/quote labels → `text-mono-xs` /
+    `text-[0.625rem]`, playscript dialogue → `text-[0.90625rem]`. All exact rem
+    equivalents, so **pixel-identical at the default root** and scaling above
+    it. Verified in the built CSS that tracking utilities emit after fontSize,
+    so `tracking-[0.02em]` still overrides the token's 0.06em. The byline
+    already rode `.label-ui`. CLAUDE.md chassis spec amended. **Narrowed
+    residual:** the card BODY is sized by the per-feed text-size control as an
+    inline px number — making it rem would compound two user-facing size
+    controls, which is a design call, not cleanup.
+  - **16** Live hairline debt burned down: `NewFeedPrompt`'s two 1px borders
+    removed (panel lifted by shadow alone; the text field is now the
+    `bg-glasshouse-well` inset), which also removed an inline `outline: none`
+    that was killing the keyboard focus ring — replaced with `focus-ring`. The
+    remaining 8 literal-1px hits are all in the **dormant** `PipPanel`, left
+    alone deliberately (parked component, renders nothing). Net: two removed,
+    zero added; no touched file appears in the tripwire.
+  - **17 (first part)** Publications PATCH no longer interpolates
+    request-derived keys as SQL column names — the loop runs over a fixed
+    `UPDATABLE_COLUMNS` list declared in the route, with a type-level
+    exhaustiveness guard so a new schema field is a **compile error** rather
+    than a silently-undroppable column. **Mutation-verified** (removing a
+    column from the list fails `tsc`). Injection-bounded before, structurally
+    closed now. The rest of §7.17 (error shapes, `as any`, naming) remains.
+  **Untouched:** §7.11 (flag-only/unreachable notes), §7.14 (carried nits),
+  and the remainder of §7.17. **Validation:** `tsc` clean across web /
+  gateway / shared / feed-ingest; `next build` compiled; root eslint 0 errors;
+  hairline tripwire clean on every touched file; ledger-adjacency tripwire
+  clean; drift guard 4/4; test suites green — gateway 353, feed-ingest 209,
+  shared 101.
+
 - **2026-07-19** — **§0g.1 HIGH fixed: account deletion was broken for
   everyone — three independent latent defects, none ever reachable past the
   first.** `POST /auth/delete-account` aborted 100% of the time; the whole

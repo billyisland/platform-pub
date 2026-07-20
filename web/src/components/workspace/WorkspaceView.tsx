@@ -270,6 +270,18 @@ export function WorkspaceView() {
   const [expandedByFeed, setExpandedByFeed] = useState<
     Record<string, { key: string; root: string }>
   >({});
+  // Drop a feed's expansion entry. Called on refresh (a reload collapses the
+  // open conversation) and on delete/merge — a vessel that no longer exists
+  // must not leave its key behind, or a feed later minted with the same id
+  // would open pre-expanded onto a stale card.
+  const clearExpandedFor = useCallback((feedId: string) => {
+    setExpandedByFeed((prev) => {
+      if (!(feedId in prev)) return prev;
+      const next = { ...prev };
+      delete next[feedId];
+      return next;
+    });
+  }, []);
   // A single global tick: bumped after a reply publishes so any open PostThread
   // busts its cache and refetches (replaces the legacy per-target refresh map).
   const [threadRefreshTick, setThreadRefreshTick] = useState(0);
@@ -411,17 +423,13 @@ export function WorkspaceView() {
       return next;
     });
     removeVesselLayout(source.id);
+    clearExpandedFor(source.id);
     setPendingMerge(null);
   }
 
   const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
     // A refresh collapses this vessel's open conversation.
-    setExpandedByFeed((prev) => {
-      if (!(feed.id in prev)) return prev;
-      const next = { ...prev };
-      delete next[feed.id];
-      return next;
-    });
+    clearExpandedFor(feed.id);
 
     let prevIds: Set<string> | null = null;
     setVessels((prev) =>
@@ -463,22 +471,32 @@ export function WorkspaceView() {
         ),
       );
     }
-  }, []);
+  }, [clearExpandedFor]);
+
+  // Feed ids with a load-more request in flight. This is the CONCURRENCY guard;
+  // the vessel's own `loadingMore` field is presentation only (it drives the
+  // spinner). React state can't guard here: `vesselsRef` only catches up on
+  // re-render, so two scroll events firing in the same tick would both read
+  // `loadingMore: false` and fetch the same cursor twice, appending a duplicate
+  // page. A ref latch flips synchronously, so the second call returns early.
+  const loadingMoreRef = useRef<Set<string>>(new Set());
 
   // Infinite scroll: pull the next page of older content for a vessel and append
-  // it. Guarded against concurrent / exhausted loads via the live vessel state
-  // (read from the ref so the callback stays stable). New keys are de-duped
-  // against what's already shown so a cursor overlap can't double a card.
+  // it. Guarded against exhausted loads via the live vessel state (read from the
+  // ref so the callback stays stable) and against concurrent loads via the latch
+  // above. New keys are de-duped against what's already shown so a cursor
+  // overlap can't double a card.
   const loadMoreVesselItems = useCallback(async (feedId: string) => {
     const current = vesselsRef.current.find((v) => v.feed.id === feedId);
     if (
       !current ||
       current.status !== "ready" ||
-      current.loadingMore ||
+      loadingMoreRef.current.has(feedId) ||
       !current.nextCursor
     ) {
       return;
     }
+    loadingMoreRef.current.add(feedId);
     const cursor = current.nextCursor;
     setVessels((prev) =>
       prev.map((v) =>
@@ -508,6 +526,8 @@ export function WorkspaceView() {
           v.feed.id === feedId ? { ...v, loadingMore: false } : v,
         ),
       );
+    } finally {
+      loadingMoreRef.current.delete(feedId);
     }
   }, []);
 
@@ -1492,6 +1512,7 @@ export function WorkspaceView() {
         onDeleted={(feedId) => {
           setVessels((prev) => prev.filter((v) => v.feed.id !== feedId));
           removeVesselLayout(feedId);
+          clearExpandedFor(feedId);
           setFeedComposerFor(null);
         }}
       />

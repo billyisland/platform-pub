@@ -143,16 +143,51 @@ async function migrate() {
 
       console.log(`  Applying: ${filename}`);
 
-      // Statements Postgres refuses to run inside a transaction block. Both
-      // must run outside BEGIN/COMMIT, so they cannot be rolled back on failure.
-      //   - ALTER TYPE … ADD VALUE (new enum members)
-      //   - CREATE/DROP INDEX CONCURRENTLY (e.g. migrations 022, 083)
-      const noTxnReason = /ALTER\s+TYPE\s+\S+\s+ADD\s+VALUE/i.test(sql)
+      // Statements that need to run outside an explicit BEGIN/COMMIT, so they
+      // cannot be rolled back on failure:
+      //   - CREATE/DROP INDEX CONCURRENTLY (e.g. migrations 022, 083) — genuinely
+      //     refused inside any transaction block.
+      //   - ALTER TYPE … ADD VALUE (new enum members) — permitted inside a
+      //     transaction since PG12, but the new value cannot be USED until that
+      //     transaction commits, so a file that adds AND uses a value in one go
+      //     would fail. Kept on this path conservatively.
+      //
+      // Detect against a comment-stripped copy: matching the raw file routes a
+      // migration whose PROSE merely mentions "CONCURRENTLY" onto the
+      // no-transaction path, silently giving up rollback-on-failure for
+      // statements that never needed it. This copy is for detection ONLY and is
+      // never executed, so the crude stripper (which would mangle a `--` inside
+      // a string literal) cannot affect what runs.
+      const sqlSansComments = sql
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/--[^\n]*/g, " ");
+
+      const isConcurrent = /\bCONCURRENTLY\b/i.test(sqlSansComments);
+      const noTxnReason = /ALTER\s+TYPE\s+\S+\s+ADD\s+VALUE/i.test(sqlSansComments)
         ? "ALTER TYPE ADD VALUE"
-        : /\bCONCURRENTLY\b/i.test(sql)
+        : isConcurrent
           ? "CONCURRENTLY"
           : null;
       const needsNoTxn = noTxnReason !== null;
+
+      // A multi-statement file is sent as one simple query, which Postgres wraps
+      // in an IMPLICIT transaction block — the exact thing CONCURRENTLY refuses.
+      // Such a file fails mid-deploy with a bare Postgres error, so refuse it
+      // here with an actionable one instead. (Nothing has run at this point; the
+      // implicit block means the failure would roll back cleanly either way.)
+      if (isConcurrent) {
+        const statementCount = sqlSansComments
+          .split(";")
+          .filter((s) => s.trim().length > 0).length;
+        if (statementCount > 1) {
+          throw new Error(
+            `${filename}: a CONCURRENTLY migration must contain exactly one statement ` +
+              `(found ${statementCount}). Postgres wraps a multi-statement file in an ` +
+              `implicit transaction block, which CONCURRENTLY cannot run inside. ` +
+              `Split the other statements into a separate migration file.`,
+          );
+        }
+      }
 
       if (needsNoTxn) {
         try {

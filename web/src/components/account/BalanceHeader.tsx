@@ -22,8 +22,16 @@ export function BalanceHeader({ balancePence, freeAllowanceRemainingPence, freeA
       <p className={`font-serif text-[40px] font-light tracking-tight ${isPositive ? 'text-black' : 'text-crimson'}`}>
         {!isPositive && '−'}£{(Math.abs(balancePence) / 100).toFixed(2)}
       </p>
+      {/* Sign convention: net = earnings − tab, so positive means the platform
+          owes the reader (in credit) and negative means an outstanding tab,
+          which is the case that settles from the card at the threshold. Mirrors
+          the ledger.balance Explain caption. */}
       <p className="text-ui-xs text-grey-400 mt-1">
-        {isPositive ? 'In credit — settles when threshold reached' : 'Outstanding balance'}
+        {balancePence === 0
+          ? 'Settled — nothing owed either way'
+          : isPositive
+            ? 'In credit — this is yours'
+            : 'Outstanding balance — settles from your card once the tab reaches its threshold'}
       </p>
 
       {freeAllowanceTotalPence > 0 && (

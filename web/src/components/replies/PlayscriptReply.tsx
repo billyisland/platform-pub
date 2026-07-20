@@ -117,14 +117,14 @@ export function PlayscriptReply({
       {/* Dialogue line */}
       <div className="mt-1 pr-20">
         {reply.isDeleted ? (
-          <p className="font-sans text-[14.5px] leading-[1.55] text-grey-300 italic">
+          <p className="font-sans text-[0.90625rem] leading-[1.55] text-grey-300 italic">
             {reply.content}
           </p>
         ) : (
           <MediaContent
             content={reply.content}
             variant="reply"
-            textClassName="font-sans text-[14.5px] leading-[1.55] text-black whitespace-pre-wrap"
+            textClassName="font-sans text-[0.90625rem] leading-[1.55] text-black whitespace-pre-wrap"
           />
         )}
       </div>

@@ -131,7 +131,37 @@ export async function publicationCoreRoutes(app: FastifyInstance) {
       const values: any[] = []
       let idx = 1
 
-      for (const [key, value] of Object.entries(data)) {
+      // Column names cannot be parameterised, so they are interpolated — and an
+      // interpolated identifier must come from a fixed list in THIS file, never
+      // from request-derived keys. Zod already bounds `data` to the schema's
+      // keys, so this is defence in depth rather than a live hole: it stops a
+      // future `.passthrough()`, `.catchall()`, or a merged schema from turning
+      // a parse into an injection point, and it fails closed (an unlisted key is
+      // dropped, never interpolated).
+      const UPDATABLE_COLUMNS = [
+        'name',
+        'tagline',
+        'about',
+        'logo_blossom_url',
+        'cover_blossom_url',
+        'subscription_price_pence',
+        'annual_discount_pct',
+        'default_article_price_pence',
+        'homepage_layout',
+      ] as const satisfies readonly (keyof typeof data)[]
+
+      // `satisfies` only proves each listed key is valid, not that every schema
+      // key is listed — so a field added to UpdatePublicationSchema would
+      // silently stop being updatable. This makes that a compile error.
+      type UnlistedColumn = Exclude<
+        keyof typeof data,
+        (typeof UPDATABLE_COLUMNS)[number]
+      >
+      const _allColumnsListed: UnlistedColumn extends never ? true : never = true
+      void _allColumnsListed
+
+      for (const key of UPDATABLE_COLUMNS) {
+        const value = data[key]
         if (value !== undefined) {
           setClauses.push(`${key} = $${idx}`)
           values.push(value)

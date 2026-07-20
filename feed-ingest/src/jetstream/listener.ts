@@ -600,6 +600,15 @@ export class JetstreamListener {
       return;
     }
 
+    // A handle rename arrives as an identity event, never a commit. Without
+    // this branch the enrichment self-heal (which only fires on a NULL handle)
+    // never revisits a resolved source, so a renamed account kept its old
+    // @handle forever (§7.13).
+    if (event.kind === "identity") {
+      await this.handleIdentity(event);
+      return;
+    }
+
     if (event.kind !== "commit") return;
     if (!event.commit) return;
     const collection = event.commit.collection;
@@ -702,6 +711,51 @@ export class JetstreamListener {
           err: err instanceof Error ? err.message : String(err),
         },
         "Failed to ingest atproto item",
+      );
+    }
+  }
+
+  // Identity change (handle rename / PDS move) for a DID we subscribe to.
+  //
+  // The event's `handle` is optional and usually absent — it announces THAT
+  // identity changed, not what to. So this re-enqueues the enrichment backfill,
+  // which re-resolves the DID via getProfile and writes the fresh handle to
+  // external_sources plus external_authors (the byline's source). When the
+  // event does carry a handle, it's used to skip the round-trip if nothing
+  // actually changed — identity events also fire for PDS moves, which leave the
+  // handle alone.
+  //
+  // Reuses the enrichment job_key, so a rename and a missing-handle self-heal
+  // collapse into one pending job per source rather than racing.
+  private async handleIdentity(event: JetstreamCommit): Promise<void> {
+    const source = this.sourceByDid.get(event.did);
+    if (!source) return; // not a DID we track
+
+    const announced = event.identity?.handle?.trim();
+    if (announced && source.handle && announced === source.handle) return;
+
+    try {
+      await pool.query(
+        `SELECT graphile_worker.add_job(
+           'feed_ingest_atproto_backfill',
+           json_build_object('sourceId', $1::text),
+           job_key := 'feed_ingest_enrich_' || $1::text,
+           max_attempts := 1
+         )`,
+        [source.id],
+      );
+      logger.info(
+        { sourceId: source.id, did: event.did, announcedHandle: announced ?? null },
+        "atproto identity change — enqueued handle re-resolution",
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          sourceId: source.id,
+          did: event.did,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "Failed to enqueue atproto handle re-resolution",
       );
     }
   }

@@ -375,6 +375,23 @@ async function repairAtprotoAuthors(
                OR handle IS NULL OR handle = '')`,
       [name, handle, did],
     );
+    // A Bluesky handle is MUTABLE; the DID is the stable identity. The gap-fill
+    // above can only ever populate an empty handle, so a renamed account kept
+    // its old @handle forever (§7.13). The DID key makes an overwrite safe —
+    // this row IS that account — and post-mapper reads xa_handle ahead of the
+    // per-item snapshot, so refreshing here updates every byline at once.
+    // Scoped to `handle` deliberately: external_items.author_handle stays a
+    // per-post historical snapshot, and display_name keeps its fill-only rule
+    // (an account with no displayName resolves `name` to "@handle", which must
+    // not overwrite a real stored name).
+    await pool.query(
+      `UPDATE external_authors
+          SET handle = $1
+        WHERE protocol = 'atproto'
+          AND stable_handle = $2
+          AND handle IS DISTINCT FROM $1`,
+      [handle, did],
+    );
     // feed_items carries its own denormalised author_name (legacy display path);
     // repair the "Bluesky user" / null placeholders for consistency.
     await pool.query(

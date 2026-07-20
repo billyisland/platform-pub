@@ -22,7 +22,7 @@ import type { VesselPalette } from "../workspace/tokens";
 type HausMode = "full" | "numerals-only" | "none";
 
 const ACTION_CLS =
-  "font-mono text-[11px] uppercase tracking-[0.02em] hover:opacity-80";
+  "font-mono text-mono-xs uppercase tracking-[0.02em] hover:opacity-80";
 
 export function PostActions({
   post,
@@ -52,7 +52,7 @@ export function PostActions({
     const net = post.scoresheet.up - post.scoresheet.down;
     return (
       <span
-        className="font-mono text-[11px] uppercase tracking-[0.02em]"
+        className="font-mono text-mono-xs uppercase tracking-[0.02em]"
         style={{ color: palette.cardMeta }}
       >
         {net > 0 ? `+${net}` : net}
@@ -103,7 +103,7 @@ export function PostActions({
           type="button"
           onClick={onReport}
           disabled={!onReport}
-          className="font-mono text-[11px] uppercase tracking-[0.02em] hover:opacity-80 disabled:opacity-50"
+          className="font-mono text-mono-xs uppercase tracking-[0.02em] hover:opacity-80 disabled:opacity-50"
           style={{ background: "none", border: "none", padding: 0, cursor: onReport ? "pointer" : "default", color: palette.cardMeta }}
         >
           Report

@@ -54,7 +54,7 @@ export function QuotedEmbed({
           e.stopPropagation();
           openQuoted?.();
         }}
-        className="font-mono text-[11px] uppercase tracking-[0.06em] mt-2 hover:opacity-80"
+        className="font-mono text-mono-xs uppercase tracking-[0.06em] mt-2 hover:opacity-80"
         style={{ background: "none", border: "none", padding: 0, cursor: openQuoted ? "pointer" : "default", color: palette.cardMeta }}
       >
         Quoted a post →
@@ -88,7 +88,7 @@ export function QuotedEmbed({
           e.stopPropagation();
           openQuoted?.();
         }}
-        className="font-mono text-[11px] uppercase tracking-[0.06em] mt-2 hover:opacity-80"
+        className="font-mono text-mono-xs uppercase tracking-[0.06em] mt-2 hover:opacity-80"
         style={{ background: "none", border: "none", padding: 0, cursor: openQuoted ? "pointer" : "default", color: palette.cardMeta }}
       >
         Quoted a post →
@@ -104,7 +104,7 @@ export function QuotedEmbed({
     <>
       {byline && (
         <div
-          className="font-mono text-[11px] uppercase tracking-[0.06em]"
+          className="font-mono text-mono-xs uppercase tracking-[0.06em]"
           style={{ color: palette.quoteMeta }}
         >
           {byline}

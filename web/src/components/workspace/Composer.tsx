@@ -5,10 +5,8 @@ import { useAuth } from '../../stores/auth'
 import { publishNote, type CrossPostTarget, type QuoteTarget } from '../../lib/publishNote'
 import { publishReply } from '../../lib/replies'
 import {
-  messages as messagesApi,
   linkedAccounts as linkedAccountsApi,
   type LinkedAccount,
-  type ResolverMatch,
 } from '../../lib/api'
 import { Glasshouse } from './Glasshouse'
 import { useEditorOverlay, seedFromNote } from '../../stores/editorOverlay'
@@ -45,14 +43,6 @@ const PROTOCOL_FROM_LINKED: Record<LinkedAccount['protocol'], Protocol | null> =
   activitypub: 'activitypub',
   nostr_external: null,
   rss: null,
-}
-
-interface ToChip {
-  kind: 'person' | 'broadcast'
-  id: string
-  label: string
-  protocol?: Protocol
-  match?: ResolverMatch
 }
 
 export interface ReplyTarget {
@@ -92,10 +82,6 @@ interface ComposerProps {
 // with the in-progress note body.
 export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished, onReplied }: ComposerProps) {
   const { user } = useAuth()
-  // chips stays empty now that the recipient "To" field is gone — every send is
-  // a public broadcast. Retained because the publish path keys its
-  // public/private branch off it.
-  const [chips] = useState<ToChip[]>([])
   const [body, setBody] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -187,29 +173,16 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
     quoteTarget?.isExternal && quoteTarget.quotedUrl ? quoteTarget.quotedUrl.length + 2 : 0
   const charCount = body.length + quoteUrlReserve
   const overLimit = charCount > NOTE_CHAR_LIMIT
-  const hasPersonChip = chips.some((c) => c.kind === 'person')
-  const hasBroadcastChip = chips.some((c) => c.kind === 'broadcast')
-  const isMixed = hasPersonChip && hasBroadcastChip
-  const isPrivate = hasPersonChip && !hasBroadcastChip
-  const broadcastNostrSelected =
-    chips.length === 0
-      ? enabledProtocols.has('nostr')
-      : hasBroadcastChip
-        ? chips.some((c) => c.kind === 'broadcast' && c.protocol === 'nostr')
-        : enabledProtocols.has('nostr')
-
-  // Resolve the broadcast protocol set: chip-driven if broadcast chips are
-  // present, otherwise the toggle selector. Non-native protocols only fire
-  // a cross-post when a valid linked account exists for that protocol.
-  const broadcastProtocols: Set<Protocol> = hasBroadcastChip
-    ? new Set(chips.filter((c) => c.kind === 'broadcast' && c.protocol).map((c) => c.protocol!))
-    : enabledProtocols
+  // Every send from this surface is a public broadcast (the recipient "To"
+  // field is gone; DMs live in the Messages inbox). Non-native protocols only
+  // fire a cross-post when a valid linked account exists for that protocol.
+  const broadcastNostrSelected = enabledProtocols.has('nostr')
   const linkedProtocols = (['atproto', 'activitypub'] as const).filter(
     (p) => linkedByProtocol[p],
   )
   const crossPostTargets: { protocol: Protocol; account: LinkedAccount }[] = []
   for (const p of linkedProtocols) {
-    if (!broadcastProtocols.has(p)) continue
+    if (!enabledProtocols.has(p)) continue
     if (!crossPostOn[p]) continue
     crossPostTargets.push({ protocol: p, account: linkedByProtocol[p]! })
   }
@@ -222,7 +195,7 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
     !!body.trim() &&
     !overLimit &&
     !publishing &&
-    (isReply || isQuote || (!isMixed && (isPrivate || broadcastNostrSelected)))
+    (isReply || isQuote || broadcastNostrSelected)
 
   async function handlePublish() {
     if (!canPublish || !user) return
@@ -249,26 +222,11 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
         onClose()
         return
       }
-      if (isPrivate) {
-        const memberIds = chips
-          .filter((c) => c.kind === 'person' && c.match?.account?.id)
-          .map((c) => c.match!.account!.id)
-        const conv = await messagesApi.createConversation(memberIds)
-        const sendResult = await messagesApi.send(conv.conversationId, body)
-        if (sendResult.skippedRecipientIds.length > 0) {
-          setError(
-            `Sent, but ${sendResult.skippedRecipientIds.length} recipient(s) were skipped — DM pricing not paid.`,
-          )
-          setPublishing(false)
-          return
-        }
-      } else {
-        const cross: CrossPostTarget[] = crossPostTargets.map(({ account }) => ({
-          linkedAccountId: account.id,
-          actionType: 'original',
-        }))
-        await publishNote(body, user.pubkey, undefined, cross.length > 0 ? cross : undefined)
-      }
+      const cross: CrossPostTarget[] = crossPostTargets.map(({ account }) => ({
+        linkedAccountId: account.id,
+        actionType: 'original',
+      }))
+      await publishNote(body, user.pubkey, undefined, cross.length > 0 ? cross : undefined)
       onPublished?.()
       onClose()
     } catch (err) {
@@ -472,17 +430,6 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
               <span style={{ color: overLimit ? TOKENS.errorFg : TOKENS.hintFg }}>
                 {charCount}/{NOTE_CHAR_LIMIT}
               </span>
-            ) : isMixed ? (
-              <span style={{ color: TOKENS.errorFg }}>
-                Mixing people with broadcast targets isn&rsquo;t supported in one send.
-              </span>
-            ) : isPrivate ? (
-              <span style={{ color: TOKENS.hintFg }}>
-                Sending privately to{' '}
-                {chips.filter((c) => c.kind === 'person').length} recipient
-                {chips.filter((c) => c.kind === 'person').length === 1 ? '' : 's'} — appears in
-                their inbox at all.haus/messages.
-              </span>
             ) : !broadcastNostrSelected ? (
               <span style={{ color: TOKENS.errorFg }}>
                 Cross-protocol broadcast needs Nostr as the anchor. Include Nostr to publish.
@@ -539,16 +486,12 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
                   ? 'Replying…'
                   : isQuote
                     ? 'Quoting…'
-                    : isPrivate
-                      ? 'Sending…'
-                      : 'Publishing…'
+                    : 'Publishing…'
                 : isReply
                   ? 'Reply'
                   : isQuote
                     ? 'Quote'
-                    : isPrivate
-                      ? 'Send'
-                      : 'Publish'}
+                    : 'Publish'}
             </button>
           </div>
         </div>

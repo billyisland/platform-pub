@@ -37,6 +37,17 @@ export interface JetstreamCommit {
     cid?: string;
     record?: BskyPostRecord;
   };
+  // Emitted when a DID's identity changes (handle rename, PDS move). Delivered
+  // even when wantedCollections is set — collection filtering applies to commit
+  // events only (verified against jetstream1.us-east 2026-07-20). `handle` is
+  // OPTIONAL and frequently absent: the event announces that identity changed,
+  // not necessarily what it changed to, so consumers must re-resolve the DID.
+  identity?: {
+    did: string;
+    handle?: string;
+    seq?: number;
+    time?: string;
+  };
 }
 
 // Exported for the backfill task (FeedViewPost.record is the same shape)

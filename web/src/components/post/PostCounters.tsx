@@ -65,7 +65,7 @@ export function PostCounters({
   const inline = mode === "inline-numerals";
   return (
     <div
-      className={`font-mono text-[11px] uppercase tracking-[0.02em] ${inline ? "" : "mt-2"} flex items-center gap-3`}
+      className={`font-mono text-mono-xs uppercase tracking-[0.02em] ${inline ? "" : "mt-2"} flex items-center gap-3`}
       style={{ color: palette.cardMeta }}
     >
       {parts.map((p) => (
@@ -100,7 +100,7 @@ function InteractiveRow({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="flex items-center gap-3 mt-2 font-mono text-[11px] uppercase tracking-[0.02em]"
+      className="flex items-center gap-3 mt-2 font-mono text-mono-xs uppercase tracking-[0.02em]"
       style={{ color: palette.cardMeta }}
     >
       {showLike && (

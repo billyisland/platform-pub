@@ -12,7 +12,6 @@ const TOKENS = {
   panelBorder: "var(--ah-ink-925)",
   hintFg: "var(--ah-stone-400)",
   errorFg: "var(--ah-crimson)",
-  inputBorder: "var(--ah-bone-bright)",
   primaryBg: "var(--ah-ink-925)",
   primaryFg: "var(--ah-bone)",
   primaryDisabled: "var(--ah-grey-300)",
@@ -94,7 +93,8 @@ export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
           width: 420,
           maxWidth: "calc(100vw - 48px)",
           background: TOKENS.panelBg,
-          border: `1px solid ${TOKENS.panelBorder}`,
+          // Floating material is lifted by its shadow alone, per the glasshouse
+          // material grammar (see CLAUDE.md › no single-pixel lines).
           padding: 24,
           boxShadow: "0 24px 48px rgba(0, 0, 0, 0.18)",
         }}
@@ -119,11 +119,12 @@ export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
             }
           }}
           placeholder="e.g. Politics, Friends, Reading list"
-          className="font-sans text-ui-sm w-full"
+          // A text field on a panel interior is the inset well; `focus-ring`
+          // restores the keyboard ring that the inline `outline: none` here
+          // used to suppress for everyone.
+          className="font-sans text-ui-sm w-full bg-glasshouse-well focus-ring"
           style={{
-            border: `1px solid ${TOKENS.inputBorder}`,
             padding: "10px 12px",
-            outline: "none",
             marginBottom: 12,
           }}
         />
