@@ -54,7 +54,7 @@ const { transfers } = vi.hoisted(() => {
 vi.mock('stripe', () => ({ default: class { transfers = transfers } }))
 
 interface TributeRow { id: string; inspirer: string; author: string; parent: string | null; status: string }
-interface AccrualRow { id: string; tribute_id: string; amount_pence: number; state: string; tribute_payout_id: string | null }
+interface AccrualRow { id: string; tribute_id: string; amount_pence: number; state: string; tribute_payout_id: string | null; read_state: string }
 interface PayoutRow { id: string; tribute_id: string; inspirer: string; author: string; amount_pence: number; status: string; stripe_transfer_id: string | null; seq: number }
 interface AccountRow { id: string; stripe_connect_id: string | null; stripe_connect_kyc_complete: boolean }
 
@@ -91,7 +91,7 @@ function seedTribute(
   db.tributes.set(id, { id, inspirer: opts.inspirer, author: opts.author, parent: opts.parent ?? null, status: 'live' })
   ensureAccount(opts.inspirer, opts.kyc ?? true, opts.connect)
   opts.accruals.forEach((amount, i) => {
-    db.accruals.push({ id: `acc-${id}-${i}`, tribute_id: id, amount_pence: amount, state: 'released', tribute_payout_id: null })
+    db.accruals.push({ id: `acc-${id}-${i}`, tribute_id: id, amount_pence: amount, state: 'released', tribute_payout_id: null, read_state: 'platform_settled' })
   })
 }
 
@@ -163,6 +163,15 @@ function query(sql: string, params: unknown[] = []) {
     advanced.forEach((a) => { a.state = 'paid' })
     return Promise.resolve(ok(advanced.map((a) => ({ amount_pence: String(a.amount_pence) }))))
   }
+  // --- rollback: payout-row lookup for the balancing carve (param = payoutId;
+  //     must precede the generic is_root check, whose text this SQL contains) ---
+  if (/FROM tribute_payouts tp\s+JOIN tributes t/.test(sql)) {
+    const p = db.payouts.get(params[0] as string)
+    const t = p ? db.tributes.get(p.tribute_id) : undefined
+    return Promise.resolve(
+      ok(p && t ? [{ inspirer_account_id: p.inspirer, author_account_id: p.author, is_root: t.parent === null }] : []),
+    )
+  }
   // --- is_root check ---
   if (/parent_tribute_id IS NULL AS is_root/.test(sql)) {
     const t = db.tributes.get(params[0] as string)
@@ -175,11 +184,20 @@ function query(sql: string, params: unknown[] = []) {
     if (p && p.status === 'pending') { p.status = 'failed'; return Promise.resolve(ok([{ id: p.id }])) }
     return Promise.resolve(ok([]))
   }
-  // --- rollback accruals ---
+  // --- rollback: void chargeback-reversed claims (RETURNING amount_pence) ---
+  if (/UPDATE tribute_accruals ta\s+SET state = 'voided'/.test(sql)) {
+    const payoutId = params[0] as string
+    const voided = db.accruals.filter(
+      (a) => a.tribute_payout_id === payoutId && a.state === 'released' && a.read_state === 'charged_back',
+    )
+    voided.forEach((a) => { a.state = 'voided'; a.tribute_payout_id = null })
+    return Promise.resolve(ok(voided.map((a) => ({ amount_pence: String(a.amount_pence) }))))
+  }
+  // --- rollback accruals (state-filtered: released only) ---
   if (/UPDATE tribute_accruals\s+SET state = 'released', tribute_payout_id = NULL/.test(sql)) {
     const payoutId = params[0] as string
     let n = 0
-    for (const a of db.accruals) if (a.tribute_payout_id === payoutId) { a.state = 'released'; a.tribute_payout_id = null; n++ }
+    for (const a of db.accruals) if (a.tribute_payout_id === payoutId && a.state === 'released') { a.tribute_payout_id = null; n++ }
     return Promise.resolve({ rows: [], rowCount: n })
   }
 
@@ -269,6 +287,28 @@ describe('tribute payout — terminal vs ambiguous', () => {
     expect(db.accruals[0].tribute_payout_id).toBeNull() // released for re-pay
     expect(db.accruals[0].state).toBe('released')
     expect(db.ledger).toHaveLength(0)
+  })
+
+  it('terminal failure of a chargeback-reversed claim → accrual VOIDED + balancing author carve', async () => {
+    // The read charged back while the payout was in flight: the chargeback
+    // planner reversed as-if-paid (tribute_carve_reversal +300 on the author,
+    // premised on this payout completing and posting the forward −300 carve).
+    // A terminal failure means completion never runs — the rollback must void
+    // the accrual (never re-pay clawed-back money) AND post the balancing
+    // tribute_carve, else the author's ledger_writer_earned stays inflated by
+    // +root_gross forever (correct earned delta for a clawed-back read is 0).
+    seedRoot()
+    db.accruals[0].read_state = 'charged_back'
+    transfers.throwNext(invalidRequest())
+    await payoutService.runTributePayoutCycle()
+
+    expect(onlyPayout().status).toBe('failed')
+    expect(db.accruals[0].state).toBe('voided') // terminal — never re-claimed
+    expect(db.accruals[0].tribute_payout_id).toBeNull()
+    expect(entries('tribute_carve')).toEqual([
+      expect.objectContaining({ account: 'W', counterparty: 'I1', amount: -300 }),
+    ])
+    expect(entries('tribute_payout')).toHaveLength(0) // paid side untouched (M3 residual)
   })
 
   it('ambiguous transfer error → NO rollback, accruals stay claimed, row pending', async () => {

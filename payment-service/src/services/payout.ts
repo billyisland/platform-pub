@@ -2113,15 +2113,64 @@ class PayoutService {
     // read_events.state. Releasing it here would let the next cycle re-claim
     // and re-pay clawed-back money; void it instead (terminal, unclaimable —
     // same disposition the planner gives an UNCLAIMED released accrual).
-    await client.query(
+    // State-filtered (the comment's own premise, made explicit): the
+    // <>'completed' guard upstream admits a 'reversed' payout, whose accruals
+    // are 'paid' and must stay so — reverseTributePayout's carve sum and the
+    // A9/A10 pairing both key on state = 'paid'.
+    const voided = await client.query<{ amount_pence: string }>(
       `UPDATE tribute_accruals ta
           SET state = 'voided', tribute_payout_id = NULL
          FROM read_events re
         WHERE ta.tribute_payout_id = $1
+          AND ta.state = 'released'
           AND re.id = ta.read_event_id
-          AND re.state = 'charged_back'`,
+          AND re.state = 'charged_back'
+        RETURNING ta.amount_pence`,
       [payoutId],
     )
+    // Pair the planner's premature EARNED-side reversal. The as-if-paid
+    // reversal posted tribute_carve_reversal (+root gross, author) on the
+    // premise that this payout would complete and post the forward
+    // tribute_carve (−root gross). Voiding here means completion never runs
+    // and the forward entry never posts — leaving the reversal unpaired and
+    // the author's ledger_writer_earned inflated by +root_gross FOREVER (the
+    // read was fully clawed back; the author's correct earned delta is 0).
+    // Post the balancing tribute_carve now, at the single point the ledger
+    // learns the payout will never execute the carve. ROOT only, mirroring
+    // both the forward entry and the planner's reversal (child carves never
+    // touch the article author's earned). The PAID side (the unpaired
+    // tribute_payout_reversal on the inspirer) is deliberately left: it is
+    // the documented M3 "over-reports the platform's loss" residual, excluded
+    // by reconcile-ledger A10a/A10b on failed payouts.
+    const voidedPence = voided.rows.reduce(
+      (s, r) => s + parseInt(r.amount_pence, 10),
+      0,
+    )
+    if (voidedPence > 0) {
+      const { rows: payoutRows } = await client.query<{
+        inspirer_account_id: string
+        author_account_id: string
+        is_root: boolean
+      }>(
+        `SELECT tp.inspirer_account_id, tp.author_account_id,
+                t.parent_tribute_id IS NULL AS is_root
+           FROM tribute_payouts tp
+           JOIN tributes t ON t.id = tp.tribute_id
+          WHERE tp.id = $1`,
+        [payoutId],
+      )
+      const payout = payoutRows[0]
+      if (payout?.is_root) {
+        await recordLedger(client, {
+          accountId: payout.author_account_id,
+          counterpartyId: payout.inspirer_account_id,
+          amountPence: -voidedPence,
+          triggerType: 'tribute_carve',
+          refTable: 'tribute_payouts',
+          refId: payoutId,
+        })
+      }
+    }
     // The rest — the node's own accruals this payout advanced (released →
     // paid): roll back to 'released' and unclaim so the next cycle re-pays.
     // State-filtered like the writer-read rollback: never flip a terminal
