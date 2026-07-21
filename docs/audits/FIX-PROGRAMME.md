@@ -23,6 +23,75 @@ starts.
 
 ## Progress
 
+- **2026-07-21** — **The no-overlap invariant now actually holds, and
+  merge-by-drag stopped fighting it.** A bug hunt over the drag/stretch/collision
+  seam found `resolveCollisions` could terminate with vessels still
+  intersecting, so *"no overlap in any scenario"* (WIREFRAME-DECISIONS Step 3)
+  was aspirational rather than enforced. Two reproductions: a 20px nudge into a
+  row of six threw one vessel 1780px right and left two stacked at **identical
+  coordinates** (a displaced vessel was re-pushed but never re-enqueued as a
+  pusher — the `visited` guard — so the second displacement never propagated);
+  and a vertical push clamped to the viewport floor was **accepted as resolved**,
+  leaving the vessel under the mover. The clamp bug had a nasty second-order
+  effect: since collision otherwise pushed every overlapping vessel away, the
+  merge hit-test could only ever fire when collision *failed* — **merge-by-drag
+  was reachable only through a defect.** The design question came first (does
+  the workspace even want collision, if merge needs overlap?) and the committed
+  specs settled it against dropping it: WORKSPACE-DESIGN-SPEC's *"occlusion
+  without affording retrieval"* is decisive here, because this workspace has
+  deliberately stripped every retrieval affordance a window manager would give
+  you — no z-cycling, no alt-tab, no taskbar — and the one locator a vessel has,
+  its numeral, is occluded along with everything else. Collision also carries the
+  spec's *carrying-capacity pressure*; free overlap would quietly defeat it.
+  **Resolution: the rule governs the RESTING state, not the gesture** (spec
+  amendment `8fd8815`), so overlap-while-held is legitimate and merge needs a
+  *drop target*, not overlap. Collision is a **rect** question, merge a
+  **pointer** question; conflating them into one rect test is what made them
+  fight. Implementation (`4c933eb`): the mover is now immovable **and in the
+  obstacle set** (it was the queue seed but not an obstacle, so nothing was
+  tested against it after the first pass); **horizontal is the escape valve** —
+  a vertical push that would clamp is no longer available, the resolver spends
+  the expensive sideways move, since only the unbounded axis can guarantee
+  resolution; displacement propagates in **waves** with no `visited` guard, which
+  also keeps a 40px nudge a 40px shuffle (resolving every pair at once let a
+  vessel be shoved by a neighbour that was itself about to move). Snapping is
+  **directional** (ceil outward / floor inward) so a resting position is both
+  lattice-aligned and provably clear — round-to-nearest could settle a vessel
+  back inside its obstacle by half a cell. Merge now arms the vessel the
+  *pointer* is inside (the dragged vessel's centre sits over things the user
+  never aimed at), suspends collision for that vessel alone so the dragged one
+  visibly rides over it (raised z-order + 4px armed frame), and **resolves the
+  floor when the confirmation is declined or the merge call fails** — that cancel
+  path is what makes the invariant true rather than usually-true. Also: **resize
+  commits now run a resolution pass** (a stretch left an overlap that no later
+  gesture repairs — the same violation by a different gesture); ceremony-hidden
+  vessels are marked inert (they render at `opacity: 0` but were live collision
+  *and* merge targets, contradicting a comment asserting the opposite); vessels
+  with no stored layout are skipped explicitly rather than by accident. **Tests:**
+  `web/tests/collision.test.ts` predated the infinite floor (`fef39d1`) and still
+  asserted a horizontal bound and `x >= 0` — both backwards under signed store
+  coordinates, and it was failing against the *corrected* resolver. Superseded by
+  a co-located suite (`web/src/lib/workspace/collision.test.ts`); live coverage
+  ported, stale assertion inverted into a test that negative x is allowed. The
+  suite catches the previous implementation on **6 of 11** cases, and mutation
+  runs confirm the fixtures bite (dropping the mover-obstacle rule, accepting a
+  clamped vertical, shrinking the propagation budget, and round-to-nearest
+  snapping each fail it). **One mutation survives**: reinstating the `visited`
+  guard still passes, including across 3000 tightened random layouts — in the
+  wave formulation a vessel never needs a second push that must re-propagate, so
+  removing it is *defensive, not load-bearing*; it was a genuine bug in the old
+  pairwise algorithm, not this one. **Not verified running** (same blocked dev
+  container swap): the armed-target *feel* — whether riding-over reads clearly,
+  whether arming is too eager when crossing a crowded floor — needs eyes in a
+  browser; a ~250ms dwell before arming is the tuning knob and drops into
+  `handleVesselDragFrame` without touching the resolver. **Known residue:**
+  layouts already persisted to `localStorage` by the buggy resolver may hold
+  stacked vessels, and the resolver only fixes what the *mover* disturbs, so an
+  existing pile stays piled until someone drags one of its members; a one-shot
+  heal on hydrate is the fix if it proves common. Docs: WORKSPACE-DESIGN-SPEC
+  addendum, WIREFRAME-DECISIONS Step 3 note, CLAUDE.md › *Desktop workspace
+  floor*.
+
 - **2026-07-20** — **The workspace floor extends infinitely sideways; the snap
   lattice halved to 10px.** The floor was a fixed `100vh` box with
   `overflow: hidden`, and seven places encoded "the floor is the viewport" (the
