@@ -84,6 +84,7 @@ const db = {
   ledger: [] as LedgerRow[],
   seq: 0,
   crashers: [] as RegExp[],
+  mutators: [] as Array<{ re: RegExp; fn: () => void }>,
 }
 
 function reset() {
@@ -93,6 +94,7 @@ function reset() {
   db.ledger = []
   db.seq = 0
   db.crashers = []
+  db.mutators = []
   transfers._reset()
 }
 
@@ -115,6 +117,9 @@ function seedWriter(writerId: string, opts: { reads: number[]; kyc?: boolean; co
 }
 
 function crashOn(re: RegExp) { db.crashers.push(re) }
+/** One-shot: run fn the first time a query matches re (models concurrent state
+ *  changes landing mid-cycle, e.g. a chargeback flipping a claimed read). */
+function mutateOn(re: RegExp, fn: () => void) { db.mutators.push({ re, fn }) }
 
 const ok = (rows: Record<string, unknown>[] = []) => ({ rows, rowCount: rows.length })
 
@@ -125,6 +130,9 @@ const unclaimed = (writerId: string) =>
 function query(sql: string, params: unknown[] = []) {
   for (let i = 0; i < db.crashers.length; i++) {
     if (db.crashers[i].test(sql)) { db.crashers.splice(i, 1); return Promise.reject(new Error('simulated crash')) }
+  }
+  for (let i = 0; i < db.mutators.length; i++) {
+    if (db.mutators[i].re.test(sql)) { const { fn } = db.mutators.splice(i, 1)[0]; fn() }
   }
 
   if (/INSERT INTO ledger_entries/.test(sql)) {
@@ -222,11 +230,18 @@ function query(sql: string, params: unknown[] = []) {
     }
     return Promise.resolve(ok([]))
   }
-  // --- rollback claimed reads ---
+  // --- rollback claimed reads (state-filtered: charged_back stays terminal) ---
   if (/UPDATE read_events\s+SET state = 'platform_settled',\s+writer_payout_id = NULL/.test(sql)) {
     const payoutId = params[0] as string
     let n = 0
-    for (const r of db.reads) if (r.writer_payout_id === payoutId) { r.state = 'platform_settled'; r.writer_payout_id = null; n++ }
+    for (const r of db.reads) if (r.writer_payout_id === payoutId && r.state === 'platform_settled') { r.writer_payout_id = null; n++ }
+    return Promise.resolve({ rows: [], rowCount: n })
+  }
+  // --- rollback: null the dangling claim pointer on charged_back reads ---
+  if (/UPDATE read_events\s+SET writer_payout_id = NULL\s+WHERE writer_payout_id = \$1\s+AND state = 'charged_back'/.test(sql)) {
+    const payoutId = params[0] as string
+    let n = 0
+    for (const r of db.reads) if (r.writer_payout_id === payoutId && r.state === 'charged_back') { r.writer_payout_id = null; n++ }
     return Promise.resolve({ rows: [], rowCount: n })
   }
   if (/UPDATE subscription_events\s+SET writer_payout_id = NULL/.test(sql)) {
@@ -311,6 +326,26 @@ describe('writer payout — terminal vs ambiguous', () => {
     // Claim rolled back: the read is free for the next cycle to re-pay under a new id.
     expect(db.reads[0].writer_payout_id).toBeNull()
     expect(db.reads[0].state).toBe('platform_settled')
+    expect(writerPayoutEntries()).toHaveLength(0)
+  })
+
+  it('a read charged back mid-flight survives a terminal failure: state stays terminal, pointer nulled, sibling released', async () => {
+    // The chargeback planner flipped a claimed read to 'charged_back' while the
+    // transfer was in flight (its ledger reversal posted as-if-paid — the M3
+    // residual). A terminal failure's rollback must NOT flip it back to
+    // platform_settled (that erases the chargeback marker and re-pays
+    // clawed-back money next cycle) — it keeps its terminal state and only
+    // drops the claim pointer at the dead payout.
+    seedWriter('writer-1', { reads: [5000, 3000] })
+    mutateOn(/UPDATE writer_payouts SET amount_pence/, () => { db.reads[0].state = 'charged_back' })
+    transfers.throwNext(invalidRequest())
+    await payoutService.runPayoutCycle()
+
+    expect(onlyPayout().status).toBe('failed')
+    expect(db.reads[0].state).toBe('charged_back') // terminal — never re-claimed
+    expect(db.reads[0].writer_payout_id).toBeNull() // no dangling claim pointer
+    expect(db.reads[1].state).toBe('platform_settled') // clean sibling released for re-pay
+    expect(db.reads[1].writer_payout_id).toBeNull()
     expect(writerPayoutEntries()).toHaveLength(0)
   })
 

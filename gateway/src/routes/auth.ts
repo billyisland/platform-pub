@@ -171,8 +171,10 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Account not found" });
       }
 
-      // A suspended account must never mint a session, even holding a valid link.
-      if (account.status === "suspended") {
+      // Only active/deactivated may mint a session: suspended (admin action)
+      // and deleted (terminal, migration 159) must be refused even holding a
+      // valid pre-issued link — mirrors the Google OAuth branch.
+      if (account.status !== "active" && account.status !== "deactivated") {
         return reply.status(403).send({ error: "Account suspended" });
       }
 

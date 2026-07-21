@@ -239,7 +239,15 @@ WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
    OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tribute_payouts'
          AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
    OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tab_settlements'
-         AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id));
+         AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+   -- Catch-all: ref_table-scoped branches are default-ALLOW — a reversal posted
+   -- with a ref_table outside the known set matches no branch and is silently
+   -- unchecked forever. The next F5-style trigger reuse must fail loud here
+   -- (add its scoped branch above, then extend this list).
+   OR (le.trigger_type = 'writer_payout_reversal'
+         AND le.ref_table NOT IN ('writer_payouts', 'publication_payout_splits', 'tab_settlements'))
+   OR (le.trigger_type = 'tribute_payout_reversal'
+         AND le.ref_table NOT IN ('tribute_payouts', 'tab_settlements'));
 
 -- A12: F3 reversal pairing. Every reversed settlement (reversed_at set) holds
 -- exactly one reader-side reversal of −amount_pence (the restored debt), and no

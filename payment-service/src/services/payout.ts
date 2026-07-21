@@ -1010,6 +1010,21 @@ class PayoutService {
       [payoutId],
     )
 
+    // A read the state filter above skips — flipped 'charged_back' mid-flight
+    // by the chargeback planner — keeps its terminal state but must not keep a
+    // claim pointer at a payout that will never pay it: null the pointer alone
+    // (no state/state_updated_at touch — the chargeback stamp stays honest).
+    // Symmetric with the tribute leg (rollbackTributePayoutRows voids AND
+    // nulls); the planner's as-if-paid reversal residual on such reads is the
+    // documented M3 artefact (chargeback.ts, claimedByPendingPayout).
+    await client.query(
+      `UPDATE read_events
+       SET writer_payout_id = NULL
+       WHERE writer_payout_id = $1
+         AND state = 'charged_back'`,
+      [payoutId],
+    )
+
     // F1: release claimed subscription earnings (no state column — just unclaim).
     await client.query(
       `UPDATE subscription_events
