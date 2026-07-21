@@ -391,26 +391,36 @@ export function WorkspaceView() {
   }, [extent.originX, canvasSlack, isMobile, vessels.length]);
 
   const dragActiveRef = useRef<string | null>(null);
+  // The vessel the pointer is currently inside during a drag — the ARMED merge
+  // target (WORKSPACE-DESIGN-SPEC.md › Addendum — No-overlap governs the
+  // resting state). Merge asks a POINTER question; collision asks a RECT
+  // question. Keeping them separate is what stops the two fighting: while a
+  // target is armed, collision is suspended for that vessel alone, so the
+  // dragged vessel visibly rides over it instead of shoving it away.
+  const [armedMergeTarget, setArmedMergeTarget] = useState<string | null>(null);
+  const armedMergeTargetRef = useRef<string | null>(null);
+  armedMergeTargetRef.current = armedMergeTarget;
 
-  function handleVesselDragStart(feedId: string) {
-    dragActiveRef.current = feedId;
-    // D11 drag-suspension seam (inert under the frozen floor; see explain.ts).
-    if (useExplain.getState().isActive) useExplain.getState().setDragging(feedId);
-  }
-
-  function handleVesselDragFrame(
-    feedId: string,
-    pos: { x: number; y: number },
-  ) {
+  /**
+   * Read the floor's live geometry in STORE coordinates. `exclude` drops the
+   * vessel being acted on; a vessel with no stored layout is skipped, since it
+   * has no store-space position to reason about.
+   */
+  function readFloorRects(exclude: string): {
+    floor: HTMLDivElement;
+    others: VesselRect[];
+  } | null {
     const floor = floorRef.current;
-    if (!floor) return;
-
+    if (!floor) return null;
     const store = useWorkspace.getState();
     const others: VesselRect[] = [];
-
     floor.querySelectorAll<HTMLElement>("[data-vessel-id]").forEach((el) => {
       const id = el.dataset.vesselId!;
-      if (id === feedId) return;
+      if (id === exclude) return;
+      // A vessel hidden for a ceremony still renders (opacity 0), so it is in
+      // the DOM but is not on the floor as far as the user is concerned — it
+      // must neither be pushed nor be a merge target.
+      if (el.dataset.vesselInert === "true") return;
       const layout = store.positions[id];
       if (!layout) return;
       others.push({
@@ -421,27 +431,81 @@ export function WorkspaceView() {
         h: el.offsetHeight,
       });
     });
+    return { floor, others };
+  }
 
-    const moverEl = floor.querySelector<HTMLElement>(
-      `[data-vessel-id="${feedId}"]`,
-    );
-    if (!moverEl) return;
+  /**
+   * Restore the no-overlap invariant around one vessel. Every gesture that
+   * produces a resting state owes this — drag, resize, and the declined-merge
+   * path alike. `spare` is the armed merge target, exempt for the duration of
+   * the gesture that is aiming at it.
+   */
+  const resolveFloorAround = useCallback(
+    (feedId: string, pos: { x: number; y: number }, spare?: string | null) => {
+      const read = readFloorRects(feedId);
+      if (!read) return;
+      const { floor, others } = read;
+      const moverEl = floor.querySelector<HTMLElement>(
+        `[data-vessel-id="${feedId}"]`,
+      );
+      if (!moverEl) return;
 
-    const mover: VesselRect = {
-      id: feedId,
-      x: pos.x,
-      y: pos.y,
-      w: moverEl.offsetWidth,
-      h: moverEl.offsetHeight,
-    };
+      const mover: VesselRect = {
+        id: feedId,
+        x: pos.x,
+        y: pos.y,
+        w: moverEl.offsetWidth,
+        h: moverEl.offsetHeight,
+      };
 
-    // Vertical bound only — a pushed vessel may land at any x (the canvas
-    // grows to cover it); bounding x would pin it to the viewport edge.
-    const updates = resolveCollisions(mover, others, { h: floor.clientHeight });
+      // Vertical bound only — a pushed vessel may land at any x (the canvas
+      // grows to cover it); bounding x would pin it to the viewport edge.
+      const updates = resolveCollisions(
+        mover,
+        spare ? others.filter((o) => o.id !== spare) : others,
+        { h: floor.clientHeight },
+      );
+      if (updates.size > 0) batchUpdatePositions(Object.fromEntries(updates));
+    },
+    [batchUpdatePositions],
+  );
 
-    if (updates.size > 0) {
-      batchUpdatePositions(Object.fromEntries(updates));
-    }
+  function handleVesselDragStart(feedId: string) {
+    dragActiveRef.current = feedId;
+    // D11 drag-suspension seam (inert under the frozen floor; see explain.ts).
+    if (useExplain.getState().isActive) useExplain.getState().setDragging(feedId);
+  }
+
+  function handleVesselDragFrame(
+    feedId: string,
+    pos: { x: number; y: number },
+    pointer: { x: number; y: number },
+  ) {
+    const floor = floorRef.current;
+    if (!floor) return;
+
+    // Merge arming — a POINTER hit-test, in viewport space. The dragged
+    // vessel's centre is the wrong probe: a vessel is grabbed by its numeral in
+    // the bottom-left corner as readily as anywhere else, so its centre
+    // routinely sits over something the user never aimed at.
+    let armed: string | null = null;
+    floor.querySelectorAll<HTMLElement>("[data-vessel-id]").forEach((el) => {
+      const id = el.dataset.vesselId!;
+      if (id === feedId || armed) return;
+      if (el.dataset.vesselInert === "true") return;
+      const r = el.getBoundingClientRect();
+      if (
+        pointer.x >= r.left &&
+        pointer.x <= r.right &&
+        pointer.y >= r.top &&
+        pointer.y <= r.bottom
+      ) {
+        armed = id;
+      }
+    });
+    if (armed !== armedMergeTargetRef.current) setArmedMergeTarget(armed);
+
+    resolveFloorAround(feedId, pos, armed);
   }
 
   function handleVesselDragEnd(feedId: string, pos: { x: number; y: number }) {
@@ -449,42 +513,49 @@ export function WorkspaceView() {
     dragActiveRef.current = null;
     if (useExplain.getState().draggingFeedId) useExplain.getState().setDragging(null);
 
-    const floor = floorRef.current;
-    if (!floor) return;
-    const moverEl = floor.querySelector<HTMLElement>(
-      `[data-vessel-id="${feedId}"]`,
-    );
-    if (!moverEl) return;
-    const cx = pos.x + moverEl.offsetWidth / 2;
-    const cy = pos.y + moverEl.offsetHeight / 2;
+    const armed = armedMergeTargetRef.current;
+    setArmedMergeTarget(null);
 
-    const store = useWorkspace.getState();
-    floor.querySelectorAll<HTMLElement>("[data-vessel-id]").forEach((el) => {
-      const id = el.dataset.vesselId!;
-      if (id === feedId) return;
-      // Hidden feeds never render a vessel, so every [data-vessel-id] hit
-      // here is a live merge target.
-      const layout = store.positions[id];
-      if (!layout) return;
-      if (
-        cx >= layout.x &&
-        cx <= layout.x + el.offsetWidth &&
-        cy >= layout.y &&
-        cy <= layout.y + el.offsetHeight
-      ) {
-        const source = vessels.find((v) => v.feed.id === feedId);
-        const target = vessels.find((v) => v.feed.id === id);
-        if (source && target) {
-          setPendingMerge({ source: source.feed, target: target.feed });
-        }
+    if (armed) {
+      const source = vessels.find((v) => v.feed.id === feedId);
+      const target = vessels.find((v) => v.feed.id === armed);
+      if (source && target) {
+        setPendingMerge({ source: source.feed, target: target.feed });
+        // Left overlapping on purpose, pending the answer. Whichever way the
+        // confirmation goes, the floor is resolved before it comes to rest.
+        return;
       }
-    });
+    }
+
+    resolveFloorAround(feedId, pos);
   }
+
+  /**
+   * The merge did not happen — declined, or it failed. The source vessel is
+   * sitting on top of the target because the gesture aimed it there, so the
+   * invariant has to be restored now: this is the cancel path that keeps "no
+   * overlap in any scenario" true rather than usually-true.
+   */
+  const settleAfterAbandonedMerge = useCallback(
+    (sourceId: string) => {
+      const layout = useWorkspace.getState().positions[sourceId];
+      if (!layout) return;
+      resolveFloorAround(sourceId, { x: layout.x, y: layout.y });
+    },
+    [resolveFloorAround],
+  );
 
   async function handleMergeConfirm() {
     if (!pendingMerge) return;
     const { source, target } = pendingMerge;
-    await workspaceFeedsApi.merge(target.id, source.id);
+    try {
+      await workspaceFeedsApi.merge(target.id, source.id);
+    } catch (err) {
+      // The source vessel still exists and is still overlapping the target.
+      setPendingMerge(null);
+      settleAfterAbandonedMerge(source.id);
+      throw err;
+    }
     setVessels((prev) => {
       const next = prev.filter((v) => v.feed.id !== source.id);
       const targetVessel = next.find((v) => v.feed.id === target.id);
@@ -1426,14 +1497,22 @@ export function WorkspaceView() {
                     y: next.y,
                   })
                 }
-                onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
+                // A stretch produces a resting state exactly as a drop does, so
+                // it owes the same resolution pass — and is worse left
+                // unresolved, since no later gesture repairs it.
+                onSizeCommit={(next) => {
+                  setVesselSize(v.feed.id, next);
+                  resolveFloorAround(v.feed.id, { x: layout.x, y: layout.y });
+                }}
                 onDragStart={() => handleVesselDragStart(v.feed.id)}
-                onDragFrame={(pos) =>
-                  handleVesselDragFrame(v.feed.id, {
-                    x: pos.x + extent.originX,
-                    y: pos.y,
-                  })
+                onDragFrame={(pos, pointer) =>
+                  handleVesselDragFrame(
+                    v.feed.id,
+                    { x: pos.x + extent.originX, y: pos.y },
+                    pointer,
+                  )
                 }
+                armed={armedMergeTarget === v.feed.id}
                 hidden={ceremony?.feedId === v.feed.id}
                 floorRef={floorRef}
                 onCardDrop={(raw) => handleCardDrop(v.feed.id, raw)}
@@ -1622,7 +1701,11 @@ export function WorkspaceView() {
             ? feedDisplayName(pendingMerge.target.id, pendingMerge.target.name)
             : ""
         }
-        onClose={() => setPendingMerge(null)}
+        onClose={() => {
+          const sourceId = pendingMerge?.source.id;
+          setPendingMerge(null);
+          if (sourceId) settleAfterAbandonedMerge(sourceId);
+        }}
         onConfirm={handleMergeConfirm}
       />
       <PipPanel

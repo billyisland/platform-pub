@@ -38,9 +38,10 @@ export interface ExtentRect {
  * compensated with a scroll adjustment, which is fine at a gesture boundary and
  * jittery every frame.
  *
- * `originX` is snapped so canvas coordinates stay on the 20px lattice (store
- * coordinates are already snapped, and lattice-aligned DOM positions are what
- * keep the vessels free of sub-pixel blur).
+ * `originX` is snapped so canvas coordinates stay on the shared lattice (see
+ * ./grid — 10px since 2026-07-20). Store coordinates are already snapped, and
+ * lattice-aligned DOM positions are what keep the vessels free of sub-pixel
+ * blur.
  */
 export function computeExtent(
   rects: ExtentRect[],

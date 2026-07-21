@@ -81,7 +81,17 @@ interface VesselProps {
   onPositionCommit: (pos: { x: number; y: number }) => void;
   onSizeCommit?: (size: { w: number; h: number }) => void;
   onDragStart?: () => void;
-  onDragFrame?: (pos: { x: number; y: number }) => void;
+  /** `pointer` is the cursor in VIEWPORT coordinates — the probe the host uses
+   *  to arm a merge target. Merge is a pointer question, collision a rect one
+   *  (WORKSPACE-DESIGN-SPEC.md › Addendum — No-overlap governs the resting
+   *  state); `pos` answers the second, `pointer` the first. */
+  onDragFrame?: (
+    pos: { x: number; y: number },
+    pointer: { x: number; y: number },
+  ) => void;
+  /** This vessel is the armed merge target: the dragged vessel is riding over
+   *  it and releasing here will offer to combine them. */
+  armed?: boolean;
   /**
    * The scroll viewport the floor lives in. Used for MEASUREMENT only (the
    * vertical clamp + resize ceiling read its clientHeight) — never as a
@@ -119,6 +129,7 @@ export function Vessel({
   onSizeCommit,
   onDragStart: onDragStartProp,
   onDragFrame,
+  armed,
   floorRef,
   onCardDrop,
   onRefresh,
@@ -164,6 +175,10 @@ export function Vessel({
   const isHorizontal = effOrientation === "horizontal";
 
   const isDraggingRef = useRef(false);
+  // Drag raises the vessel above its neighbours so it visibly RIDES OVER an
+  // armed merge target rather than disappearing behind it. Transient only —
+  // no z-order is persisted, and the resting floor stays flat.
+  const [isDragging, setIsDragging] = useState(false);
   const prevScrollTopRef = useRef(0);
 
   useEffect(() => {
@@ -364,6 +379,7 @@ export function Vessel({
     <motion.div
       ref={vesselRef}
       data-vessel-id={feedId}
+      data-vessel-inert={hidden ? "true" : undefined}
       role="region"
       aria-label={
         descriptiveName
@@ -381,6 +397,7 @@ export function Vessel({
       onPointerDown={startDrag}
       onDragStart={() => {
         isDraggingRef.current = true;
+        setIsDragging(true);
         onDragStartProp?.();
       }}
       onDrag={(_, info) => {
@@ -389,10 +406,11 @@ export function Vessel({
         const clamped = clampPos(snap(mx.get()), snap(my.get()));
         mx.set(clamped.x);
         my.set(clamped.y);
-        onDragFrame?.({ x: clamped.x, y: clamped.y });
+        onDragFrame?.({ x: clamped.x, y: clamped.y }, info.point);
       }}
       onDragEnd={() => {
         isDraggingRef.current = false;
+        setIsDragging(false);
         onPositionCommit(clampPos(snap(mx.get()), snap(my.get())));
       }}
       style={{
@@ -403,6 +421,7 @@ export function Vessel({
         x: mx,
         y: my,
         width: effW,
+        zIndex: isDragging ? 5 : undefined,
         touchAction: "none",
         cursor: hidden ? undefined : "grab",
         opacity: hidden ? 0 : 1,
@@ -425,8 +444,10 @@ export function Vessel({
           height: heightSet ? effH : undefined,
           display: "flex",
           flexDirection: "column",
-          outline: isDragTarget ? `2px solid ${palette.walls}` : undefined,
-          outlineOffset: -2,
+          outline:
+            isDragTarget || armed ? `4px solid ${palette.walls}` : undefined,
+          outlineOffset: -4,
+          transition: "outline-color 120ms ease-out",
         }}
       >
         {/* Feed numeral — bottom-left corner. Doubles as the vessel name/drag
