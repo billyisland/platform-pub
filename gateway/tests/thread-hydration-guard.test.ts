@@ -42,6 +42,20 @@ const {
 
 const VALID_ID = "f".repeat(64); // decodeNostrEventId accepts raw 64-hex
 
+// A minimal harvested focal event: a run that finds at least one event is a
+// SUCCESS. (An empty harvest is a failure since 2026-07-21 — the k-of-n soft
+// deadline can fire with zero relays answered, and success-on-empty cached the
+// bare focal for the full TTL; see the dedicated case below.)
+const FOCAL_EVENT = {
+  id: VALID_ID,
+  pubkey: "a".repeat(64),
+  created_at: 1_700_000_000,
+  kind: 1,
+  tags: [] as string[][],
+  content: "hello",
+  sig: "b".repeat(128),
+};
+
 function item(id: string, extra?: Record<string, unknown>) {
   return {
     id,
@@ -76,6 +90,7 @@ describe("thread hydration in-flight registry (D1)", () => {
   });
 
   it("a settled success still throttles re-triggers but reports not-hydrating", async () => {
+    fetchNostrEvents.mockResolvedValue([FOCAL_EVENT]);
     await hydrateExternalThreadContext(item("C"));
     // Guard still set → no re-trigger …
     expect(willHydrateThread("C", "nostr_external")).toBe(false);
@@ -97,6 +112,16 @@ describe("thread hydration in-flight registry (D1)", () => {
     // no 60 s freeze — and nothing is left in flight.
     expect(willHydrateThread("D", "nostr_external")).toBe(true);
     expect(isThreadHydrating("D")).toBe(false);
+  });
+
+  it("a zero-event harvest is a FAILURE, not an empty thread (guard cleared)", async () => {
+    // Both relay fetches resolving empty is indistinguishable from "no relay
+    // answered before the soft deadline" — reporting success here cached the
+    // bare focal for the full client TTL with retries frozen behind the guard.
+    fetchNostrEvents.mockResolvedValue([]);
+    await expect(hydrateExternalThreadContext(item("Z"))).resolves.toBe(false);
+    expect(willHydrateThread("Z", "nostr_external")).toBe(true);
+    expect(isThreadHydrating("Z")).toBe(false);
   });
 
   it("non-hydratable protocols are a resolved no-op, never in flight", async () => {

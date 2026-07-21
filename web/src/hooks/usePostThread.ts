@@ -25,8 +25,12 @@ const REPLY_PAGE = 5; // §8 initial descendant page
 // Bounded by a total budget so a hydrate that never settles can't poll forever.
 // (Replaces the fixed [3000, 8000] merge offsets that stopped at 8 s and let a
 // slow relay's result land on an empty DB — THREAD-HYDRATION-LATENCY-ADR D2.)
-const HYDRATION_POLL_MS = [1_500, 3_000, 6_000, 12_000, 24_000]; // step, cap ~30 s
-const HYDRATION_POLL_BUDGET_MS = 45_000;
+// Backoff steps; cumulative tick times land at 1.5 / 4.5 / 10.5 / 22.5 /
+// 46.5 s. The budget must clear the LAST tick — the guard runs before the
+// fetch, so a budget of 45 s silently killed the 46.5 s poll and the real
+// window was 22.5 s, under the pathological ancestor-walk worst case (~48 s).
+const HYDRATION_POLL_MS = [1_500, 3_000, 6_000, 12_000, 24_000];
+const HYDRATION_POLL_BUDGET_MS = 50_000;
 
 // Per-focal pagination state: the cursor for the *next* page of that focal's
 // flattened descendants, and the full subtree count for the "more" affordance.

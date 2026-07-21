@@ -361,6 +361,14 @@ async function hydrateBlueskyThread(item: ExternalItemRow): Promise<void> {
     headers: { Accept: "application/json" },
     timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
   });
+  // Transient trouble (rate limit / server error) must THROW: the job's
+  // success bit is what keeps a fast failure from reading as settled (§0f-5)
+  // — a silent return here reported success, cached the bare focal for the
+  // full client TTL, and left the throttle guard set (no retry for 60s: the
+  // D1 deadlock in miniature). A definitive 4xx (deleted/blocked post) has
+  // nothing to hydrate and stays a clean settle.
+  if (res.status === 429 || res.status >= 500)
+    throw new Error(`appview thread fetch failed: ${res.status}`);
   if (!res.ok) return;
   const data = JSON.parse(res.text) as { thread: BlueskyThreadViewPost };
   if (!isThreadViewPost(data.thread)) return;
@@ -380,6 +388,11 @@ async function hydrateMastodonThread(item: ExternalItemRow): Promise<void> {
     `https://${host}/api/v1/statuses/${statusId}/context`,
     { headers: { Accept: "application/json" }, timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS },
   );
+  // Same split as the Bluesky fetch above: transient (429/5xx) throws so the
+  // failure clears the guard and the client keeps polling; a definitive 4xx
+  // (status deleted, instance refuses) is a clean settle.
+  if (res.status === 429 || res.status >= 500)
+    throw new Error(`mastodon context fetch failed: ${res.status}`);
   if (!res.ok) return;
 
   interface RichStatus extends MastodonStatus {
@@ -531,8 +544,16 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   );
   for (const ev of broad) all.set(ev.id, ev);
   // Nothing found (focal absent, broad empty) ⇒ the walk can't start either
-  // (its cursor is the focal's reply target), so bail before the profile fetch.
-  if (all.size === 0) return;
+  // (its cursor is the focal's reply target). Zero events is a FAILURE, not an
+  // empty thread: the k-of-n soft deadline fires unconditionally, so on a
+  // slow-relay day both fetches can come back empty with no relay having
+  // answered — and a silent return here read as hydration success, caching
+  // the bare focal for the full client TTL with the throttle guard still set
+  // (§0f-5's rule: a fast failure must not read as settled). An event that
+  // genuinely no longer exists on any relay costs only the bounded client
+  // poll budget in retries.
+  if (all.size === 0)
+    throw new Error("nostr thread hydration harvested zero events");
 
   // D4: the kind-0 profile REQ for every author known after the broad net runs
   // CONCURRENTLY with the ancestor walk below — the two slow phases cost `max`,
