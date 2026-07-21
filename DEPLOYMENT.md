@@ -223,8 +223,25 @@ The base schema (`schema.sql`) is auto-applied on **first** postgres boot via th
 - **Checksums:** the runner records a sha256 per applied migration and verifies all applied rows against the files on disk on every run — editing an already-applied migration file makes the next run fail loudly (corrections go in a NEW migration). Rows without a checksum (the schema.sql seed, or history from before checksums shipped) are stamped from the files on first sight, so the first run after upgrading past migrate-hardening backfills the whole table; that run's burst of UPDATEs is expected.
 
 ```bash
-# From the host (Node required):
-DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpub \
+# From the host (Node required). Note 127.0.0.1, NOT localhost: compose
+# publishes postgres as "127.0.0.1:5432:5432" (IPv4 loopback only), while
+# localhost resolves to ::1 first — so localhost fails with
+# "connect ECONNREFUSED ::1:5432". Nothing sets DATABASE_URL in a plain
+# host shell, so it must be passed explicitly or the runner falls through
+# to pg's own localhost default and hits the same ::1.
+POSTGRES_PASSWORD=$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-) \
+DATABASE_URL="postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platformpub" \
+  npx tsx shared/src/db/migrate.ts
+```
+
+If the password contains URL-special characters (`@ : / # ?`) the connection
+string needs percent-encoding. Skip the problem by letting `pg` read its own
+env vars instead — the runner passes `connectionString: undefined` when
+`DATABASE_URL` is unset, so these take over:
+
+```bash
+PGHOST=127.0.0.1 PGPORT=5432 PGUSER=platformpub PGDATABASE=platformpub \
+PGPASSWORD=$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-) \
   npx tsx shared/src/db/migrate.ts
 ```
 
@@ -283,10 +300,17 @@ DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpu
 
 ```bash
 cd /root/platform-pub
-git pull origin master
 
-# 1. Apply ALL pending migrations (nothing runs them automatically)
-DATABASE_URL=postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platformpub \
+# 0. Update the source. NOT `git pull` — the prod checkout sits on a local
+#    branch (workspace-experiment) whose remote ref was deleted, so pull errors
+#    with "no such ref". That is NOT evidence the source is stale.
+git fetch origin && git reset --hard origin/master
+git log --oneline -1                       # confirm you are where you expect
+
+# 1. Apply ALL pending migrations (nothing runs them automatically).
+#    127.0.0.1, not localhost — see the migration section above for why.
+POSTGRES_PASSWORD=$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-) \
+DATABASE_URL="postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platformpub" \
   npx tsx shared/src/db/migrate.ts
 
 # 2. Ensure new/required env vars are present in the relevant .env files
