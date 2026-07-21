@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (drift-guard batch — §0h.6/.7/.8)** — three duplications that
+  each had a bug class attached, closed with a guard rather than a promise.
+  - **Cursor codec (§0h.8).** The M13 rule (`Number`, never `parseInt`; reject
+    empty explicitly) was written out three times and the `<epoch>:<uuid>`
+    encoder hand-rolled five times. `gateway/src/lib/cursor.ts` is now the one
+    home. The two wire formats stay distinct deliberately — collapsing the
+    untagged and tagged families would invalidate every in-flight client cursor
+    for no correctness gain. **Also closed the undefended half of M13**: a
+    `::bigint` cast truncates the epoch inside Postgres, before any decoder
+    runs, so no JS care can recover it; the original fix corrected the queries
+    but nothing stopped the next one from casting again. Reverting the parser
+    to `parseInt` now fails **12** tests where the pre-consolidation fix failed
+    7 — one primitive backs every decoder, which is the consolidation paying
+    for itself.
+  - **Config fallback parity (§0h.7).** Parity chosen over deletion. Both tests
+    drive the REAL loaders with an empty config, so they exercise the shipping
+    fallback path rather than a copy of the table, and each pins the *other*
+    direction too — a seeded value must beat its fallback, since a fallback
+    shadowing a present row passes a naive parity check while removing all
+    operator control. All 13 agreed: a guard, not a repair. One of the three
+    sites was deleted outright — `engagement-baseline-refresh` re-declared the
+    five E weights with independent fallbacks.
+  - **Resonance E (§0h.6).** Formula extracted to shared builders in the
+    existing `bandExpr`/`PCTL_EXPR` idiom. The failure mode is why it earns a
+    test: E is the numerator in one module and the denominator in the other, so
+    a term reweighted on one side throws nothing — it scores every post against
+    a distribution built from a different formula and *presents as mis-tuned
+    bands*, sending the next person to retune gates that were never wrong.
+  - **Population divergence: found, deliberately NOT fixed.** The scorer bands
+    `is_context_only` rows the baseline excluded (reachable — the selection
+    filters `deleted_at` only). It reads like a bug and isn't clearly one:
+    context-only rows are hidden from feeds but visible in threads and hydrated
+    profile timelines, so excluding them leaves visible posts bandless.
+    Product question, glyph is dark, and changing scoring population unmeasured
+    while dark is what the dial discipline warns against — so the CURRENT
+    divergence is pinned by a test that fails if anyone aligns it silently.
+  - **Verification.** Every claim mutation-tested (8 mutations across the three
+    items, all killed). The resonance refactor was additionally driven
+    end-to-end against the dev DB — 613 author baselines, 4 ambient rows —
+    because a SQL refactor that only typechecks is the evidence tier this
+    programme keeps catching. Suites: feed-ingest 224, gateway 371, shared 101.
+  - **Two incidental findings.** `shared`'s `tsc` build never copied
+    `src/db/*.sql` into `dist`, so a `migrate.ts` run from `dist` would ENOENT
+    on `config-defaults.sql` — not live (the deploy path is `tsx src`) and it
+    fails loud rather than skipping the seed, but `dist` should be
+    self-contained; build now copies. And a scripted edit of this queue
+    truncated `CONSOLIDATED-TODO.md` to zero: `open(p,'w').write(open(p).read()
+    …)` opens for write — truncating — *before* evaluating the read. Restored
+    from HEAD, redone as read-all-then-write-once. Worth knowing before the
+    next scripted doc edit.
+
 - **2026-07-21 (prod deploy — the §0i/§0h code-tier batch)** — prod brought to
   `ecd4499`. **The deploy's main finding was about evidence, not code.**
   - **The pending-deploy memory was substantially wrong.** It listed a large

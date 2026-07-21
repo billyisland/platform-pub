@@ -4,6 +4,9 @@ import { pool } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import {
   loadResonanceParams,
+  externalEExpr,
+  nativeEExpr,
+  nativeEngagementJoins,
   type ResonanceParams,
 } from "../lib/resonance.js";
 
@@ -106,7 +109,7 @@ export async function refresh(
       fi.source_protocol          AS protocol,
       'all'::text                 AS post_type,
       ei.published_at,
-      (ei.like_count * $1 + ei.reply_count * $2 + ei.repost_count * $3)::numeric AS e
+      ${externalEExpr("$1", "$2", "$3")} AS e
     FROM feed_items fi
     JOIN external_items ei ON ei.id = fi.external_item_id
     WHERE fi.item_type = 'external'
@@ -138,7 +141,7 @@ export async function refresh(
     INSERT INTO tmp_e (author_ref, protocol, post_type, published_at, e)
     SELECT
       p.author_id::text, 'native', p.post_type, p.published_at,
-      (COALESCE(v.up, 0) * $1 + COALESCE(g.passes, 0) * $2 + COALESCE(r.replies, 0) * $3)::numeric
+      ${nativeEExpr("$1", "$2", "$3", "r")}
     FROM (
       SELECT a.writer_id AS author_id, 'article'::text AS post_type, a.published_at,
              a.nostr_event_id, a.id AS article_id
@@ -149,18 +152,7 @@ export async function refresh(
       FROM notes n
       WHERE n.published_at IS NOT NULL
     ) p
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*) AS up FROM votes
-      WHERE target_nostr_event_id = p.nostr_event_id AND direction = 'up'
-    ) v ON true
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*) AS passes FROM read_events
-      WHERE article_id = p.article_id AND state <> 'charged_back'
-    ) g ON p.article_id IS NOT NULL
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*) AS replies FROM feed_engagement
-      WHERE target_nostr_event_id = p.nostr_event_id AND engagement_type = 'reply'
-    ) r ON true
+    ${nativeEngagementJoins("r")}
     WHERE p.published_at < now() - make_interval(hours => $4)
       AND p.published_at > now() - make_interval(days => $5)
     `,

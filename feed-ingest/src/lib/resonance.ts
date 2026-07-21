@@ -79,6 +79,65 @@ export async function loadResonanceParams(): Promise<ResonanceParams> {
 // expressions below are written once.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// E — the raw engagement scalar (§0h.6).
+//
+// E is computed in TWO modules that must agree exactly: the baseline cron
+// (engagement-baseline-refresh.ts) builds the reference distribution that this
+// module's scorer then divides by. They are numerator and denominator of one
+// ratio. A term added, dropped or reweighted on one side does not error — it
+// silently scores every post against a distribution built from a different
+// formula, and the only visible symptom is bands that look mis-tuned, sending
+// the next person off to retune the gates, which are not the problem.
+//
+// So the expression lives here once, parameterised by placeholder, in the same
+// shape as bandExpr/PCTL_EXPR above. Callers supply their own $n numbering.
+// Guarded by resonance-e-parity.test.ts.
+// ---------------------------------------------------------------------------
+
+/** External E: like/reaction + reply + repost/boost, weighted. */
+export function externalEExpr(like: string, reply: string, repost: string): string {
+  return `(ei.like_count * ${like} + ei.reply_count * ${reply} + ei.repost_count * ${repost})::numeric`;
+}
+
+/**
+ * Native E: upvotes + gate passes + replies, weighted.
+ *
+ * `replyAlias` exists because the two call sites join the reply LATERAL under
+ * different names (`r` in the baseline, `rp` in the scorer, which already uses
+ * `r` for its own results CTE). Threading the alias keeps one expression rather
+ * than forking it over a naming collision.
+ */
+export function nativeEExpr(
+  up: string,
+  gate: string,
+  reply: string,
+  replyAlias: string,
+): string {
+  return `(COALESCE(v.up, 0) * ${up} + COALESCE(g.passes, 0) * ${gate} + COALESCE(${replyAlias}.replies, 0) * ${reply})::numeric`;
+}
+
+/**
+ * The three LATERAL joins native E reads. Kept with the expression because the
+ * expression is meaningless without exactly these joins in scope — splitting
+ * them is how the two drift apart while both still compile.
+ */
+export function nativeEngagementJoins(replyAlias: string): string {
+  return `
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS up FROM votes
+        WHERE target_nostr_event_id = p.nostr_event_id AND direction = 'up'
+      ) v ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS passes FROM read_events
+        WHERE article_id = p.article_id AND state <> 'charged_back'
+      ) g ON p.article_id IS NOT NULL
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS replies FROM feed_engagement
+        WHERE target_nostr_event_id = p.nostr_event_id AND engagement_type = 'reply'
+      ) ${replyAlias} ON true`;
+}
+
 /**
  * D4. The ambient clause is a veto, never a boost: a high ratio against a
  * shrunk-to-nothing baseline (3 replies vs. 0.4) must not read as "surging",
@@ -173,7 +232,7 @@ export const EXTERNAL_RESONANCE_SQL = `
              fi.external_author_id::text AS author_ref,
              fi.source_protocol AS protocol,
              'all'::text AS post_type,
-             (ei.like_count * $2 + ei.reply_count * $3 + ei.repost_count * $4)::numeric AS e
+             ${externalEExpr("$2", "$3", "$4")} AS e
       FROM feed_items fi
       JOIN external_items ei ON ei.id = fi.external_item_id
       WHERE fi.external_item_id = ANY($1::uuid[])
@@ -242,20 +301,8 @@ export const NATIVE_RESONANCE_SQL = `
     ),
     e AS (
       SELECT p.feed_item_id, p.author_ref, p.protocol, p.post_type,
-             (COALESCE(v.up, 0) * $2 + COALESCE(g.passes, 0) * $3 + COALESCE(rp.replies, 0) * $4)::numeric AS e
-      FROM p
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*) AS up FROM votes
-        WHERE target_nostr_event_id = p.nostr_event_id AND direction = 'up'
-      ) v ON true
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*) AS passes FROM read_events
-        WHERE article_id = p.article_id AND state <> 'charged_back'
-      ) g ON p.article_id IS NOT NULL
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*) AS replies FROM feed_engagement
-        WHERE target_nostr_event_id = p.nostr_event_id AND engagement_type = 'reply'
-      ) rp ON true
+             ${nativeEExpr("$2", "$3", "$4", "rp")} AS e
+      FROM p${nativeEngagementJoins("rp")}
     ),
     ${scoreTail("$5::numeric", "$6::numeric", "$7::numeric", "$8::numeric")}
     `;
