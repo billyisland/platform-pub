@@ -207,6 +207,16 @@ flat white, the disc and the feed must share one blend group:
   `transform`/`will-change` wrapper on the lockup. A `z-index` on the lockup was the
   exact bug that rendered the disc solid white in prototype. Position it with
   `z-index: auto` and rely on paint order.
+- **`position: fixed` is itself a stacking context** (an isolated group in every
+  modern engine, even at `z-index: auto`) — the second instance of the same rule,
+  found 2026-07-21 when the shipped disc rendered solid white while the wordmark
+  (blend on the fixed element itself) inverted correctly. Since the lockup must be
+  fixed to stay pinned over the scrolling floor, the consequence is: **the
+  difference blend must sit ON the outermost fixed element** (the lockup container;
+  the wordmark button), never on a descendant — a nested blend composites against
+  nothing inside the fixed group. Anything that must stay unblended (the unread
+  badge, §VI) therefore hoists OUT of the blended container to a later fixed
+  sibling.
 - Do **not** detach the feed canvas into its own layer (`will-change: transform`) in a
   way that excludes it from the blend backdrop.
 

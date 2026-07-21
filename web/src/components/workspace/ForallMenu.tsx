@@ -465,8 +465,8 @@ export function ForallMenu({
   };
 
   // The unread badge must never iridesce (§VI non-goal: badge unchanged), so
-  // in lens mode it renders OUTSIDE the difference-blended button — a later
-  // sibling in the same container paints above the disc unblended;
+  // in lens mode it renders OUTSIDE the difference-blended container — hoisted
+  // to a later fixed sibling that paints above the blend, unblended;
   // pointer-events:none lets clicks on it fall through to the button beneath.
   // In painted mode it stays inside the button (part of the click target).
   const unreadBadge =
@@ -637,13 +637,19 @@ export function ForallMenu({
                 position: "fixed",
                 right: 24,
                 bottom: 24,
-                // Lens mode: z-index:auto — a z-index here was the exact
-                // prototype bug that rendered the blended disc solid white
-                // (§IV.5). DOM order still paints the disc above the isolated
-                // canvas (ForallMenu mounts after it). Every painted state
-                // (menu open, pane up, Explain) restores the z-60
-                // crisp-above-the-frost island.
-                ...(lensMode ? null : { zIndex: 60 }),
+                // Lens mode: the difference blend lives HERE, on the outermost
+                // fixed element — position:fixed itself forms a stacking
+                // context (an isolated group) even at z-index:auto, so a blend
+                // on any DESCENDANT composites against nothing and renders the
+                // disc solid white (§IV.5 — the z-index was one instance of
+                // the same rule; the fixed container was another). The whole
+                // lockup flattens into this group and blends once against the
+                // body group beneath (floor + isolated canvas, by DOM order).
+                // Every painted state (menu open, pane up, Explain) restores
+                // the z-60 crisp-above-the-frost island instead.
+                ...(lensMode
+                  ? { mixBlendMode: "difference" as const }
+                  : { zIndex: 60 }),
               }
         }
       >
@@ -745,13 +751,13 @@ export function ForallMenu({
           height: discSize,
           borderRadius: "50%",
           // Lens mode (§IV): the button paints nothing itself — the masked
-          // white circle inside is the disc body, difference-blended against
-          // the canvas, and the ∀ is a REAL hole showing the true feed. The
-          // blend sits on the button (not the svg) so its own transform below
-          // can't form a stacking context between the blending element and
-          // the backdrop.
+          // white circle inside is the disc body, and the ∀ is a REAL hole
+          // showing the true feed. The difference blend sits on the FIXED
+          // CONTAINER above, not here: the container is a stacking context
+          // (position:fixed), so a blend on the button would be isolated from
+          // the canvas and render solid white. The button's own transform
+          // merely flattens into the container group the blend applies to.
           background: lensMode ? "transparent" : discBg,
-          ...(lensMode ? { mixBlendMode: "difference" as const } : null),
           color: discGlyph,
           border: "none",
           padding: 0,
@@ -920,10 +926,28 @@ export function ForallMenu({
         )}
         {!lensMode && unreadBadge}
       </button>
-      {/* Lens mode: the badge paints as a later sibling — above the blended
-          disc, itself unblended (§VI: the badge never iridesces). */}
-      {lensMode && unreadBadge}
       </div>
+      {/* Lens mode: the badge must never iridesce (§VI), so it hoists OUT of
+          the blended container entirely — a later fixed sibling mirroring the
+          lockup's geometry paints above the blend, unblended; its own
+          pointer-events:none (set on the badge in lens mode) lets clicks fall
+          through to the disc beneath. */}
+      {lensMode && unreadBadge && (
+        <div
+          aria-hidden="true"
+          style={{
+            ...LIGHT_ISLAND_STYLE,
+            position: "fixed",
+            right: 24,
+            bottom: 24,
+            width: discSize,
+            height: discSize,
+            pointerEvents: "none",
+          }}
+        >
+          {unreadBadge}
+        </div>
+      )}
     </>
   );
 }

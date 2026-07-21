@@ -22,6 +22,7 @@ import {
   VESSEL_DEFAULT_W,
 } from "../../lib/workspace/grid";
 import { computeExtent, EDGE_PAD } from "../../lib/workspace/canvas";
+import { prefersReducedMotion } from "../../lib/workspace/motion";
 import {
   workspaceFeeds as workspaceFeedsApi,
   follows as followsApi,
@@ -348,13 +349,17 @@ export function WorkspaceView() {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  // Slack beyond the outermost vessel, on each side. A full viewport rather
-  // than a hairsbreadth so there is always somewhere to drag INTO: the origin
-  // then only ever moves at a gesture boundary, where a single scrollLeft
-  // compensation is invisible, instead of every frame, where it jitters.
-  // Contract-to-fit still holds — the extent is recomputed from scratch on
-  // every commit, so space you stop using goes away.
-  const canvasSlack = Math.max(EDGE_PAD, viewport.w);
+  // Slack beyond the outermost vessel, on each side. GESTURE-SCOPED: at rest
+  // the floor is exactly the feeds' span plus EDGE_PAD of breathing room — no
+  // empty viewport to pan into, so "infinite sideways" means the space grows
+  // when a gesture asks it to, not that it is pre-stretched. While a drag is
+  // live the slack widens to a full viewport so there is somewhere to drag
+  // INTO; the origin shift that implies lands only at the gesture boundaries
+  // (pointerdown / pointerup), where the Vessel's originX layout effect and
+  // the scroll compensation below cancel it pre-paint in a single frame.
+  // Contract-to-fit falls out of the extent recompute on gesture end.
+  const [floorGesture, setFloorGesture] = useState(false);
+  const canvasSlack = floorGesture ? Math.max(EDGE_PAD, viewport.w) : EDGE_PAD;
 
   const extent = useMemo(
     () =>
@@ -391,6 +396,37 @@ export function WorkspaceView() {
     if (delta !== 0) floor.scrollLeft += delta;
     prevOriginRef.current = extent.originX;
   }, [extent.originX, canvasSlack, isMobile, vessels.length]);
+
+  // Ctrl+←/→ jumps the floor to its far end — the keyboard twin of panning a
+  // space whose resting extent is exactly the feeds' span. Plain arrows stay
+  // free (the reader's ←/→ skip, text-field caret movement); Ctrl+arrow inside
+  // an editable field keeps its native word-jump, and an open Glasshouse owns
+  // the keyboard.
+  useEffect(() => {
+    if (isMobile) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t?.closest(
+          'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
+        )
+      )
+        return;
+      if (useGlasshousePresence.getState().isOpen) return;
+      const floor = floorRef.current;
+      if (!floor) return;
+      e.preventDefault();
+      floor.scrollTo({
+        left:
+          e.key === "ArrowLeft" ? 0 : floor.scrollWidth - floor.clientWidth,
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isMobile]);
 
   const dragActiveRef = useRef<string | null>(null);
   // The vessel the pointer is currently inside during a drag — the ARMED merge
@@ -1496,6 +1532,8 @@ export function WorkspaceView() {
                 }}
                 // store → canvas
                 position={{ x: layout.x - extent.originX, y: layout.y }}
+                originX={extent.originX}
+                onFloorGesture={setFloorGesture}
                 size={{ w: layout.w, h: layout.h }}
                 brightness={layout.brightness}
                 orientation={layout.orientation}

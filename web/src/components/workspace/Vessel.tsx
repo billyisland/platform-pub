@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -77,6 +78,16 @@ interface VesselProps {
   onNameClick?: () => void;
   onSourceAdded?: () => void;
   position: { x: number; y: number };
+  /** Store-x that maps to canvas-x 0 (lib/workspace/canvas.ts). Threaded so an
+   *  origin SHIFT can be compensated instantly (pre-paint, never the spring):
+   *  the host moves scrollLeft by the same delta in its own layout effect, and
+   *  the two cancel to a visual no-op. */
+  originX?: number;
+  /** A floor gesture (drag) is beginning/ending. Fired on pointerdown — BEFORE
+   *  framer samples the drag origin — so the host can widen the canvas slack
+   *  and have the origin shift land pre-paint, and on pointerup/cancel so the
+   *  floor contracts back to fit in the same commit as the position commit. */
+  onFloorGesture?: (active: boolean) => void;
   size?: { w?: number; h?: number };
   brightness?: Brightness;
   orientation?: Orientation;
@@ -124,6 +135,8 @@ export function Vessel({
   onNameClick,
   onSourceAdded,
   position,
+  originX = 0,
+  onFloorGesture,
   size,
   brightness,
   orientation,
@@ -230,6 +243,23 @@ export function Vessel({
     return () => el.removeEventListener("scroll", onScroll);
   }, [onLoadMore, feedId, isHorizontal]);
 
+  // Origin-shift compensation. When the canvas origin moves (gesture slack
+  // widening/contracting, or a new outermost vessel), every canvas-x changes by
+  // the same delta while the STORE position is untouched. The host cancels the
+  // shift with a scrollLeft adjustment in its layout effect; this one moves the
+  // motion value by the same delta, also pre-paint — the pair lands in a single
+  // frame and the shift is visually a no-op. Instant set, never the spring: the
+  // spring below is for REAL position changes (pushes, snaps), and after this
+  // runs it sees dx ≈ 0 for a pure origin shift. Skipped mid-drag — framer owns
+  // the value there, and the drag conversions read the same originX prop.
+  const prevOriginXRef = useRef(originX);
+  useLayoutEffect(() => {
+    const delta = prevOriginXRef.current - originX;
+    prevOriginXRef.current = originX;
+    if (delta === 0 || isDraggingRef.current) return;
+    mx.set(mx.get() + delta);
+  }, [originX, mx]);
+
   useEffect(() => {
     if (isDraggingRef.current) return;
     const dx = Math.abs(mx.get() - position.x);
@@ -258,6 +288,21 @@ export function Vessel({
     if (target.closest("button, a, input, textarea, select, [role='button']"))
       return;
     dragMovedRef.current = false;
+    // Gesture slack opens on pointerdown, BEFORE framer samples its drag
+    // origin: the re-render + origin compensation flush before the first drag
+    // frame, so the wider canvas is in place by the time the gesture reads
+    // coordinates. Closes on pointerup/cancel — the same task as framer's own
+    // commit, so contract-to-fit batches into the position-commit render.
+    if (onFloorGesture) {
+      onFloorGesture(true);
+      const end = () => {
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+        onFloorGesture(false);
+      };
+      window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end);
+    }
     dragControls.start(event);
   }
 

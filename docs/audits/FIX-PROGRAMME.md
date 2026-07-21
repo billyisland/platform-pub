@@ -23,6 +23,40 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (late evening)** — **Floor slack made gesture-scoped; Ctrl+←/→
+  end-jump; lens disc solid-white fix (the fixed-container stacking context).**
+  Three user-reported issues from the first eyeball pass of the day's work.
+  (1) The floor read as "instantly infinite": `WorkspaceView` passed
+  `computeExtent` a full-viewport slack unconditionally, so a viewport of empty
+  scrollable floor always sat beyond the outermost feed on each side —
+  `canvas.ts`'s own doc said rest slack should be `EDGE_PAD`, but the caller
+  never implemented the rest case. Now `canvasSlack` is gesture-scoped: `EDGE_PAD`
+  at rest (the floor is exactly the feeds' span + breathing room), a viewport
+  only while a drag is live. The origin shift this puts at the gesture
+  boundaries is cancelled pre-paint in a single frame: `Vessel` gains an
+  `originX` prop with a layout effect that shifts `mx` by the origin delta
+  (instant `set`, never the spring — so the spring sync then sees dx ≈ 0),
+  paired with `WorkspaceView`'s existing `scrollLeft` compensation layout
+  effect; the slack opens via the new `onFloorGesture` prop on pointerdown
+  — BEFORE framer samples its drag origin, so drag-frame/commit store
+  conversions stay coherent — and closes on window pointerup/pointercancel,
+  which batches into the same task (and render) as framer's position commit.
+  (2) Ctrl+←/→ jumps the floor to its far ends (`scrollTo` smooth, honouring
+  `prefersReducedMotion`); guarded off editable fields (native word-jump),
+  other modifiers, mobile, and any open Glasshouse.
+  (3) The idle lens disc rendered solid white: the difference blend sat on the
+  disc BUTTON, but the fixed lockup container above it is itself a stacking
+  context (`position: fixed` forms one even at z-index:auto — the same rule as
+  the §IV.5 z-index bug, second instance), so the blend composited against
+  nothing. The blend now sits on the outermost fixed container itself (the
+  wordmark, which already carried its own blend as a fixed element, was always
+  correct — the diagnostic tell); the unread badge hoists out of the
+  now-blended container to a later fixed sibling mirroring the lockup geometry
+  (§VI: never iridesces; pointer-events pass through). CLAUDE.md's floor and
+  ∀ sections updated to carry both corrected invariants. Verified: web tsc
+  clean, suite 156/156, hairline tripwire clean, `next build` clean. The ADR
+  §VII browser eyeball pass (CONSOLIDATED-TODO §11) remains the visual gate.
+
 - **2026-07-21 (evening)** — **FORALL-CUT-AND-LOCKUP-ADR implemented: the
   negative-space cut mark, the idle disc as a difference lens, the lockup
   rebalance.** §III: brand assets shipped (`web/public/brand/` — true-cut
