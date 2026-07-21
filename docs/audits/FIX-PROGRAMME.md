@@ -23,6 +23,61 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (prod deploy — the §0i/§0h code-tier batch)** — prod brought to
+  `ecd4499`. **The deploy's main finding was about evidence, not code.**
+  - **The pending-deploy memory was substantially wrong.** It listed a large
+    backlog (M13 re-fix, migrations 158–161, the workspace arc, brand/lens,
+    both 07-21 batches); almost all of it was already live from an
+    undocumented ~21:00 BST deploy. `migrate.ts` reported `All migrations
+    already applied` / `all dials already present`, which read as alarming and
+    was correct. Verified rather than assumed: the app's DB (queried *through
+    the container*, not the published port) held 161 rows against 161 files,
+    with 158's table, 159's enum value and 160/161's config keys all genuinely
+    materialised, and `ss` showed a single listener — so the host runner and
+    the app share one database. **N = 0 dials seeded**, the documented prod
+    case (prod migrated incrementally from before the genesis dump, so the
+    per-migration INSERTs actually ran there; dev, booted from `schema.sql`,
+    had been missing 46).
+  - **Real gap: exactly the 8-commit code-tier batch** `8e4b5f4`…`ecd4499`.
+    Image build times (UTC) against commit times (BST) placed gateway/payment/
+    web at 21:00–21:02 BST, i.e. built from `eaad953` minutes before the batch
+    began at 21:05; feed-ingest was a day older but already carried resonance
+    step 3 (`ee7ea51`). Rebuilt web/gateway/feed-ingest/payment and verified by
+    marker: `asOf` 0→3, engagement cursor 0→1, and payment's
+    `writer_payout_id = NULL` **2→3** — a partial count, which localised the
+    gap far better than a boolean hit/miss would have.
+  - **Three marker methods were invalid and are worth not repeating.**
+    `docker compose ps`'s CREATED column is container recreation, not image
+    build (all six read "44 minutes ago" while the images spanned two days).
+    An identifier grep against `web` proves nothing — Next minifies
+    client-bundle names, so only string literals survive; `lensSuppress`
+    returned empty on a *current* image. And `grep … | head; echo $?` captures
+    `head`'s status, not `grep`'s. Recorded in the pending-deploy memory and
+    queued as a revision stamp (§8.12) so this stops being forensic work.
+  - **Prod reached "schema ahead of code"** — 158–161 applied while feed-ingest
+    ran day-old code. Harmless here because all four migrations are additive;
+    under a destructive one it would have been live 500s for the rebuild
+    window, which is exactly the case DEPLOYMENT.md's order-inversion note
+    covers but nothing enforces.
+  - **Two deploy traps fixed in the docs** (`5985b30`), both fired in one
+    command: the migrate step's `localhost` cannot work (compose publishes
+    `127.0.0.1:5432:5432`, IPv4 only, while localhost resolves `::1` first →
+    `ECONNREFUSED ::1:5432`), and nothing sets `DATABASE_URL` in a host shell,
+    so `$POSTGRES_PASSWORD` interpolated empty. Also replaced the upgrade
+    block's `git pull origin master`, which always errors on the prod checkout.
+  - **nginx `/media/` lockdown finally applied** (shipped 2026-07-09, never
+    deployed): `up -d --force-recreate nginx` for the single-file bind-mount
+    inode trap, then verified end-to-end — `PUT /media/upload` → 404,
+    `GET /media/<sha>.webp` → 200, `DELETE` → 403.
+  - **`reconcile-ledger.sql` clean on prod** — every Part-A check zero rows,
+    B1/B2 zero diffs. Low information (all totals 0; prod is pre-launch with no
+    money movement), but the A6 unknown-`ref_table` catch-all shipped hours
+    earlier is now live and finding nothing.
+  - **§0d.1 discharged, condition did not fire** — 3 `open` drives, 0 `funded`,
+    all with zero active pledges/pence/pledgers and no draft or deadline. The
+    guard is self-limiting: it 403s pledge *creation* too, so a parked drive
+    cannot acquire pledges. Re-open if PLEDGES_ENABLED is revived.
+
 - **2026-07-21 (code-tier batch, seven commits `8e4b5f4`…`009801f`)** —
   **§0i.1/2/3/5/6/7/8/9 + §0h.1/2/3/5 discharged.** The queued code-tier
   remainder of the second-pass audit, worked highest-stakes first:
