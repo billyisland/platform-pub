@@ -48,9 +48,13 @@ export interface ProofBlendParams {
   floor: number;
 }
 
-// Defaults mirror migrations 158/161 so a DB missing the rows (a fresh boot
-// from schema.sql, which is schema-only and carries no platform_config seed)
-// behaves identically to a seeded one.
+// Defaults mirror shared/src/db/config-defaults.sql — the canonical home of
+// dial defaults, applied by migrate.ts on every run — NOT the migrations
+// (whose config INSERTs never run on a schema.sql boot; that was the
+// 2026-07-20 orphan-dials bug). A fresh DB therefore carries every row and
+// these fallbacks are belt-and-braces for a never-migrated DB only; keep
+// them byte-equal with the defaults file (parity tripwire queued,
+// CONSOLIDATED-TODO §0h.7).
 const DEFAULTS: ProofBlendParams = {
   alphaFollowing: 0.8,
   alphaExplore: 0.4,

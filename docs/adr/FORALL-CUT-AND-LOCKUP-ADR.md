@@ -80,6 +80,22 @@ LOGO-REFINEMENT-SPEC **for the cut (disc) form only**. The bare-glyph `ForAllMar
 (crimson ∀, no disc, Nav/Footer/About) is unchanged — no rim to kiss. Cross-reference
 both docs so the forms don't drift.
 
+> **Honesty note (2026-07-21 audit):** pinning BOTH ends to the rim (feet at
+> ±28°, apex resolving to the bottom rim) is over-constrained relative to the
+> canonical stance — it forces a leg splay of ≈16.7° from vertical, not the
+> ~20.5° that LOGO-REFINEMENT-SPEC declares identity-bearing ("only splay,
+> stroke weights and crossbar carry identity"). So the shipped brand exports
+> (`allhaus-cut.svg` and both painted `allhaus-disc-on-*` pairs) carry a
+> visibly narrower stance than the in-app mark (`ForAllMark` / lens glyph /
+> favicon, all ~20.4°). This was NOT a deliberate second stance — it fell out
+> of the rim-kiss construction and the supersession above was described as
+> rim-treatment-only. Open decision (CONSOLIDATED-TODO §0i.10): re-derive the
+> exports from the canonical splay (keep the apex kiss, let the feet land
+> where ~20.5° puts them and trim through the rim), or adopt the narrow
+> stance as a deliberate export-only form and amend the one-construction rule
+> to name it. Until decided, don't propagate the export geometry anywhere
+> else.
+
 ### III.2 Two realisations of one mark
 
 - **Punch (real hole).** A `<mask>`: white disc, black ∀ (legs path + crossbar); the

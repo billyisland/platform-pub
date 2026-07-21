@@ -438,8 +438,11 @@ are the provable redundancies recorded under *Clause redundancy* below.
   (the fold-vs-replace distinction the decision rests on).
 - **Absence:** rss/email and dark-flagged nostr rows have NULL
   resonance/band/pctl; card renders no glyph (not band-0 styling); NULL rows
-  take proof_term = 0 in D6, ranking on recency. ✅ (first two clauses; the D6
-  half is step 5's own test).
+  take the `feed_proof_floor` in D6 (both blend contributions are 0, so the
+  floor is the whole term and recency orders them — see *Correction at step
+  5* above; the original "proof_term = 0" claim is exactly what that
+  correction disproved). ✅ (first two clauses; the D6 half is step 5's own
+  test).
 - **D2a parity:** a native article's E equals
   5·up + 5·(read_events ≠ charged_back) + 3·replies; charged-back reads and
   down-votes contribute 0. ✅ — one assertion recovering E from the score pins

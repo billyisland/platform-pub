@@ -23,6 +23,27 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (docs pass)** — **§0i documentation-tier findings fixed.**
+  The resonance ADR's "Absence" battery line no longer contradicts its own
+  step-5 correction (NULL rows take the `feed_proof_floor`, not
+  proof_term = 0); `feed-rank.ts`'s defaults comment now points at
+  `config-defaults.sql` instead of teaching the pre-1d6b756
+  "mirror the migrations" model; CLAUDE.md's config-rule rationale corrected
+  (the band gates were re-tuned before landing and went into config in the
+  same commit as the scoring code — they never shipped hardcoded);
+  `jetstream_healthy`'s presence in the defaults file justified in situ
+  (state whose absence must read healthy, vs `payouts_halted` whose absence
+  IS the state); the missing §7 item-18 bullet (BalanceHeader
+  sign-convention copy) restored to the 2026-07-20 entry + closed list;
+  THREAD-HYDRATION-LATENCY-ADR gains the 50s poll budget correction, a
+  dated amendment recording the 2026-07-21 failure-must-throw semantics, and
+  the process-local-registry consequence (multi-replica gateway
+  precondition); FORALL-CUT-AND-LOCKUP-ADR §III.1 + LOGO-REFINEMENT-SPEC now
+  own the brand-export splay discrepancy honestly (rim-pinning forces
+  ≈16.7° vs the canonical ~20.5°; the geometry decision stays queued,
+  §0i.10 — don't propagate the export geometry meanwhile). Drift guard
+  re-run green after the defaults-file comment.
+
 - **2026-07-21 (second audit + fix batch)** — **§0i: floor-lurch scroll
   compensation, system placements yield, visibility-aware heal, hydration
   silent-success, tribute-void earned-side pairing.** Five-agent adversarial
@@ -776,6 +797,15 @@ starts.
     than a silently-undroppable column. **Mutation-verified** (removing a
     column from the list fails `tsc`). Injection-bounded before, structurally
     closed now. The rest of §7.17 (error shapes, `as any`, naming) remains.
+  - **18** BalanceHeader copy corrected to the ledger sign convention
+    (`account/BalanceHeader.tsx`): positive net = the platform owes the
+    reader ("In credit — this is yours"), negative = an outstanding tab that
+    settles from the card at the threshold, and exact zero now reads
+    "Settled" instead of claiming credit. The old copy hung the settlement
+    clause on the CREDIT branch — backwards; credit is never charged, the
+    tab is. A sign-convention comment mirrors the ledger.balance Explain
+    caption. *(Bullet added 2026-07-21 — the fix shipped in the batch commit
+    and its message, but this itemised record was omitted; §0i.10.)*
   **Untouched:** §7.11 (flag-only/unreachable notes), §7.14 (carried nits),
   and the remainder of §7.17. **Validation:** `tsc` clean across web /
   gateway / shared / feed-ingest; `next build` compiled; root eslint 0 errors;

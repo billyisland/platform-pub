@@ -78,6 +78,11 @@ INSERT INTO platform_config (key, value, description) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- from 055_universal_feed_atproto.sql
+-- jetstream_healthy is runtime STATE, seeded here deliberately (contrast
+-- payouts_halted, whose ABSENCE means "not halted" and which must NOT be
+-- seeded): its writer upserts, but a fresh DB must read healthy from first
+-- boot — an absent row would schedule getAuthorFeed fallbacks for every
+-- atproto source until the listener's first status write.
 INSERT INTO platform_config (key, value, description) VALUES
   ('jetstream_healthy',                'true',
     'Set by the Jetstream listener. When false, feed_ingest_poll schedules getAuthorFeed fallback jobs for atproto sources.'),

@@ -56,9 +56,12 @@ re-triggers; a *failed* one both clears the map (→ `false`) and clears the gua
 ### D2 — Poll until settled, don't cache partials (client)
 
 Replace the fixed `[3000, 8000]` merge offsets with polling-with-backoff
-(1.5 s, 3 s, 6 s, 12 s, cap ~30 s) that stops when a response arrives with
-`hydrating: false`, bounded by a total poll budget (~45 s) so a hydrate that
-never settles can't poll forever. Do **not** write `hydrating: true` responses
+(1.5 s, 3 s, 6 s, 12 s, 24 s) that stops when a response arrives with
+`hydrating: false`, bounded by a total poll budget (50 s) so a hydrate that
+never settles can't poll forever. The budget must clear the LAST cumulative
+tick (46.5 s) — the guard runs before the fetch, so the original 45 s budget
+silently killed the final poll and the real window was 22.5 s
+(2026-07-21 fix). Do **not** write `hydrating: true` responses
 into the module cache (or give them a ≤5 s TTL).
 
 **D2 depends on D1, it does not stand in for it.** The response that poisons the
@@ -177,6 +180,30 @@ on every phase. Not launch-blocking.
    2026-07-19.) **D6 (viewport prefetch) remains** — the one decision touching
    the card component (`web/src/components/post/`).
 4. D7 — post-launch.
+
+## Amendments
+
+**2026-07-21 — failure must THROW; success means "harvested something".**
+§0f-5 made the job resolve a success bit so a fast *failure* can't read as
+settled — but only *throwing* failures carried it. The non-throwing exits
+(AppView/Mastodon `!res.ok` returns; a zero-event nostr harvest, reachable
+with zero relays answered because the k-of-n soft deadline fires
+unconditionally) still resolved success: `hydrating: false`, bare focal
+cached for the full TTL, throttle guard set — the D1 deadlock in miniature.
+Rule as now implemented: **transient trouble (429/5xx, empty harvest)
+throws; only a definitive origin "gone" (other 4xx) is a clean settle.** A
+genuinely-vanished event costs bounded retries (the client poll budget), the
+right trade. Covered in `thread-hydration-guard.test.ts` (zero-event-is-
+failure case).
+
+**Consequence to carry — the in-flight registry is process-local.**
+`hydrateGuard`/`hydrationInFlight` are module-level maps, and since D1 they
+are *correctness-bearing*: `hydrating` derives from them. One gateway
+process (today's deployment) is fine; horizontally scaling the gateway
+resurrects the deadlock cross-replica (a poll landing on the other replica
+finds nothing in flight → `hydrating: false` → cached partial). Moving the
+registry to the DB (or pinning `/thread` polls to a replica) is a
+precondition for multi-replica gateway.
 
 ## Test battery
 
