@@ -5,6 +5,7 @@ import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { FEED_SELECT, FEED_JOINS, parseCursor } from '../lib/feed-sql.js'
 import { POST_SELECT, POST_JOINS, feedItemToPost } from '../lib/post-mapper.js'
+import { encodeTsIdCursor } from "../lib/cursor.js";
 
 // =============================================================================
 // Tag Routes
@@ -182,7 +183,7 @@ export async function tagRoutes(app: FastifyInstance) {
             ? result.rows[result.rows.length - 1]
             : undefined
         const nextCursor = lastRow
-          ? `${Number(lastRow.published_at_secs)}:${lastRow.fi_id}`
+          ? encodeTsIdCursor(lastRow.published_at_secs, lastRow.fi_id)
           : undefined
 
         return reply.send({

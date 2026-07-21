@@ -1,4 +1,5 @@
 import { UUID_RE } from "./uuid.js";
+import { parseCursorEpoch } from "./cursor.js";
 // =============================================================================
 // Shared feed SQL — the candidate-gathering SELECT/JOINs over feed_items plus
 // the keyset cursor parser, reused by every read path that projects feed_items:
@@ -18,31 +19,6 @@ export interface CursorParts {
   score?: number; // explore-feed ranking score — undefined on legacy cursors
   ts: number;
   id: string;
-}
-
-/**
- * Parse a cursor's epoch component — `Number`, never `parseInt` (M13).
- *
- * The epoch on the wire is FRACTIONAL (`EXTRACT(EPOCH FROM …)`, e.g.
- * `1784282400.500123`), because every caller compares it via `to_timestamp()`
- * against a full-precision `published_at`/`created_at` that the ORDER BY also
- * sorts at full precision. `parseInt` stops at the `.` and silently truncates to
- * the whole second, which reinstates the exact page-boundary bug the fractional
- * cursor exists to prevent: with the cursor rounded DOWN to the second, every
- * remaining row inside that second compares as `>` the cursor and is skipped, so
- * a client paging a burst of same-second rows never reaches them. Measured on
- * `GET /tags/:name/posts` before this fix: 5 rows inside one second, limit 2 →
- * page 1 returned 2, page 2 returned 0, 3 rows unreachable.
- *
- * Stricter than `parseInt` by design: a malformed component yields NaN (→ the
- * caller restarts from page 1, this endpoint's documented degradation) rather
- * than being salvaged into a wrong position. Empty string is rejected explicitly
- * — `Number("")` is 0, which would silently mean "the epoch".
- */
-function parseCursorEpoch(raw: string): number {
-  if (raw.trim() === "") return NaN;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : NaN;
 }
 
 export function parseCursor(raw: string | undefined): CursorParts | undefined {

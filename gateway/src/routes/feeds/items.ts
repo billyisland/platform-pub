@@ -3,6 +3,7 @@ import { pool } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { FEED_SELECT, FEED_JOINS } from "../../lib/feed-sql.js";
+import { parseCursorEpoch, encodeTsIdCursor } from "../../lib/cursor.js";
 import {
   POST_SELECT,
   POST_JOINS,
@@ -153,9 +154,8 @@ export function decodeFeedCursor(raw: string | undefined): FeedCursor | undefine
     const id = parts[2];
     if (Number.isNaN(score) || !UUID_RE.test(id)) return undefined;
     if (parts.length === 4) {
-      // Number, never parseInt — asOf is a FRACTIONAL epoch (see the explore
-      // ts note below); empty rejected explicitly (Number("") === 0).
-      const asOf = parts[3].trim() === "" ? NaN : Number(parts[3]);
+      // asOf is a FRACTIONAL epoch — parsed through the shared M13 primitive.
+      const asOf = parseCursorEpoch(parts[3]);
       if (!Number.isFinite(asOf)) return undefined;
       return { kind: "scored", score, id, asOf };
     }
@@ -164,12 +164,9 @@ export function decodeFeedCursor(raw: string | undefined): FeedCursor | undefine
   if (parts[0] === "explore") {
     if (parts.length !== 4) return undefined;
     const score = Number(parts[1]);
-    // Number, never parseInt (M13): the encoder carries a FRACTIONAL epoch
-    // (published_at_secs) precisely so the to_timestamp() filter matches the
-    // full-precision ORDER BY; parseInt stops at the '.' and truncates it back to
-    // the whole second, skipping every remaining row inside that second. Empty is
-    // rejected explicitly (Number("") === 0). See parseCursorEpoch in feed-sql.ts.
-    const ts = parts[2].trim() === "" ? NaN : Number(parts[2]);
+    // FRACTIONAL epoch (published_at_secs) — parsed through the shared M13
+    // primitive, which is also what feed-sql.ts's parseCursor uses.
+    const ts = parseCursorEpoch(parts[2]);
     const id = parts[3];
     if (!Number.isFinite(score) || !Number.isFinite(ts) || !UUID_RE.test(id))
       return undefined;

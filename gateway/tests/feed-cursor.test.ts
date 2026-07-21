@@ -4,6 +4,11 @@ import {
   encodeFeedCursor,
   decodeFeedCursor,
 } from "../src/routes/feeds/items.js";
+import {
+  parseCursorEpoch,
+  encodeTsIdCursor,
+  feedCursorEpoch,
+} from "../src/lib/cursor.js";
 
 // =============================================================================
 // M13 — keyset cursor epoch precision.
@@ -149,5 +154,71 @@ describe("explore feed cursor codec — epoch precision (M13)", () => {
   it("rejects an empty or non-finite explore epoch", () => {
     expect(decodeFeedCursor(`explore:1.5::${UUID}`)).toBeUndefined();
     expect(decodeFeedCursor(`explore:1.5:Infinity:${UUID}`)).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// The shared codec (gateway/src/lib/cursor.ts).
+//
+// The M13 rule used to be written out three times and the encoder hand-rolled
+// in five places. These tests guard the single home, and — the part nothing
+// previously covered — the SQL half of the bug: an epoch cast `::bigint` is
+// truncated before JS ever sees it, so no amount of `Number` in the decoder can
+// recover the fraction. A shared encoder cannot enforce that on its own; the
+// projection helper is what states it, and this pins the helper.
+// =============================================================================
+
+describe("shared cursor codec — parseCursorEpoch", () => {
+  it("preserves a fractional epoch", () => {
+    expect(parseCursorEpoch("1784282400.500123")).toBe(1784282400.500123);
+  });
+
+  // The mutation guard: swapping the body back to parseInt fails exactly here.
+  it("does not truncate at the decimal point (parseInt would)", () => {
+    const raw = "1784282400.4";
+    expect(parseCursorEpoch(raw)).not.toBe(1784282400);
+    expect(parseCursorEpoch(raw) % 1).toBeGreaterThan(0);
+  });
+
+  it("rejects empty rather than reading it as the epoch", () => {
+    // Number("") === 0, which would silently mean 1970 — a cursor that pages
+    // from the beginning of time instead of restarting from page 1.
+    expect(parseCursorEpoch("")).toBeNaN();
+    expect(parseCursorEpoch("   ")).toBeNaN();
+  });
+
+  it("rejects junk and non-finite input", () => {
+    expect(parseCursorEpoch("abc")).toBeNaN();
+    expect(parseCursorEpoch("Infinity")).toBeNaN();
+  });
+});
+
+describe("shared cursor codec — encodeTsIdCursor round trip", () => {
+  it("is lossless in the epoch through parseCursor", () => {
+    const wire = encodeTsIdCursor(FRACTIONAL, UUID);
+    const back = parseCursor(wire);
+    expect(back).toEqual({ ts: FRACTIONAL, id: UUID });
+  });
+
+  it("accepts the string form pg returns for a numeric column", () => {
+    // node-postgres hands back EXTRACT(EPOCH …) as a string; the five call
+    // sites pass the column through untouched, so the encoder must coerce.
+    const wire = encodeTsIdCursor(String(FRACTIONAL), UUID);
+    expect(parseCursor(wire)?.ts).toBe(FRACTIONAL);
+  });
+});
+
+describe("shared cursor codec — the SQL half of M13", () => {
+  it("mints an un-cast epoch projection", () => {
+    const sql = feedCursorEpoch("fi.published_at", "published_at_secs");
+    expect(sql).toBe("EXTRACT(EPOCH FROM fi.published_at) AS published_at_secs");
+  });
+
+  // A ::bigint cast truncates in Postgres, before the decoder runs. This is the
+  // half that shipped correct but undefended — the original M13 fix corrected
+  // the SQL, and nothing stopped the next query from casting again.
+  it("never casts the cursor epoch to an integer type", () => {
+    const sql = feedCursorEpoch("fs.created_at", "saved_at_secs");
+    expect(sql).not.toMatch(/::\s*(bigint|int|integer)/i);
   });
 });

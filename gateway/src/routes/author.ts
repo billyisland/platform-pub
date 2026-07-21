@@ -22,6 +22,7 @@ import {
   willHydrateAuthorTimeline,
   hydrateAuthorTimeline,
 } from "../lib/author-timeline-hydration.js";
+import { encodeTsIdCursor } from "../lib/cursor.js";
 
 // =============================================================================
 // Constructed author profile — UNIVERSAL-POST-ADR Phase 4 (§4.4, §9, §VI.3)
@@ -556,7 +557,7 @@ export async function authorRoutes(app: FastifyInstance) {
             ? result.rows[result.rows.length - 1]
             : undefined;
         const nextCursor = lastRow
-          ? `${Number(lastRow.published_at_secs)}:${lastRow.fi_id}`
+          ? encodeTsIdCursor(lastRow.published_at_secs, lastRow.fi_id)
           : undefined;
 
         return reply.send({
@@ -656,7 +657,7 @@ export async function authorRoutes(app: FastifyInstance) {
             ? result.rows[result.rows.length - 1]
             : undefined;
         const nextCursor = lastRow
-          ? `${Number(lastRow.published_at_secs)}:${lastRow.id}`
+          ? encodeTsIdCursor(lastRow.published_at_secs, lastRow.id)
           : undefined;
 
         return reply.send({ items, nextCursor });

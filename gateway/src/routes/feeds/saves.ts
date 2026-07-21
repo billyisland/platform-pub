@@ -9,6 +9,7 @@ import {
   feedItemToPost,
 } from "../../lib/post-mapper.js";
 import { UUID_RE, feedRowToResponse, loadFeed } from "./shared.js";
+import { encodeTsIdCursor } from "../../lib/cursor.js";
 
 // Slice 20 cursor parser: `${fractional_epoch_seconds}:${uuid}`. Distinct from
 // parseCursor / parseScoredCursor because saves have no score axis — order is
@@ -100,7 +101,7 @@ export function registerFeedSavesRoutes(app: FastifyInstance) {
     }));
     const lastRow = result.rows[result.rows.length - 1];
     const nextCursor = lastRow
-      ? `${Number(lastRow.saved_at_secs)}:${lastRow.save_id}`
+      ? encodeTsIdCursor(lastRow.saved_at_secs, lastRow.save_id)
       : undefined;
 
     return reply.send({
