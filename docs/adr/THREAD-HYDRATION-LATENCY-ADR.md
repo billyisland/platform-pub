@@ -196,6 +196,23 @@ genuinely-vanished event costs bounded retries (the client poll budget), the
 right trade. Covered in `thread-hydration-guard.test.ts` (zero-event-is-
 failure case).
 
+**2026-07-21 — k counts DELIVERING relays; first-event verifies the id;
+transport hardening (§0h.3/§0i.8).** Four `fetchNostrEvents` fixes, all
+mutation-verified in `nostr-relay-resolve.test.ts`: (1) k-of-n counts an EOSE
+toward `k` only from a relay that delivered ≥1 matching event — two fast
+relays that don't carry the thread otherwise settled the broad net
+near-instantly and the reply-light result cached for 60s; when fewer than k
+relays carry anything, the soft deadline is the honest resolver. (2) A relay
+repeating EOSE counts once. (3) first-event resolves (and stores) only an
+event whose id the filter requested — one broken/malicious relay's junk copy
+otherwise became the *exclusive* result by hanging up every honest relay; a
+caller misusing first-event without an ids filter keeps any-event behaviour.
+(4) A synchronous WebSocket-ctor throw decrements `pending` instead of
+rejecting the void'd IIFE and hanging the outer promise forever. The reroot
+path (`usePostThread.fetchFocal`) now also starts the D2 background poll on a
+`hydrating: true` response — the §0f-5 residual; seq-guarded so a newer
+reroot orphans the poll.
+
 **Consequence to carry — the in-flight registry is process-local.**
 `hydrateGuard`/`hydrationInFlight` are module-level maps, and since D1 they
 are *correctness-bearing*: `hydrating` derives from them. One gateway

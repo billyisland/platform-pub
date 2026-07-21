@@ -22,6 +22,10 @@ interface RelayScript {
   events?: Array<{ id: string; pubkey: string; created_at: number }>;
   eventDelayMs?: number;
   eoseAfterMs?: number | null;
+  /** Misbehaving relay: repeat the EOSE frame 1ms after the first (§0i.8). */
+  duplicateEose?: boolean;
+  /** Model a synchronous `new WebSocket()` throw (§0i.8 hang guard). */
+  ctorThrows?: boolean;
 }
 const SCRIPTS: Record<string, RelayScript> = {};
 
@@ -32,6 +36,7 @@ class MockWebSocket extends EventEmitter {
   url: string;
   constructor(url: string) {
     super();
+    if (SCRIPTS[url]?.ctorThrows) throw new Error("sync ctor throw");
     this.url = url;
     setTimeout(() => {
       this.readyState = MockWebSocket.OPEN;
@@ -59,6 +64,13 @@ class MockWebSocket extends EventEmitter {
         () => this.emit("message", Buffer.from(JSON.stringify(["EOSE", subId]))),
         script.eoseAfterMs,
       );
+      if (script.duplicateEose) {
+        setTimeout(
+          () =>
+            this.emit("message", Buffer.from(JSON.stringify(["EOSE", subId]))),
+          script.eoseAfterMs + 1,
+        );
+      }
     }
   }
   close() {
@@ -152,6 +164,89 @@ describe("fetchNostrEvents — D3 early-resolve modes", () => {
     expect(state.resolved).toBe(true);
     const res = await done;
     expect(res.map((e) => e.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("k-of-n: an EMPTY EOSE does not count toward k (§0h.3)", async () => {
+    // Two fast relays that don't carry the thread EOSE immediately; the relay
+    // that HAS it is slower. Counting empty EOSEs settled the broad net
+    // near-instantly, hydrated reply-light, and cached that for 60s.
+    SCRIPTS["wss://empty-a"] = { eoseAfterMs: 3 };
+    SCRIPTS["wss://empty-b"] = { eoseAfterMs: 6 };
+    // Delivers but never EOSEs — so if the two empty EOSEs counted toward k=2,
+    // the net would settle at ~6ms WITHOUT r1 (the §0h.3 reply-light cache).
+    SCRIPTS["wss://carrier"] = { events: [ev("r1")], eventDelayMs: 50 };
+
+    const { state, done } = track(
+      fetchNostrEvents(
+        ["wss://empty-a", "wss://empty-b", "wss://carrier"],
+        [{ kinds: [1], "#e": ["root"] }],
+        5_000,
+        { mode: "k-of-n", k: 2, softDeadlineMs: 2_500 },
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(20); // both empty EOSEs in — must NOT settle
+    expect(state.resolved).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(80); // carrier delivered, no EOSE: k unmet
+    expect(state.resolved).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(2_500); // soft deadline is the honest resolver
+    expect(state.resolved).toBe(true);
+    expect((await done).map((e) => e.id)).toEqual(["r1"]);
+  });
+
+  it("k-of-n: duplicate EOSEs from one relay count once (§0i.8)", async () => {
+    SCRIPTS["wss://dup"] = { events: [ev("d")], eoseAfterMs: 5, duplicateEose: true };
+    SCRIPTS["wss://slow"] = { events: [ev("s")], eventDelayMs: 40, eoseAfterMs: 50 };
+
+    const { state, done } = track(
+      fetchNostrEvents(["wss://dup", "wss://slow"], [{ kinds: [1] }], 5_000, {
+        mode: "k-of-n",
+        k: 2,
+        softDeadlineMs: 2_500,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(20); // dup's two EOSEs must count as ONE
+    expect(state.resolved).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(40); // slow's genuine second EOSE reaches k
+    expect(state.resolved).toBe(true);
+    expect((await done).map((e) => e.id).sort()).toEqual(["d", "s"]);
+  });
+
+  it("first-event: an id the filter never asked for neither resolves nor pollutes the result (§0i.8)", async () => {
+    // One broken/malicious relay answers instantly with a junk copy; taking it
+    // would hang up every honest relay and make the junk EXCLUSIVE.
+    SCRIPTS["wss://junk"] = { events: [ev("junk")], eventDelayMs: 1, eoseAfterMs: 2 };
+    SCRIPTS["wss://honest"] = { events: [ev("x")], eventDelayMs: 30, eoseAfterMs: 40 };
+
+    const { state, done } = track(
+      fetchNostrEvents(["wss://junk", "wss://honest"], [{ ids: ["x"] }], 5_000, {
+        mode: "first-event",
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(10); // junk arrived — must not settle
+    expect(state.resolved).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(30); // the requested id lands
+    expect(state.resolved).toBe(true);
+    expect((await done).map((e) => e.id)).toEqual(["x"]);
+  });
+
+  it("a synchronous WebSocket ctor throw is a skipped relay, not a hang (§0i.8)", async () => {
+    SCRIPTS["wss://ctor-throw"] = { ctorThrows: true };
+    SCRIPTS["wss://ok"] = { events: [ev("a")], eoseAfterMs: 5 };
+
+    const { state, done } = track(
+      fetchNostrEvents(["wss://ctor-throw", "wss://ok"], [{ kinds: [1] }], 200),
+    );
+
+    await vi.advanceTimersByTimeAsync(300); // exhaustive: ok EOSEs, thrower skipped
+    expect(state.resolved).toBe(true);
+    expect((await done).map((e) => e.id)).toEqual(["a"]);
   });
 
   it("exhaustive (default): waits for the hung relay's hard timeout — newest-wins callers rely on this", async () => {

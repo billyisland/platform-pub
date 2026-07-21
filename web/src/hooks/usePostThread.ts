@@ -310,10 +310,45 @@ export function usePostThread(
     const p = cached
       ? Promise.resolve(cached)
       : postThread(id, { replyLimit: REPLY_PAGE });
+    // Background-hydration poll, reroot flavour (§0i.8, the §0f-5 residual):
+    // re-rooting on an external node can come back `hydrating: true` exactly
+    // like the initial host fetch — without a poll the focal rests reply-light
+    // forever. Same backoff/budget as the init poll; guarded by `seq` so a
+    // newer reroot (or the init effect's own poll) orphans this one, and by
+    // writeCache hygiene so partials never persist.
+    const startPoll = () => {
+      const startedAt = Date.now();
+      let step = 0;
+      const tick = () => {
+        if (!mounted.current || seq !== reqSeq.current) return;
+        if (Date.now() - startedAt > HYDRATION_POLL_BUDGET_MS) return;
+        postThread(id, { replyLimit: REPLY_PAGE })
+          .then((res) => {
+            if (!mounted.current || seq !== reqSeq.current) return;
+            writeCache(id, res); // no-op while hydrating (hygiene)
+            dispatch({ kind: "merge", res });
+            if (res.hydrating) {
+              const delay =
+                HYDRATION_POLL_MS[Math.min(step, HYDRATION_POLL_MS.length - 1)];
+              step++;
+              setTimeout(tick, delay);
+            }
+          })
+          .catch(() => {
+            if (!mounted.current || seq !== reqSeq.current) return;
+            const delay =
+              HYDRATION_POLL_MS[Math.min(step, HYDRATION_POLL_MS.length - 1)];
+            step++;
+            setTimeout(tick, delay);
+          });
+      };
+      setTimeout(tick, HYDRATION_POLL_MS[0]);
+    };
     p.then((res) => {
       if (!cached) writeCache(id, res);
       if (!mounted.current || seq !== reqSeq.current) return;
       dispatch({ kind: "ingest", res });
+      if (res.hydrating) startPoll();
     }).catch(() => {
       if (!mounted.current || seq !== reqSeq.current) return;
       dispatch({ kind: "reroot-failed", revertTo });

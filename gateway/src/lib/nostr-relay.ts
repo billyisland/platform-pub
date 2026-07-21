@@ -58,6 +58,20 @@ export async function fetchNostrEvents(
 ): Promise<RawNostrEvent[]> {
   const byId = new Map<string, RawNostrEvent>();
 
+  // first-event is documented as ids-only; hold it to that. The first EVENT
+  // hangs up every other relay, so an unverified junk copy from one broken or
+  // malicious relay would become the EXCLUSIVE result — the id-match check is
+  // the cheap guard (§0i.8). Empty set ⇒ a caller misusing first-event without
+  // an ids filter keeps the old any-event behaviour.
+  const requestedIds =
+    resolve.mode === "first-event"
+      ? new Set(
+          filters.flatMap((f) =>
+            Array.isArray(f.ids) ? (f.ids as string[]) : [],
+          ),
+        )
+      : null;
+
   await new Promise<void>((resolveOuter) => {
     let outerSettled = false;
     let pending = relays.length;
@@ -106,7 +120,16 @@ export async function fetchNostrEvents(
           return;
         }
         let settled = false;
-        const ws = new WebSocket(relayUrl, wsOpts);
+        let ws: WebSocket;
+        try {
+          ws = new WebSocket(relayUrl, wsOpts);
+        } catch {
+          // A synchronous ctor throw would otherwise reject the void'd async
+          // IIFE without ever decrementing `pending` — the outer promise never
+          // resolves and the caller hangs forever (no backstop timer). §0i.8.
+          onRelayDone();
+          return;
+        }
         const subId = `gw-${randomUUID()}`;
         const done = () => {
           if (settled) return;
@@ -135,17 +158,36 @@ export async function fetchNostrEvents(
             done();
           }
         });
+        // k-of-n bookkeeping, per relay: only a relay that DELIVERED at least
+        // one event counts toward k — two fast relays that don't carry the
+        // thread would otherwise settle the broad net near-instantly and the
+        // reply-light result caches for 60s (§0h.3). And each relay counts at
+        // most once, so a misbehaving relay repeating EOSE can't reach k alone
+        // (§0i.8).
+        let delivered = false;
+        let eoseCounted = false;
         ws.on("message", (raw) => {
           try {
             const msg = JSON.parse(raw.toString());
             if (msg[0] === "EVENT" && msg[1] === subId) {
               const ev = msg[2] as RawNostrEvent;
-              if (ev?.id && !byId.has(ev.id)) byId.set(ev.id, ev);
-              if (resolve.mode === "first-event") finishOuter();
-            } else if (msg[0] === "EOSE" && msg[1] === subId) {
-              if (resolve.mode === "k-of-n" && ++eoseCount >= resolve.k) {
+              const wanted =
+                !requestedIds || requestedIds.size === 0 || requestedIds.has(ev?.id ?? "");
+              if (ev?.id && wanted && !byId.has(ev.id)) byId.set(ev.id, ev);
+              delivered = delivered || (Boolean(ev?.id) && wanted);
+              if (resolve.mode === "first-event" && wanted && ev?.id) {
                 finishOuter();
               }
+            } else if (msg[0] === "EOSE" && msg[1] === subId) {
+              if (
+                resolve.mode === "k-of-n" &&
+                delivered &&
+                !eoseCounted &&
+                ++eoseCount >= resolve.k
+              ) {
+                finishOuter();
+              }
+              if (delivered) eoseCounted = true;
               done();
             }
           } catch {
