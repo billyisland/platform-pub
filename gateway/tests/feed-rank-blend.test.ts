@@ -27,12 +27,13 @@ import {
 
 const DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
-// Params mirror the host query's layout: $1 feed_id, $2 fi_id[], then the four
+// Params mirror the host query's layout: $1 feed_id, $2 fi_id[], then the five
 // blend params in the order items.ts pushes them.
 const P_EXPLORE = 3;
 const P_FOLLOWING = 4;
 const P_GRAVITY = 5;
 const P_FLOOR = 6;
+const P_ASOF = 7;
 
 // The host's `scored` CTE, reduced to just the ranking expression. `matched` is
 // stubbed with a flat weight of 1 so weight never confounds the proof term;
@@ -43,7 +44,7 @@ function rankSql(weight = "1::float8"): string {
     matched AS (
       SELECT id AS fi_id, ${weight} AS weight FROM feed_items WHERE id = ANY($2::uuid[])
     )
-    SELECT fi.id AS fi_id, ${proofBlendScoreSql(P_GRAVITY, P_FLOOR)} AS effective_score
+    SELECT fi.id AS fi_id, ${proofBlendScoreSql(P_GRAVITY, P_FLOOR, P_ASOF)} AS effective_score
     FROM feed_items fi
     JOIN matched m ON m.fi_id = fi.id
     ORDER BY effective_score DESC, fi.id DESC
@@ -54,6 +55,10 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
   let client: pg.Client;
   let feedId: string;
   let ownerId: string;
+  // One pinned asOf per test: cross-call score comparisons (alpha/mute/weight)
+  // rely on both evaluations seeing identical ages, which SQL now() used to
+  // give for free (transaction-stable) and a per-call Date.now() does not.
+  let testAsOf: number;
 
   beforeAll(async () => {
     client = new pg.Client({ connectionString: DB_URL });
@@ -64,6 +69,7 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
   });
 
   beforeEach(async () => {
+    testAsOf = Date.now() / 1000;
     await client.query("BEGIN");
     ownerId = await insertAccount(client, "rank-owner");
     const { rows } = await client.query<{ id: string }>(
@@ -135,7 +141,7 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
 
   async function rank(
     ids: string[],
-    opts: { alphaExplore?: number; alphaFollowing?: number; gravity?: number; floor?: number; weight?: string } = {},
+    opts: { alphaExplore?: number; alphaFollowing?: number; gravity?: number; floor?: number; weight?: string; asOf?: number } = {},
   ): Promise<{ id: string; score: number }[]> {
     const { rows } = await client.query<{ fi_id: string; effective_score: string }>(
       rankSql(opts.weight),
@@ -146,6 +152,7 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
         opts.alphaFollowing ?? 0.8,
         opts.gravity ?? 1.5,
         opts.floor ?? 0.05,
+        opts.asOf ?? testAsOf,
       ],
     );
     return rows.map((r) => ({ id: r.fi_id, score: Number(r.effective_score) }));
@@ -313,6 +320,34 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
     await addReach("following");
     const withFollowing = (await rank([ambientOnly]))[0].score;
     expect(withFollowing).toBeCloseTo(bare, 10);
+  });
+
+  // --- pinned as-of (§0i.2 — time-shifted pagination) -----------------------
+
+  it("scores are exact at a pinned asOf, so the page-1 boundary item never re-qualifies", async () => {
+    // The keyset filter is a strict (score, id) <. Page 2 re-evaluates every
+    // item's score, so exactness at the SAME asOf is what excludes the page-1
+    // boundary item. With now() instead, the boundary item's score has decayed
+    // below the cursor score by page 2 and re-qualifies — the duplicate bug.
+    const a = await item({ resonance: 2, ambientPctl: 0.5, ageHours: 1 });
+    const b = await item({ resonance: 2, ambientPctl: 0.5, ageHours: 2 });
+    const asOf = Date.now() / 1000;
+
+    const page1 = await rank([a, b], { asOf });
+    const boundary = page1[0]; // pretend LIMIT 1: cursor = (boundary.score, boundary.id)
+
+    // Re-evaluated at the pinned asOf, the boundary item reproduces its score
+    // EXACTLY — the strict `<` therefore excludes it from page 2.
+    const again = await rank([a, b], { asOf });
+    const reScore = again.find((r) => r.id === boundary.id)!.score;
+    expect(reScore).toBe(boundary.score);
+
+    // The bug class this pins out: an hour later, an UNpinned evaluation gives
+    // the boundary item a strictly lower score than the cursor carries — it
+    // would re-qualify under `<` and duplicate.
+    const shifted = await rank([a, b], { asOf: asOf + 3600 });
+    const decayed = shifted.find((r) => r.id === boundary.id)!.score;
+    expect(decayed).toBeLessThan(boundary.score);
   });
 
   // --- weight ---------------------------------------------------------------

@@ -121,8 +121,20 @@ export function feedAlphaCte(feedIdParam: number, aExplore: number, aFollowing: 
  * unbounded above (log2 of an arbitrary ratio) and negative below (E under
  * baseline), and `ambient_pctl` should be in [0,1] but is a plain NUMERIC. A
  * bad row must not be able to dominate the ordering of a whole feed.
+ *
+ * AGE IS PINNED TO A CALLER-SUPPLIED "AS OF" INSTANT (fractional epoch
+ * seconds), never now(): with now(), every item's effective_score strictly
+ * decreases between page fetches (~37%/h relative decay at 2h age, g=1.5), so
+ * a page-1 boundary item re-qualifies under the strict keyset `<` on page 2 —
+ * duplicates for any plain consumer, silently short pages under key-dedup.
+ * Page 1 mints asOf and the cursor carries it, so every later page scores the
+ * corpus at the same instant and the keyset stays exact (§0i.2).
  */
-export function proofBlendScoreSql(gravityParam: number, floorParam: number): string {
+export function proofBlendScoreSql(
+  gravityParam: number,
+  floorParam: number,
+  asOfParam: number,
+): string {
   return `(
     GREATEST(
         (SELECT alpha FROM feed_alpha)
@@ -132,7 +144,7 @@ export function proofBlendScoreSql(gravityParam: number, floorParam: number): st
       $${floorParam}::float8
     )
     / POWER(
-        GREATEST(EXTRACT(EPOCH FROM (now() - fi.published_at)) / 3600, 0) + 2,
+        GREATEST(EXTRACT(EPOCH FROM (to_timestamp($${asOfParam}::float8) - fi.published_at)) / 3600, 0) + 2,
         $${gravityParam}::float8
       )
   )::float8 * m.weight`;

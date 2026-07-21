@@ -123,14 +123,21 @@ export async function loadFeedItemsPage(
 const UNBOUNDED_SCORE = 1e18;
 
 type FeedCursor =
-  | { kind: "scored"; score: number; id: string }
+  // asOf (fractional epoch seconds) pins the D6 blend's age term so later
+  // pages score the corpus at page 1's instant (§0i.2 — a now()-decayed score
+  // re-qualifies boundary items under the strict keyset). Optional: flag-off
+  // cursors don't carry it (fi.score doesn't decay at query time), and a
+  // 3-part cursor decodes fine so in-flight paginators survive the deploy.
+  | { kind: "scored"; score: number; id: string; asOf?: number }
   | { kind: "explore"; score: number; ts: number; id: string };
 
 // Exported for the cursor round-trip test (M13): the encode→decode pair must be
 // lossless in the epoch, and a unit test is the only thing that pins that.
 export function encodeFeedCursor(c: FeedCursor): string {
   return c.kind === "scored"
-    ? `scored:${c.score}:${c.id}`
+    ? c.asOf !== undefined
+      ? `scored:${c.score}:${c.id}:${c.asOf}`
+      : `scored:${c.score}:${c.id}`
     : `explore:${c.score}:${c.ts}:${c.id}`;
 }
 
@@ -141,10 +148,17 @@ export function decodeFeedCursor(raw: string | undefined): FeedCursor | undefine
   if (!raw) return undefined;
   const parts = raw.split(":");
   if (parts[0] === "scored") {
-    if (parts.length !== 3) return undefined;
+    if (parts.length !== 3 && parts.length !== 4) return undefined;
     const score = Number(parts[1]);
     const id = parts[2];
     if (Number.isNaN(score) || !UUID_RE.test(id)) return undefined;
+    if (parts.length === 4) {
+      // Number, never parseInt — asOf is a FRACTIONAL epoch (see the explore
+      // ts note below); empty rejected explicitly (Number("") === 0).
+      const asOf = parts[3].trim() === "" ? NaN : Number(parts[3]);
+      if (!Number.isFinite(asOf)) return undefined;
+      return { kind: "scored", score, id, asOf };
+    }
     return { kind: "scored", score, id };
   }
   if (parts[0] === "explore") {
@@ -219,13 +233,19 @@ async function sourceFilteredItems(
   const blend = resonanceRankingEnabled() ? await loadProofBlendParams() : null;
   let alphaCte = "";
   let scoredModeExpr = `COALESCE(fi.score, 0)::float8 * m.weight`;
+  // The blend's age term is scored "as of" one pinned instant: page 1 mints it,
+  // the cursor carries it forward (§0i.2 — see proofBlendScoreSql). A 3-part
+  // pre-deploy cursor has no asOf; falling back to now() decays that one
+  // paginator exactly as before, once.
+  const asOfSecs = cursor?.asOf ?? Date.now() / 1000;
   if (blend) {
     const aExplore = params.push(blend.alphaExplore);
     const aFollowing = params.push(blend.alphaFollowing);
     const gravity = params.push(blend.gravity);
     const floor = params.push(blend.floor);
+    const asOf = params.push(asOfSecs);
     alphaCte = `${feedAlphaCte(2, aExplore, aFollowing)},`;
-    scoredModeExpr = proofBlendScoreSql(gravity, floor);
+    scoredModeExpr = proofBlendScoreSql(gravity, floor, asOf);
   }
 
   const result = await pool.query<any>(
@@ -361,6 +381,9 @@ async function sourceFilteredItems(
         kind: "scored",
         score: Number(lastRow.effective_score),
         id: lastRow.fi_id,
+        // Only the blend decays with time, so only blend-on cursors pin asOf —
+        // flag-off cursors keep the pre-existing 3-part wire shape.
+        ...(blend ? { asOf: asOfSecs } : {}),
       })
     : undefined;
 

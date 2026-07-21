@@ -118,6 +118,29 @@ describe("explore feed cursor codec — epoch precision (M13)", () => {
     expect(decodeFeedCursor(encodeFeedCursor(c))).toEqual(c);
   });
 
+  it("the scored cursor round-trips a fractional asOf (§0i.2 pinned-age keyset)", () => {
+    // asOf is what pins the D6 blend's age term across pages; losing its
+    // fraction shifts every page-2 score and un-pins the keyset.
+    const c = { kind: "scored" as const, score: 1.5, id: UUID, asOf: FRACTIONAL };
+    const wire = encodeFeedCursor(c);
+    expect(wire).toContain(String(FRACTIONAL));
+    expect(decodeFeedCursor(wire)).toEqual(c);
+  });
+
+  it("a 3-part scored cursor (pre-asOf, in-flight at deploy) still decodes", () => {
+    expect(decodeFeedCursor(`scored:1.5:${UUID}`)).toEqual({
+      kind: "scored",
+      score: 1.5,
+      id: UUID,
+    });
+  });
+
+  it("rejects an empty or non-finite scored asOf", () => {
+    expect(decodeFeedCursor(`scored:1.5:${UUID}:`)).toBeUndefined();
+    expect(decodeFeedCursor(`scored:1.5:${UUID}:Infinity`)).toBeUndefined();
+    expect(decodeFeedCursor(`scored:1.5:${UUID}:abc`)).toBeUndefined();
+  });
+
   it("a foreign/untagged shape decodes to undefined (clean restart)", () => {
     expect(decodeFeedCursor(`${FRACTIONAL}:${UUID}`)).toBeUndefined();
     expect(decodeFeedCursor("garbage")).toBeUndefined();
