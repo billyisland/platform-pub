@@ -23,6 +23,84 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (second audit + fix batch)** — **§0i: floor-lurch scroll
+  compensation, system placements yield, visibility-aware heal, hydration
+  silent-success, tribute-void earned-side pairing.** Five-agent adversarial
+  review of the full Jul 19–21 window (all 22 commits; remaining findings
+  queued as CONSOLIDATED-TODO §0i, with §0h amended for the parts this batch
+  discharges). Fixed same-day:
+  (1) **Floor lurch on drop (HIGH, `WorkspaceView.tsx`):** contract-to-fit
+  committed the narrower canvas width before the origin layout effect ran, so
+  the browser had already clamped `scrollLeft` — and the relative `+=`
+  compensation then corrected twice: the floor jumped ~a viewport on most
+  drops away from the left end, and even on a plain click on vessel chrome (a
+  no-move gesture still opens/closes the slack). Ctrl+ArrowRight → any drag
+  reproduced it 100%. Fix: a passive scroll listener tracks the live position
+  in `floorScrollRef` (scroll events — including the clamp's own — dispatch
+  after the layout effect, so the ref is still pre-clamp when read) and the
+  compensation is now an ABSOLUTE assignment from it.
+  (2) **System placements now yield (HIGH):** `adoptFeed`, the bootstrap
+  default slots, and un-hide wrote index-derived/stored positions with no
+  clearance check — three non-gesture paths minting resting overlaps in
+  violation of the mover-yields guarantee. All three settle through
+  `findRestingPosition` (bootstrap against store-estimate obstacles — the DOM
+  isn't up; slotted same-boot siblings join the obstacle set; un-hide yields
+  to whatever legally took its ground).
+  (3) **Heal moved hydrate → bootstrap, made visibility-aware (MED,
+  `stores/workspace.ts`):** the hydrate-time heal was blind — it shelved a
+  vessel legally resting over a HIDDEN feed's stored rect (hidden feeds are
+  not obstacles) and never pruned ghost layouts for feeds deleted on another
+  device. New `reconcileLayouts(liveIds, visibleIds)` (bootstrap, before
+  anything paints) prunes ghosts and heals over visible feeds only; `hydrate`
+  no longer heals; `healRestingOverlaps` takes the include filter.
+  (4) **Gesture-slack correctness (MED, `Vessel.tsx`):** the slack-close
+  listener now matches the initiating `pointerId` (any second finger's
+  pointerup collapsed the origin under a live drag — mx is deliberately
+  uncompensated mid-drag, so the commit landed ~a viewport off); Ctrl+arrow
+  is ignored while a vessel is held; the resize seed height is floored to the
+  lattice (a press-with-no-move committed a fractional intrinsic height that
+  the store's round-nearest snap could grow ≤5px into a flush neighbour — and
+  handed `clampSizeClear` an off-lattice start it could only freeze on).
+  (5) **Merge-failure feedback (MED):** `handleMergeConfirm`'s catch cleared
+  `pendingMerge`, unmounting `MergeFeedConfirm` before its error/retry state
+  could paint — a failed merge read as a silent close. The rejection now
+  propagates to the dialog (which owns retry); Cancel/Escape still settles
+  the source via `onClose`.
+  (6) **Hydration silent-success — the other half of §0f-5 (MED,
+  `external-hydration.ts`):** non-throwing failure exits reported success:
+  AppView/Mastodon HTTP failures returned on `!res.ok`, and a zero-event
+  nostr harvest returned cleanly (reachable with ZERO relays answered — the
+  k-of-n soft deadline fires unconditionally). The job resolved true →
+  `hydrating: false` → the client cached the bare focal for the 60s TTL with
+  the throttle guard still set: the D1 deadlock in miniature, surviving §0f-5.
+  Now transient statuses (429/5xx) and empty harvests THROW (definitive 4xx
+  "gone" stays a clean settle). Client twin: the poll budget was unreachable
+  past 22.5s (the 46.5s cumulative tick tripped the 45s guard pre-fetch) —
+  raised to 50s so the final backoff tick actually fires.
+  `thread-hydration-guard.test.ts`: success cases now seed a real harvested
+  event; new zero-event-is-failure case.
+  (7) **Tribute-void earned-side pairing (MED, `payout.ts`
+  `rollbackTributePayoutRows`):** voiding a chargeback-reversed claimed
+  accrual on terminal tribute-payout failure left the chargeback planner's
+  as-if-paid `tribute_carve_reversal` (+root gross on the author) permanently
+  unpaired — completion never runs, the forward `tribute_carve` never posts,
+  and `ledger_writer_earned` stayed inflated by +root_gross for a read that
+  was fully clawed back (correct earned delta: 0). The rollback now posts the
+  balancing `tribute_carve` (−voided sum, account = author, cp = inspirer,
+  ROOT only) at the single point the ledger learns the carve will never
+  execute; the void UPDATE gained its missing `state = 'released'` filter
+  (the `<> 'completed'` guard admits `'reversed'`, whose accruals are 'paid'
+  and must stay so). The paid-side unpaired `tribute_payout_reversal` is
+  deliberately retained (the documented M3 residual — noted in situ). The
+  tribute conformance mock now models the void UPDATE + state-filtered
+  release faithfully, with a charged_back × terminal-failure fixture
+  asserting void + balancing carve (§0h.1's tribute half).
+  **Validation:** payment-service 170/170 (+1), gateway 354/354 (+1), web
+  collision 22/22, `tsc --noEmit` clean (web/gateway/payment-service), ledger
+  adjacency green, `next build` clean, root lint 0 errors. CLAUDE.md +
+  WORKSPACE-DESIGN-SPEC updated (system-placements-yield rule; heal
+  relocation).
+
 - **2026-07-21 (night)** — **Collision physics replaced with mover-yields
   placement: nothing else on the floor ever moves.** User report: putting a
   feed down bounced neighbours aside — the push-wave resolver's third-party
