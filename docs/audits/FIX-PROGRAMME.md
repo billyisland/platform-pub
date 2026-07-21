@@ -23,6 +23,94 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (code-tier batch, seven commits `8e4b5f4`…`009801f`)** —
+  **§0i.1/2/3/5/6/7/8/9 + §0h.1/2/3/5 discharged.** The queued code-tier
+  remainder of the second-pass audit, worked highest-stakes first:
+  - **Payments (`8e4b5f4`):** magic-link verify admits only
+    active/deactivated (a pre-deletion link no longer mints a
+    middleware-dead session for a `deleted` account — mirrors Google OAuth;
+    also the §0i.4 last bullet); `rollbackWriterPayoutRows` nulls
+    `writer_payout_id` on charged_back reads (state untouched — symmetric
+    with the tribute void leg; nothing consumes the pointer post-flip,
+    verified); reconcile A6 gains an unknown-ref_table catch-all in BOTH the
+    TS worker checks and the SQL twin (the scoped branches were
+    default-allow — the next F5-style trigger reuse now halts payouts
+    instead of going silently unchecked); writer conformance harness models
+    the state filter, handles the new pointer-null UPDATE (was the silent
+    fallthrough), and gains a mid-flight charged_back fixture via a one-shot
+    `mutateOn` — mutation-verified. §0h.2's M3 cross-ref bullet was already
+    discharged by `df4265f`'s comment block.
+  - **Feed denormalisation (`a1d4248`):** publication DELETE route removes
+    `feed_items` inside its transaction (§0i.3 — the §0f-1/M6 class, third
+    sibling; same rowCount guard as unpublish); author-refresh pass 6 keys
+    on ORIGIN deletion (`ei_p.deleted_at`), not row absence (§0i.6):
+    soft-deleted parents now clear (previously pinned forever, pass 4
+    re-writing them), hard-pruned parents RETAIN the last-known name
+    (retention prune/GC is storage management — clearing there would strip
+    valid attributions once prune churn starts; the decided semantics).
+    Pass 4 skips origin-deleted parents; pass 5 stays absence-based (notes
+    hard-delete IS the origin signal).
+  - **Engagement starvation (`49f9aa5`, §0i.1):** the daily <7d sweep pages
+    via a persisted keyset cursor (`engagement_daily_sweep_cursor` —
+    payouts_halted-class runtime state: fresh reads, upsert, DELETE-to-reset,
+    absent from config-defaults.sql), so successive daily runs rotate the
+    whole window instead of deterministically re-reaching the freshest 2000
+    (~90% of dev's 19,944 eligible were unreachable forever, freezing counts
+    at ~age 6h and poisoning D3's near-final-E premise). Short page resets
+    the rotation; stale cursor re-selects from the top same-run; the
+    non-daily tiers stay freshest-first; warns corrected. Five-test battery,
+    mutation-verified. This also discharges the flip-gate coverage caveat —
+    long-tail items now refresh every ceil(window/budget) days.
+  - **D6 cursor decay (`90e26ef`, §0i.2):** the scored-mode blend pins its
+    age term to a cursor-carried fractional-epoch `asOf`
+    (`to_timestamp($asOf)`, minted page 1) — with `now()`, every score
+    strictly decayed between fetches and boundary items re-qualified under
+    the strict keyset (duplicates / silently short pages). Optional 4th
+    cursor part; 3-part pre-deploy and flag-off cursors unchanged.
+    Time-shifted pagination test (exact reproduction at pinned asOf, decay
+    demonstrated at +1h) + codec round-trip/rejection tests.
+  - **Web (`41c6ad1`, §0i.5/7/9 + §0h.5):** lens-suppressor store
+    (`stores/lensSuppress.ts`, self-declaring) — `NewFeedPrompt` and
+    `LightboxOverlay` now flip the ∀ disc to the painted glyph (they can't
+    ride the presence registry: it wires the mobile disc-X to `onClose`);
+    FORALL ADR's painted-state list made exhaustive. SchemeMenu Escape stops
+    propagation (document-vs-window ordering, M22 precedent) so it no longer
+    dismisses the whole FeedComposer; SchemeDot active ring keys off global
+    mode (bone-on-dark); trigger+swatches carry `.focus-ring`; the swatch
+    aria-label colourway-id exposure recorded as deliberate
+    (GLASSHOUSE-AND-PALETTE-ADR §III.4). `PostResonance.networkLabel` picks
+    the corpus label by protocol alone (native with NULL custodial pubkey no
+    longer reads as open-Nostr).
+  - **Hydration/relay (`8423cd8`, §0h.3 + §0i.8):** k-of-n counts only
+    DELIVERING relays toward k (two fast empty relays settled the broad net
+    near-instantly, caching reply-light for 60s) and counts each relay once
+    (duplicate EOSEs); first-event resolves/stores only a filter-requested id
+    (a broken relay's instant junk copy otherwise became the exclusive
+    result); a synchronous WebSocket-ctor throw decrements `pending` instead
+    of hanging the outer promise forever; `fetchFocal` starts the D2
+    background poll on `hydrating: true` (the §0f-5 residual), seq-guarded.
+    Four scripted-relay tests; empty-EOSE guard mutation-verified; ADR
+    amended.
+  - **Resonance/rename residue (`009801f`, §0i.9/10):**
+    `protocol_engagement_ambient` pairs absent from the rebuild's tmp_e are
+    DELETEd in the same transaction (a toggled-off protocol's months-old
+    percentiles no longer re-arm scoring when count writes recur; battery
+    test, mutation-verified); the Jetstream enrichment self-heal widens from
+    NULL-handle-only to missing-OR-failed-resolve via the shared
+    `ATPROTO_ENRICH_FAILED_ERROR` marker, so a rename whose one-shot
+    getProfile re-resolve failed transiently heals on the existing
+    error_count backoff instead of being lost forever.
+
+  Validation: payment-service 177 tests, gateway 361+15 DB-backed blend,
+  feed-ingest 214+8 DB-backed baseline; `tsc --noEmit` clean in all four
+  workspaces; hairline tripwire clean; `next build` green. Still open from
+  §0h/§0i: §0i.4 (account-deletion external residue — product-flavoured),
+  §0i.10's poll-TICK skip-log remainder + migrate.ts `;`-split latent + the
+  brand geometry decision, §0i.11 workspace test debt, §0h.4 DOM-sweep
+  dedupe, §0h.6 E-formula parity guard, §0h.7 num() fallback parity, §0h.8
+  pattern-tier (cursor codec, reconcile TS/SQL twins), and §0h.1's
+  delete-account DB-test residual.
+
 - **2026-07-21 (docs pass)** — **§0i documentation-tier findings fixed.**
   The resonance ADR's "Absence" battery line no longer contradicts its own
   step-5 correction (NULL rows take the `feed_proof_floor`, not
