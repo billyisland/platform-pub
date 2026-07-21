@@ -2,7 +2,10 @@ import type { Task } from "graphile-worker";
 import type { ClientBase } from "pg";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
-import { getPlatformConfig } from "../lib/platform-config.js";
+import {
+  loadResonanceParams,
+  type ResonanceParams,
+} from "../lib/resonance.js";
 
 // =============================================================================
 // engagement_baseline_refresh — daily author baselines + network ambient
@@ -49,31 +52,19 @@ function nostrEngagementEnabled(): boolean {
   return v === "1" || v === "true";
 }
 
-export interface ResonanceWeights {
-  like: number;
-  reply: number;
-  repost: number;
-  nativeUp: number;
-  nativeGate: number;
-}
-
-async function loadWeights(): Promise<ResonanceWeights> {
-  const config = await getPlatformConfig();
-  const num = (key: string, fallback: number) => {
-    const v = parseFloat(config.get(key) ?? "");
-    return Number.isFinite(v) ? v : fallback;
-  };
-  return {
-    like: num("resonance_weight_like", 1),
-    reply: num("resonance_weight_reply", 3),
-    repost: num("resonance_weight_repost", 2),
-    nativeUp: num("resonance_weight_native_up", 5),
-    nativeGate: num("resonance_weight_native_gate", 5),
-  };
-}
+// The five E weights this task needs are a strict subset of ResonanceParams,
+// so it reads the scorer's OWN loader rather than re-declaring them. They used
+// to be declared twice, with independently written fallbacks — the baseline is
+// the denominator of the very ratio the scorer computes, so a weight that
+// disagreed between the two would not error, it would quietly score every post
+// against a distribution built from a different formula.
+export type ResonanceWeights = Pick<
+  ResonanceParams,
+  "like" | "reply" | "repost" | "nativeUp" | "nativeGate"
+>;
 
 export const engagementBaselineRefresh: Task = async () => {
-  const w = await loadWeights();
+  const w: ResonanceWeights = await loadResonanceParams();
   const client = await pool.connect();
   try {
     // One transaction: the temp table is ON COMMIT DROP, and under autocommit

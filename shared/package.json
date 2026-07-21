@@ -7,7 +7,7 @@
     "./*.js": "./dist/*.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('src/db','dist/db',{recursive:true,filter:(s)=>require('fs').statSync(s).isDirectory()||s.endsWith('.sql')})\"",
     "test": "vitest run",
     "test:watch": "vitest"
   },
