@@ -44,16 +44,20 @@ function ambientClause(post: Post, band: number): string {
   return band >= 3 ? `and high for ${where}` : `and non-trivial for ${where}`;
 }
 
-// A native post is protocol "nostr" WITH a pubkey — it was measured against
-// all.haus's own corpus, not the open Nostr network's, so name it accordingly.
+// The label names the CORPUS the band was measured against, and that axis is
+// protocol alone: native rows are protocol "nostr" (external nostr is always
+// "nostr_external"), scored against all.haus's own corpus — including a native
+// row with a NULL custodial pubkey, which the old pubkey-first check let fall
+// through to the open-Nostr gloss (§0i.9; isNativePost's pubkey conjunct is
+// about byline routing, not baseline membership).
 function networkLabel(post: Post): string {
-  if (post.author.pubkey) return "all.haus";
   switch (post.origin.protocol) {
+    case "nostr":
+      return "all.haus";
     case "atproto":
       return "Bluesky";
     case "activitypub":
       return "the Fediverse";
-    case "nostr":
     case "nostr_external":
       return "Nostr";
     default:

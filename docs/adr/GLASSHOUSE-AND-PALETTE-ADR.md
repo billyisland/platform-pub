@@ -365,6 +365,17 @@ this decision's cycle button for colour only. The three-bar `SchemeSwatch` and
 (a couple of ordered steps, no palette to preview), and **density collapsed to a
 two-state cycle** (`compact`/`standard`) the same day — see §III.4a.
 
+Accessibility notes (2026-07-21, §0i.7/§0h.5): each swatch's `aria-label`
+deliberately exposes the internal colourway id (`Colour scheme: spring`) — "no
+display name" is a visual-register decision and the ids are stable and
+descriptive, whereas an unnamed radio set is unusable to AT. The active ring on
+`SchemeDot` keys off the global mode explicitly (bone in dark, ink in light —
+the islanded span's pinned `--ah-ink` would otherwise vanish on the inverting
+menu ground), trigger + swatches carry `.focus-ring`, and the menu's Escape
+handler stops propagation so it closes the menu without dismissing the whole
+FeedComposer (Glasshouse listens on `window`, the menu on `document` — the M22
+lightbox precedent).
+
 ### 4a — Density is a two-state toggle (2026-07-19)
 
 `Density` was `compact | standard | full`, but `full` rendered byte-identically

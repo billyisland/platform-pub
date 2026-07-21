@@ -1017,7 +1017,15 @@ function SchemeDot({
         height: size,
         borderRadius: "50%",
         background: pal.walls,
-        outline: active ? "2px solid var(--ah-ink)" : "none",
+        // Ring colour keys off the global mode explicitly (the documented
+        // dark-disc-glyph bug class, §0h.5): the span is islanded, so
+        // var(--ah-ink) resolves canonical DARK ink even in dark mode — over
+        // the menu's non-islanded, inverting ground that made the active ring
+        // dark-on-dark. Bone reads on the dark ground exactly as ink does on
+        // the light one.
+        outline: active
+          ? `2px solid ${dark ? "var(--ah-bone)" : "var(--ah-ink)"}`
+          : "none",
         outlineOffset: 2,
       }}
     />
@@ -1049,7 +1057,14 @@ function SchemeMenu({
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        // Claim the Escape: Glasshouse's close listener is on `window`, which
+        // fires after this `document` listener in the bubble phase — stopping
+        // propagation closes the colour menu WITHOUT dismissing the whole
+        // FeedComposer (the M22 lightbox precedent; §0i.7).
+        e.stopPropagation();
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -1103,7 +1118,7 @@ function SchemeMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Colour scheme"
-          className="font-sans text-ui-sm"
+          className="font-sans text-ui-sm focus-ring"
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -1159,7 +1174,12 @@ function SchemeMenu({
                 type="button"
                 role="menuitemradio"
                 aria-checked={id === current}
+                // The internal colourway id IS the accessible name, on
+                // purpose: "no display name" is a visual-register decision
+                // (the dot is the identifier), but an unnamed radio set is
+                // unusable to AT — see GLASSHOUSE-AND-PALETTE-ADR §III.4.
                 aria-label={`Colour scheme: ${id}`}
+                className="focus-ring"
                 onClick={() => {
                   onSchemeChange(id);
                   setOpen(false);

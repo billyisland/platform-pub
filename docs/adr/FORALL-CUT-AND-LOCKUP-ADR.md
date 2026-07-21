@@ -242,6 +242,23 @@ no feed behind it there to invert, and the GLASSHOUSE painted path is what reads
 island. The handoff must be seamless (IV.2.2): on the floor, difference-of-white ≈ ink
 = the painted colour, so the swap should be invisible — verify it.
 
+**The painted-state list, exhaustive (amended 2026-07-21, §0i.5).** The lens holds
+ONLY when every one of these is false; any true ⇒ painted glyph on the island:
+
+1. the ∀ menu or its in-place Search panel open (`view !== "closed"`);
+2. any Glasshouse pane open (the presence registry, `useGlasshousePresence`);
+3. an Explain program active;
+4. the mobile bar anchor (`inBar` — mobile always paints);
+5. **any registered lens suppressor** (`useLensSuppress`, `stores/lensSuppress.ts`) —
+   the covering surfaces that are NOT Glasshouses and so never enter the presence
+   registry: the `NewFeedPrompt` naming modal (z-60 scrim) and the `LightboxOverlay`
+   (z-70). They self-declare via `useLensSuppressor(open)`. Without this the disc
+   stayed difference-blended UNDER their scrims — an iridescent negative where the
+   painted glyph should read. **Any future bespoke full-viewport overlay that is not
+   a Glasshouse must register a suppressor and be added to this list** — the
+   presence registry cannot carry them (it wires the mobile disc-X to the pane's
+   `onClose`, which must not dismiss a lightbox).
+
 **Mid-grey is the weak spot.** A feed near 50% luminance inverts to a near-equal grey,
 dropping contrast for both the body (vs its ground) and the ∀-hole (true feed vs the
 body's negative). No current scheme lands there; a future mid-tone one would. Mitigate

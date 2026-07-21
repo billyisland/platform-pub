@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLensSuppressor } from "../../stores/lensSuppress";
 
 // NewFeedPrompt — slice 3, minimal naming dialog for ∀ → New feed.
 // Source-set authoring lives in a later slice; this only captures a name and
@@ -26,6 +27,9 @@ interface NewFeedPromptProps {
 }
 
 export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
+  // Bespoke fixed modal, not a Glasshouse — self-declare so the ∀ disc swaps
+  // off its difference-lens state under this scrim (§0i.5, lensSuppress.ts).
+  useLensSuppressor(open);
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

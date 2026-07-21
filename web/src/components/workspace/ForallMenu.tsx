@@ -11,6 +11,7 @@ import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay } from "../../stores/libraryOverlay";
 import { useNetworkOverlay } from "../../stores/networkOverlay";
 import { useGlasshousePresence } from "../../stores/glasshouse";
+import { useLensSuppress } from "../../stores/lensSuppress";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useColorScheme } from "../../stores/colorScheme";
 import { useExplain } from "../../stores/explain";
@@ -174,8 +175,16 @@ export function ForallMenu({
   // (§IV.2.2). The blend group is scoped by `body { isolation: isolate }`
   // (globals.css) and the canvas confines vessel z-order with its own
   // isolation — see WorkspaceView.
+  // Non-Glasshouse covering surfaces (NewFeedPrompt, LightboxOverlay) aren't
+  // in the presence registry — they self-declare via useLensSuppressor, else
+  // the disc stays difference-blended UNDER their scrims (§0i.5).
+  const lensSuppressed = useLensSuppress((s) => s.count > 0);
   const lensMode =
-    !inBar && view === "closed" && !glasshouseOpen && !explainActive;
+    !inBar &&
+    view === "closed" &&
+    !glasshouseOpen &&
+    !explainActive &&
+    !lensSuppressed;
   const [activeIndex, setActiveIndex] = useState(0);
   // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
   // leaving completes the turn to 360° (back to ∀), then snaps to 0 for next
