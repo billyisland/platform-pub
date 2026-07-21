@@ -23,6 +23,38 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (evening)** — **FORALL-CUT-AND-LOCKUP-ADR implemented: the
+  negative-space cut mark, the idle disc as a difference lens, the lockup
+  rebalance.** §III: brand assets shipped (`web/public/brand/` — true-cut
+  SVG+PNG, self-contained on-bone/on-ink pairs, proof sheet; the README states
+  the punch-vs-paint rule). §IV: the resting desktop disc is now a real window
+  — a white disc with the ∀ punched through (SVG mask), `mix-blend-mode:
+  difference` against the workspace, so the body renders as the live negative
+  of whatever passes beneath and the letterform shows the TRUE feed; the
+  wordmark takes the same blend so a feed edge runs its seam through the type.
+  The blend is scoped by `body { isolation: isolate }` (globals.css) plus the
+  canvas wrapper's own `isolation` (WorkspaceView) — the latter confines the
+  vessels' drag-raise z-indices so the z-auto lens lockup still paints above
+  them (any z-index between disc and feed renders the disc solid white — the
+  prototype bug, now documented at each seam). Lens holds only while idle
+  (`lensMode = !inBar && view closed && !glasshouseOpen && !explainActive`);
+  every other state keeps the painted glyph on the z-60 island, and the swap
+  lands where hole and paint coincide (§IV.2.2). The hole spins with the
+  hover-turn (spin style + 360°→0° reset shared across both svg branches); the
+  unread badge hoists to an unblended later sibling in lens mode (§VI: the
+  badge never iridesces; `pointer-events: none` so clicks fall through to the
+  button). §V: floating disc 56→46, wordmark 24→28, dropdown gap now tracks
+  `discSize`. Docs: ADR → Accepted; LOGO-REFINEMENT-SPEC geometry note (the
+  cut form's rim-kiss supersedes for that form only — the live button stays
+  clear-of-rim per §IV.4); ForAllMark doc comment; CLAUDE.md ∀ rule extended
+  with the punch-vs-paint + stacking invariants. Verified: web tsc clean,
+  suite 156/156, `next build` clean, hairline tripwire adds nothing (one
+  pre-existing comment false-positive in globals.css), root eslint 0 errors on
+  touched files. Outstanding: the ADR §VII eyeball pass (feed schemes under
+  the lens in light + dark, the lens→paint open-swap, the seam through the
+  wordmark, keyboard-focus ring colour over the blend) needs the rebuilt web
+  image (`docker compose build web && up -d web`).
+
 - **2026-07-21 (later)** — **Follow-up: the no-overlap guarantee made literal —
   livelock repair, corpus widened to resize scale, hydrate heal.** A review
   probe (~600k randomized legal layouts) falsified two claims in the entry

@@ -1458,6 +1458,14 @@ export function WorkspaceView() {
             position: "relative",
             width: extent.width,
             height: "100%",
+            // Confine vessel z-order (the drag/armed raise in Vessel.tsx) to
+            // the canvas. The idle ∀ disc runs at z-index:auto in lens mode
+            // (FORALL-CUT-AND-LOCKUP-ADR §IV.5 — any z-index between disc and
+            // feed breaks the difference blend), so without this a raised
+            // vessel would paint OVER the disc; isolated, the canvas flattens
+            // into one unit the later-in-DOM ForallMenu paints above, and one
+            // backdrop the lens inverts.
+            isolation: "isolate",
           }}
         >
           {vessels

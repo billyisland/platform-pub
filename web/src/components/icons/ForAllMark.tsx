@@ -10,6 +10,13 @@ interface ForAllMarkProps {
  * slightly lighter than the legs. This mark defines the canonical stance
  * (~20.5° leg splay); the disc marks (ForallMenu trigger, favicon) derive
  * from it. `size` is the rendered HEIGHT; width follows the 0.7 aspect.
+ *
+ * The DISC form additionally has a canonical CUT realisation — the ∀ punched
+ * clean through an opaque disc, apex kissing the bottom rim, feet running out
+ * flush through the top (docs/adr/FORALL-CUT-AND-LOCKUP-ADR §III; exported
+ * assets in web/public/brand/, live as the idle workspace lens in ForallMenu).
+ * That geometry is the cut form's only — this bare glyph has no rim to kiss
+ * and is unchanged by it.
  */
 export function ForAllMark({ size = 22, className = '' }: ForAllMarkProps) {
   const h = size

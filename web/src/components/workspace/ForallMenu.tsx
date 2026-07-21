@@ -92,7 +92,10 @@ export function ForallMenu({
   anchor = "floating",
 }: ForallMenuProps) {
   const inBar = anchor === "bar";
-  const discSize = inBar ? 36 : 56;
+  // Floating disc 46 / wordmark 28 (§V lockup rebalance,
+  // FORALL-CUT-AND-LOCKUP-ADR): disc/cap-height ≈ 2.3, so the two read as kin
+  // on one row rather than a disc looming over a label.
+  const discSize = inBar ? 36 : 46;
   // The disc inverts under global dark mode — a light bone disc with a dark ink
   // glyph, the photo-negative of the light-mode dark disc. The disc stays
   // islanded (its tokens resolve to canonical light in both modes), so we pick
@@ -155,6 +158,24 @@ export function ForallMenu({
   // must look like the menu.
   const showClose =
     mobileSheetOpen || mobileMenuOpen || (explainActive && aboutOpen);
+  // FORALL-CUT-AND-LOCKUP-ADR §IV: the RESTING desktop disc is a lens — a
+  // white disc with the ∀ punched clean through (a real hole), set to
+  // mix-blend-mode: difference against the workspace. The body renders as the
+  // live photo-negative of whatever passes beneath (over the bone floor that
+  // resolves to ~ink, so the resting brand look is preserved), and the
+  // letterform shows the TRUE feed through the hole. The blend only reaches
+  // the canvas when no ancestor stacking context sits between disc and feed
+  // (§IV.5 — a z-index here was the prototype bug that rendered the disc
+  // solid white), so lens mode requires z-index:auto and can only hold while
+  // nothing needs the disc ABOVE it at z-60: menu/search closed, no
+  // Glasshouse pane (crisp-above-the-frost invariant), no Explain program.
+  // Every one of those states swaps to the painted glyph on the z-60 island;
+  // the swap lands where hole and paint coincide, so it reads as no change
+  // (§IV.2.2). The blend group is scoped by `body { isolation: isolate }`
+  // (globals.css) and the canvas confines vessel z-order with its own
+  // isolation — see WorkspaceView.
+  const lensMode =
+    !inBar && view === "closed" && !glasshouseOpen && !explainActive;
   const [activeIndex, setActiveIndex] = useState(0);
   // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
   // leaving completes the turn to 360° (back to ∀), then snaps to 0 for next
@@ -414,6 +435,67 @@ export function ForallMenu({
     }
   }
 
+  // Spin transform shared by the painted glyph and the lens circle — the hole
+  // spins with the disc (§IV.1), and the 360°→0° snap must fire on whichever
+  // svg is mounted, so both branches carry the same style + reset handler.
+  const spinStyle: React.CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    transformOrigin: "center",
+    // The close glyph never spins — when it's showing, the hover spin is
+    // pinned to 0 and the ∀↔X swap is carried by the two morph groups.
+    transform: `rotate(${showClose ? 0 : glyphRot}deg)`,
+    transition: spinTransition ? "transform 480ms ease-in-out" : "none",
+  };
+  const onSpinTransitionEnd = (e: React.TransitionEvent<SVGSVGElement>) => {
+    // The completing turn has landed back at ∀ — snap 360°→0° with no
+    // transition so the next hover starts cleanly from upside-down. Only the
+    // svg's own transform counts (the glyph groups bubble their morph
+    // transitions up here too).
+    if (
+      e.target === e.currentTarget &&
+      e.propertyName === "transform" &&
+      glyphRot === 360
+    ) {
+      setSpinTransition(false);
+      setGlyphRot(0);
+    }
+  };
+
+  // The unread badge must never iridesce (§VI non-goal: badge unchanged), so
+  // in lens mode it renders OUTSIDE the difference-blended button — a later
+  // sibling in the same container paints above the disc unblended;
+  // pointer-events:none lets clicks on it fall through to the button beneath.
+  // In painted mode it stays inside the button (part of the click target).
+  const unreadBadge =
+    totalUnread > 0 ? (
+      <span
+        aria-hidden="true"
+        className="font-mono"
+        style={{
+          position: "absolute",
+          top: -2,
+          right: -2,
+          minWidth: 20,
+          height: 20,
+          padding: "0 6px",
+          borderRadius: 10,
+          background: TOKENS.badgeBg,
+          color: TOKENS.badgeFg,
+          fontSize: 11,
+          fontWeight: 600,
+          lineHeight: "20px",
+          textAlign: "center",
+          border: `2px solid ${discBg}`,
+          ...(lensMode ? { pointerEvents: "none" as const } : null),
+        }}
+      >
+        {totalUnread > 99 ? "99+" : totalUnread}
+      </span>
+    ) : null;
+
   return (
     <>
       {/* D3 chrome swap (2026-07-15 form): while an Explain program is active
@@ -503,7 +585,15 @@ export function ForallMenu({
             height: discSize,
             display: "flex",
             alignItems: "center",
-            zIndex: 60,
+            // Lens mode (§IV.5): the wordmark takes the same difference blend
+            // as the disc, so a light/dark feed edge passing behind runs its
+            // seam straight through the type. That requires z-index:auto (any
+            // z-index forms a stacking context that breaks the blend) and the
+            // island (so var(--ah-white) below is TRUE white in both modes).
+            // Painted states restore the crisp z-60 layer above the scrim.
+            ...(lensMode
+              ? { ...LIGHT_ISLAND_STYLE, mixBlendMode: "difference" as const }
+              : { zIndex: 60 }),
             background: "transparent",
             border: "none",
             padding: 0,
@@ -513,10 +603,15 @@ export function ForallMenu({
           <span
             className="font-sans font-medium leading-none"
             style={{
-              fontSize: 24,
-              // var(--ah-ink) (not the locked ink-925) so the wordmark flips to
-              // light on the dark workspace floor under the global dark mode.
-              color: "var(--ah-ink)",
+              // 28 (was 24) — §V lockup rebalance: with the 46px disc,
+              // disc/cap-height ≈ 2.3, so the pair reads as kin on one row.
+              fontSize: 28,
+              // Lens: true white, so difference renders the full negative
+              // (over the bone floor that resolves to ≈ ink — the resting
+              // brand look). Painted: var(--ah-ink) (not the locked ink-925)
+              // so the wordmark flips to light on the dark workspace floor
+              // under the global dark mode.
+              color: lensMode ? "var(--ah-white)" : "var(--ah-ink)",
               letterSpacing: "-0.01em",
             }}
           >
@@ -537,7 +632,19 @@ export function ForallMenu({
           // on the dark floor.
           inBar
             ? { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 8, top: 6, zIndex: 60 }
-            : { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 24, bottom: 24, zIndex: 60 }
+            : {
+                ...LIGHT_ISLAND_STYLE,
+                position: "fixed",
+                right: 24,
+                bottom: 24,
+                // Lens mode: z-index:auto — a z-index here was the exact
+                // prototype bug that rendered the blended disc solid white
+                // (§IV.5). DOM order still paints the disc above the isolated
+                // canvas (ForallMenu mounts after it). Every painted state
+                // (menu open, pane up, Explain) restores the z-60
+                // crisp-above-the-frost island.
+                ...(lensMode ? null : { zIndex: 60 }),
+              }
         }
       >
       {view === "menu" && (
@@ -549,7 +656,10 @@ export function ForallMenu({
           style={{
             position: "absolute",
             right: 0,
-            ...(inBar ? { top: discSize + 8 } : { bottom: 64 }),
+            // Track discSize (§V follow-through) rather than a fixed 64, so a
+            // disc resize can't silently widen the disc↔menu gap. 46 + 18
+            // preserves the tuned gap at the rebalanced size.
+            ...(inBar ? { top: discSize + 8 } : { bottom: discSize + 18 }),
             minWidth: 240,
             padding: 6,
           }}
@@ -634,7 +744,14 @@ export function ForallMenu({
           width: discSize,
           height: discSize,
           borderRadius: "50%",
-          background: discBg,
+          // Lens mode (§IV): the button paints nothing itself — the masked
+          // white circle inside is the disc body, difference-blended against
+          // the canvas, and the ∀ is a REAL hole showing the true feed. The
+          // blend sits on the button (not the svg) so its own transform below
+          // can't form a stacking context between the blending element and
+          // the backdrop.
+          background: lensMode ? "transparent" : discBg,
+          ...(lensMode ? { mixBlendMode: "difference" as const } : null),
           color: discGlyph,
           border: "none",
           padding: 0,
@@ -670,7 +787,58 @@ export function ForallMenu({
             old single floor-on-floor clip leaked once the open-menu scale + spin
             stopped the compositor cancelling the tips against the floor).
             Wrapper + inner SVG so the unread badge stays an UN-clipped sibling on
-            the button. */}
+            the button.
+
+            LENS branch (FORALL-CUT-AND-LOCKUP-ADR §IV): when the disc rests
+            idle on the desktop floor it is instead a white disc with the ∀
+            punched clean through — the mask's own circle is the containment
+            (no wrapper clip needed), and the whole svg spins so the hole turns
+            with the disc (§IV.1). Glyph geometry is identical to the painted
+            group, so the lens→paint swap on open lands where the two coincide
+            and reads as no change (§IV.2.2). showClose is never true in lens
+            mode (lensMode excludes every X state), so the lens carries no
+            morph groups. */}
+        {lensMode ? (
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 56 56"
+            onTransitionEnd={onSpinTransitionEnd}
+            style={spinStyle}
+          >
+            <defs>
+              {/* Mask luminance, not rendered colour (same register as
+                  #forall-clip): white keeps the disc body, black cuts the
+                  letterform clean out. */}
+              <mask id="forall-lens">
+                <circle cx="28" cy="28" r="28" fill="#fff" />
+                <g
+                  stroke="#000"
+                  strokeWidth={5}
+                  strokeLinecap="butt"
+                  fill="none"
+                >
+                  <path
+                    d="M10.6 -1.7 L28 45 L45.4 -1.7"
+                    strokeLinejoin="miter"
+                    strokeMiterlimit={6}
+                  />
+                  <line x1="18" y1="22" x2="38" y2="22" strokeWidth={4.2} />
+                </g>
+              </mask>
+            </defs>
+            {/* fill via style — SVG presentation attributes can't resolve
+                var(). Inside the island var(--ah-white) is TRUE white in both
+                modes; the difference source must be full-range white for the
+                negative to invert cleanly (§IV.5). */}
+            <circle
+              cx="28"
+              cy="28"
+              r="28"
+              mask="url(#forall-lens)"
+              style={{ fill: "var(--ah-white)" }}
+            />
+          </svg>
+        ) : (
         <span
           aria-hidden="true"
           style={{
@@ -683,31 +851,8 @@ export function ForallMenu({
         <svg
           aria-hidden="true"
           viewBox="0 0 56 56"
-          onTransitionEnd={(e) => {
-            // The completing turn has landed back at ∀ — snap 360°→0° with no
-            // transition so the next hover starts cleanly from upside-down. Only
-            // the svg's own transform counts (the glyph groups bubble their
-            // morph transitions up here too).
-            if (
-              e.target === e.currentTarget &&
-              e.propertyName === "transform" &&
-              glyphRot === 360
-            ) {
-              setSpinTransition(false);
-              setGlyphRot(0);
-            }
-          }}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            transformOrigin: "center",
-            // The close glyph never spins — when it's showing, the hover spin is
-            // pinned to 0 and the ∀↔X swap is carried by the two groups below.
-            transform: `rotate(${showClose ? 0 : glyphRot}deg)`,
-            transition: spinTransition ? "transform 480ms ease-in-out" : "none",
-          }}
+          onTransitionEnd={onSpinTransitionEnd}
+          style={spinStyle}
         >
           <defs>
             {/* The disc itself — clips the bars so their overshoot can never
@@ -772,31 +917,12 @@ export function ForallMenu({
           </g>
         </svg>
         </span>
-        {totalUnread > 0 && (
-          <span
-            aria-hidden="true"
-            className="font-mono"
-            style={{
-              position: "absolute",
-              top: -2,
-              right: -2,
-              minWidth: 20,
-              height: 20,
-              padding: "0 6px",
-              borderRadius: 10,
-              background: TOKENS.badgeBg,
-              color: TOKENS.badgeFg,
-              fontSize: 11,
-              fontWeight: 600,
-              lineHeight: "20px",
-              textAlign: "center",
-              border: `2px solid ${discBg}`,
-            }}
-          >
-            {totalUnread > 99 ? "99+" : totalUnread}
-          </span>
         )}
+        {!lensMode && unreadBadge}
       </button>
+      {/* Lens mode: the badge paints as a later sibling — above the blended
+          disc, itself unblended (§VI: the badge never iridesces). */}
+      {lensMode && unreadBadge}
       </div>
     </>
   );
