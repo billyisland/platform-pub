@@ -26,6 +26,12 @@ import { GRID } from "./grid";
 // left/up — so a resting position is on the lattice AND provably clear of the
 // obstacle. Rounding to nearest would let a push settle back inside by up to
 // half a cell.
+//
+// The three rules make resolution CORRECT when the wave converges; they do
+// not make it always converge (wide movers can livelock the wave — see
+// MAX_OPS). What makes "no overlap in any scenario" a guarantee rather than
+// an intent is the verify-and-repair pass at the end: the resolver checks its
+// own output and deterministically shelves anything still intersecting.
 
 export interface VesselRect {
   id: string;
@@ -37,8 +43,14 @@ export interface VesselRect {
 
 /**
  * Propagation budget — the number of vessels popped as pushers, not the number
- * of pushes. Feeds number in the tens and a wave visits each a handful of
- * times; this is a runaway backstop, not an expected limit.
+ * of pushes. A wave usually visits each vessel a handful of times, but the
+ * wave can genuinely LIVELOCK on legal geometry: a wide mover (a resize
+ * commit is a mover, and width may legally reach VESSEL_MAX_W) can cycle a
+ * group of vessels between each other's escape candidates forever, at any
+ * budget. So exhaustion is a reachable exit, not a theoretical backstop — and
+ * it must never return the overlapping intermediate state. It falls through
+ * to the verify-and-repair pass at the end of resolveCollisions, which
+ * restores the invariant deterministically.
  */
 const MAX_OPS = 400;
 
@@ -195,6 +207,25 @@ export function resolveCollisions(
     if (pusher) propagate(pusher);
   }
 
+  // Verify-and-repair — the guarantee of last resort. The wave terminates by
+  // fixed point or by budget; the budget exit means a livelock, and returning
+  // its intermediate state would REST vessels overlapping — the exact failure
+  // this module exists to prevent (and its worst form: the livelock's
+  // signature is vessels stacked at identical coordinates). So the resolver
+  // checks its own output and shelves any residual overlap clear. This also
+  // backstops pushClear's squeezed-from-every-side fallback, which ignores
+  // the mover by construction.
+  const repairs = repairRestingLayout([held, ...live.values()], {
+    pinned: held.id,
+  });
+  if (repairs.size > 0) {
+    warnRepairOnce(repairs.size);
+    for (const [id, pos] of repairs) {
+      const cur = live.get(id);
+      if (cur) live.set(id, { ...cur, x: pos.x, y: pos.y });
+    }
+  }
+
   const updates = new Map<string, { x: number; y: number }>();
   for (const original of others) {
     const settled = live.get(original.id);
@@ -202,6 +233,63 @@ export function resolveCollisions(
     if (settled.x !== original.x || settled.y !== original.y) {
       updates.set(original.id, { x: settled.x, y: settled.y });
     }
+  }
+  return updates;
+}
+
+// The repair path is exceptional (livelock geometry) and the resolver runs
+// per drag frame, so shout once per session rather than per frame.
+let warnedRepair = false;
+function warnRepairOnce(count: number) {
+  if (warnedRepair) return;
+  warnedRepair = true;
+  console.warn(
+    `[workspace] collision wave hit its propagation budget; shelved ${count} vessel(s) clear of the pile`,
+  );
+}
+
+/**
+ * Deterministic total repair: make `rects` mutually clear by SHELVING.
+ * Vessels are kept in place greedily — the pinned one first (the mover, never
+ * displaced), then left-to-right — and any vessel that overlaps a kept one is
+ * parked past the right edge of everything kept, the horizontal escape valve
+ * applied wholesale. Shelved vessels advance the shelf one at a time, so the
+ * result is provably clear whatever their heights.
+ *
+ * Two callers: resolveCollisions on budget exhaustion (above), and the
+ * workspace store's hydrate heal — layouts persisted by the pre-2026-07-21
+ * resolver can hold resting piles (identical-coordinate stacks) that a
+ * mover-scoped resolution would never revisit, because the user cannot drag
+ * a vessel they cannot see.
+ */
+export function repairRestingLayout(
+  rects: VesselRect[],
+  opts?: { pinned?: string },
+): Map<string, { x: number; y: number }> {
+  const pinnedId = opts?.pinned;
+  const order = [...rects].sort((a, b) => {
+    if (a.id === pinnedId) return -1;
+    if (b.id === pinnedId) return 1;
+    return a.x - b.x || a.y - b.y || (a.id < b.id ? -1 : 1);
+  });
+
+  const kept: VesselRect[] = [];
+  const shelved: VesselRect[] = [];
+  for (const r of order) {
+    if (r.id !== pinnedId && kept.some((k) => intersects(k, r))) {
+      shelved.push(r);
+    } else {
+      kept.push(r);
+    }
+  }
+
+  const updates = new Map<string, { x: number; y: number }>();
+  if (shelved.length === 0) return updates;
+
+  let shelfX = snapUp(Math.max(...kept.map((k) => k.x + k.w)) + GRID);
+  for (const r of shelved) {
+    updates.set(r.id, { x: shelfX, y: r.y });
+    shelfX = snapUp(shelfX + r.w + GRID);
   }
   return updates;
 }

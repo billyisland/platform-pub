@@ -23,6 +23,56 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (later)** — **Follow-up: the no-overlap guarantee made literal —
+  livelock repair, corpus widened to resize scale, hydrate heal.** A review
+  probe (~600k randomized legal layouts) falsified two claims in the entry
+  below. **(1) The resolver could still rest vessels overlapping**: the wave
+  **livelocks** on legal wide-mover geometry (a resize commit is a mover, and
+  `VESSEL_MAX_W` is 2000), the `MAX_OPS` exit returned the overlapping
+  intermediate state, and that state's signature is vessels at **identical
+  coordinates** — the exact symptom the fix below was named for, silently
+  persisted. Repro: mover 800×350 at (20,210) on a 760 floor → v0/v1 coincident
+  at (820,300); identical at budget 400, 10k, and 1M, so a true livelock, not an
+  undersized budget. **(2) The `visited` guard is load-bearing to omit in the
+  wave formulation too** — the entry below called its removal "defensive": a
+  vessel's second displacement can land it on a *third* vessel, and with a guard
+  the pair is never re-tested (~146 per 200k legal layouts rest overlapping).
+  Both findings live exclusively above the property corpus's 420px mover cap —
+  the corpus stopped where legal gestures keep going. **Fixes**:
+  `resolveCollisions` now ends with a **verify-and-repair pass** — it checks its
+  own output and, on any residual intersection, deterministically **shelves**
+  overlappers past the right edge of everything settled (the horizontal escape
+  valve applied wholesale; also backstops `pushClear`'s squeezed-from-every-side
+  fallback, which ignores the mover by construction), with a once-per-session
+  `console.warn` so budget exhaustion is no longer invisible. The repair
+  primitive (`repairRestingLayout`) is shared with a **one-shot hydrate heal**
+  in the workspace store, closing the "known residue" below on the spot rather
+  than "if it proves common" — a persisted pile renders as *one* vessel on a
+  floor with no retrieval affordance, so the user can never see it to report
+  it, and that trigger could never fire. Heal detection is conservative so a
+  deliberate arrangement is never disturbed: stored widths are exact, intrinsic
+  width is the shared default, absent (content-driven) heights are taken at the
+  vessel minimum — any overlap found at minimum size is real. **Tests**: corpus
+  widened (mover to 1600×600, others to 900×500), both counterexamples landed
+  as directed fixtures — the guard fixture discriminates by *position bound*
+  (wave-resolved settles left of the mover's right edge; guard-plus-shelf parks
+  a vessel past it at x ≥ 1520), because the no-overlap assertion alone is
+  satisfied by guard-plus-repair — the deliberate-illegal 50-pile test upgraded
+  from "terminates" to "clears", and four unit tests pin the repair primitive.
+  Mutation runs: reinstating the guard fails exactly its fixture; disabling the
+  repair fails the livelock fixture *and* the widened property test. Suite
+  22/22, full web 156/156, `next build` + hairline tripwire clean. Folded in:
+  the four vessel size bounds + intrinsic default width consolidated into
+  `lib/workspace/grid.ts` (WorkspaceView carried an admitted mirror of
+  Vessel.tsx's `WIDTH`; the store's heal would have been a third copy), and
+  Vessel.tsx's stale "overflow:hidden handles oversize" comment corrected.
+  **Residue, deliberate**: the wave itself still livelocks — the repair makes
+  the *outcome* correct, not the wave convergent, so a shelved vessel jumps
+  rather than shuffles; acceptable for geometry reachable only by resizing into
+  a crowd. The same review's remaining workspace findings (mid-gesture origin
+  shift, armed-merge target out of the obstacle set, un-hide/adopt/bootstrap
+  bypassing the resolution pass) are queued in CONSOLIDATED-TODO.
+
 - **2026-07-21** — **The no-overlap invariant now actually holds, and
   merge-by-drag stopped fighting it.** A bug hunt over the drag/stretch/collision
   seam found `resolveCollisions` could terminate with vessels still
@@ -80,7 +130,10 @@ starts.
   guard still passes, including across 3000 tightened random layouts — in the
   wave formulation a vessel never needs a second push that must re-propagate, so
   removing it is *defensive, not load-bearing*; it was a genuine bug in the old
-  pairwise algorithm, not this one. **Not verified running** (same blocked dev
+  pairwise algorithm, not this one. **[CORRECTED same day — see the follow-up
+  entry above: the guard IS load-bearing to omit; the mutation survived only
+  because the corpus capped the mover at 420px, below where second pushes must
+  re-propagate. The counterexample is now a directed fixture.]** **Not verified running** (same blocked dev
   container swap): the armed-target *feel* — whether riding-over reads clearly,
   whether arming is too eager when crossing a crowded floor — needs eyes in a
   browser; a ~250ms dwell before arming is the tuning knob and drops into
@@ -88,7 +141,9 @@ starts.
   layouts already persisted to `localStorage` by the buggy resolver may hold
   stacked vessels, and the resolver only fixes what the *mover* disturbs, so an
   existing pile stays piled until someone drags one of its members; a one-shot
-  heal on hydrate is the fix if it proves common. Docs: WORKSPACE-DESIGN-SPEC
+  heal on hydrate is the fix if it proves common. **[Closed same day — the heal
+  shipped, see the follow-up entry above; "if it proves common" was unfireable,
+  since a pile renders as one vessel and cannot be reported.]** Docs: WORKSPACE-DESIGN-SPEC
   addendum, WIREFRAME-DECISIONS Step 3 note, CLAUDE.md › *Desktop workspace
   floor*.
 

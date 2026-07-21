@@ -16,7 +16,11 @@ import {
   resolveCollisions,
   type VesselRect,
 } from "../../lib/workspace/collision";
-import { snap } from "../../lib/workspace/grid";
+import {
+  snap,
+  VESSEL_MIN_H as MIN_H,
+  VESSEL_DEFAULT_W,
+} from "../../lib/workspace/grid";
 import { computeExtent, EDGE_PAD } from "../../lib/workspace/canvas";
 import {
   workspaceFeeds as workspaceFeedsApi,
@@ -155,11 +159,9 @@ interface PendingCeremony {
 // Layout state lives in useWorkspace (localStorage-backed). For any feed
 // without a stored position, we compute a default grid slot and write back.
 
-const MIN_H = 200;
-
-// Vessel.tsx's intrinsic default width, mirrored here so the canvas extent can
-// be derived at render time from layout state alone (no DOM measurement).
-const VESSEL_DEFAULT_W = 300;
+// MIN_H and VESSEL_DEFAULT_W come from the shared grid module (previously
+// mirrored here from Vessel.tsx) so the canvas extent can be derived at
+// render time from layout state alone, without a constant to keep in sync.
 
 const DEFAULT_GRID = {
   paddingX: 40,

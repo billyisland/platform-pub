@@ -14,7 +14,15 @@ import {
   useMotionValue,
 } from "framer-motion";
 import { prefersReducedMotion } from "../../lib/workspace/motion";
-import { snap, GRID } from "../../lib/workspace/grid";
+import {
+  snap,
+  GRID,
+  VESSEL_MIN_W as MIN_W,
+  VESSEL_MIN_H as MIN_H,
+  VESSEL_MAX_W as MAX_W,
+  VESSEL_MAX_H as MAX_H,
+  VESSEL_DEFAULT_W as WIDTH,
+} from "../../lib/workspace/grid";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 import {
   paletteFor,
@@ -45,21 +53,17 @@ import { useExplainable } from "./ExplainProvider";
 export const WALL = 8; // px
 const PAD = 16; // px interior padding (top zone left open per Step 1: "Opening: full width of the vessel interior")
 const GAP = 12; // px inter-card gap
-const WIDTH = 300; // px default vessel width (fallback when no stored/live size)
 
 const ROUNDEL_TOKENS = {
   bg: "var(--ah-ink-925)",
   fg: "var(--ah-bone)",
 };
 
-// Slice 5b: minimums per spec ("below which content becomes illegible").
-// Spec says no maximum; we clamp at sane upper bounds defensively — the
-// floor's overflow:hidden handles oversize visually, and a workspace-level
-// reset returns truly-lost vessels.
-const MIN_W = 220;
-const MIN_H = 200;
-const MAX_W = 2000;
-const MAX_H = 2000;
+// Size envelope + intrinsic default width come from the shared grid module
+// (one definition for the component clamps, the canvas extent, and the
+// store's hydrate heal). Minimums per spec ("below which content becomes
+// illegible"); spec says no maximum, we clamp at sane upper bounds
+// defensively — the floor scrolls sideways to cover oversize.
 
 interface VesselProps {
   children: ReactNode;

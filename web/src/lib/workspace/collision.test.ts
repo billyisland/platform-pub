@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { resolveCollisions, type VesselRect } from "./collision";
+import {
+  resolveCollisions,
+  repairRestingLayout,
+  type VesselRect,
+} from "./collision";
 
 // The invariant under test (WORKSPACE-DESIGN-SPEC.md › Addendum — No-overlap
 // governs the resting state): after resolution NOTHING overlaps — not the
@@ -210,13 +214,18 @@ describe("resolveCollisions", () => {
       const floorH = 800;
       const count = pick(2, 10);
       // Sizes deliberately OFF the lattice: a resting position must be clear of
-      // its obstacle even when the obstacle's edge falls mid-cell.
+      // its obstacle even when the obstacle's edge falls mid-cell. Widths run
+      // to resize scale — VESSEL_MAX_W is 2000 and a resize commit is a mover.
+      // The original corpus capped the mover at 420px, and both 2026-07-21
+      // counterexamples (the livelock, the load-bearing guard removal) live
+      // exclusively above that cap: a corpus that stops where legal gestures
+      // keep going proves nothing about them.
       const mover: VesselRect = {
         id: "M",
         x: pick(0, 120) * 10,
         y: pick(0, 40) * 10,
-        w: pick(220, 420),
-        h: pick(200, 400),
+        w: pick(220, 1600),
+        h: pick(200, 600),
       };
       // A legal fixture is a RESTING floor: the others are mutually clear (the
       // invariant held before the gesture) and in bounds. Only the mover
@@ -226,10 +235,10 @@ describe("resolveCollisions", () => {
       for (let i = 0; i < count; i++) {
         const c: VesselRect = {
           id: `v${i}`,
-          x: pick(0, 40) * 10,
+          x: pick(0, 60) * 10,
           y: pick(0, 40) * 10,
-          w: pick(220, 420),
-          h: pick(200, 400),
+          w: pick(220, 900),
+          h: pick(200, 500),
         };
         if (c.y + c.h > floorH) continue;
         if (others.some((o) => overlaps(o, c))) continue;
@@ -320,7 +329,12 @@ describe("resolveCollisions", () => {
     expectNoOverlaps(mover, settle(mover, others, { h: 500 }));
   });
 
-  it("terminates on a large pile of mutually overlapping vessels", () => {
+  // DELIBERATE ILLEGAL FIXTURE — the one exemption from the legal-fixture
+  // rule in this file. Fifty mutually-overlapping vessels is not a resting
+  // floor; it exists to exercise the verify-and-repair backstop, which must
+  // return a mutually-clear layout even from garbage input (that is what the
+  // hydrate heal relies on). The wave-quality fixtures above stay legal.
+  it("clears even a large pile of mutually overlapping vessels", () => {
     const mover: VesselRect = { id: "M", x: 0, y: 0, w: 100, h: 100 };
     const others: VesselRect[] = Array.from({ length: 50 }, (_, i) => ({
       id: `v${i}`,
@@ -329,8 +343,124 @@ describe("resolveCollisions", () => {
       w: 100,
       h: 100,
     }));
-    const updates = resolveCollisions(mover, others, { h: 500 });
-    expect(updates.size).toBeGreaterThan(0);
-    expect(updates.size).toBeLessThanOrEqual(50);
+    expectNoOverlaps(mover, settle(mover, others, { h: 500 }));
+  });
+
+  // ── 2026-07-21 counterexamples (found by randomized probe, review of
+  // 4c933eb). Both live above the old corpus's 420px mover cap. ─────────────
+
+  // A true livelock: at ANY budget the wave never drains on this geometry —
+  // the wide mover leaves its overlappers cycling between each other's escape
+  // candidates. The budget exit used to return the intermediate state, which
+  // rested v0 and v1 fully coincident at (820,300): the exact
+  // identical-coordinate stacking the resolver exists to abolish, silently
+  // persisted. This pins the exhaustion path: whatever the wave leaves, the
+  // output must be clear and in bounds.
+  it("keeps the invariant when the wave livelocks (wide mover)", () => {
+    const mover: VesselRect = { id: "M", x: 20, y: 210, w: 800, h: 350 };
+    const others: VesselRect[] = [
+      { id: "v0", x: 510, y: 0, w: 340, h: 260 },
+      { id: "v1", x: 340, y: 300, w: 250, h: 260 },
+      { id: "v3", x: 750, y: 310, w: 400, h: 230 },
+    ];
+    const settled = settle(mover, others, { h: 760 });
+    expectNoOverlaps(mover, settled);
+    for (const v of settled) {
+      expect(v.y).toBeGreaterThanOrEqual(0);
+      expect(v.y + v.h).toBeLessThanOrEqual(760);
+    }
+  });
+
+  // The `visited` guard is LOAD-BEARING to omit, not defensive: a vessel's
+  // second displacement can land it on a third vessel, and with a guard it is
+  // never re-enqueued, so nothing ever tests that pair again — a resting
+  // overlap. The wave (guard-free) resolves this layout properly, everything
+  // settling left of the mover; a reinstated guard leaves an overlap that
+  // only the repair shelf can clear, which parks a vessel PAST the mover's
+  // right edge (x ≥ 1520). The position bound is what makes this fixture kill
+  // the guard mutation — the no-overlap assertion alone would be satisfied by
+  // guard + shelf.
+  it("propagates a second displacement (no visited guard)", () => {
+    const mover: VesselRect = { id: "M", x: 680, y: 270, w: 830, h: 220 };
+    const others: VesselRect[] = [
+      { id: "A", x: 190, y: 10, w: 280, h: 410 },
+      { id: "B", x: 470, y: 310, w: 280, h: 390 },
+      { id: "C", x: 790, y: 40, w: 430, h: 410 },
+    ];
+    const settled = settle(mover, others, { h: 760 });
+    expectNoOverlaps(mover, settled);
+    for (const v of settled) {
+      expect(
+        v.x,
+        `${v.id} was shelved instead of wave-resolved`,
+      ).toBeLessThan(mover.x + mover.w);
+    }
+  });
+});
+
+describe("repairRestingLayout", () => {
+  it("returns no updates for a layout that is already clear", () => {
+    const rects: VesselRect[] = [
+      { id: "a", x: 0, y: 0, w: 300, h: 400 },
+      { id: "b", x: 320, y: 0, w: 300, h: 400 },
+    ];
+    expect(repairRestingLayout(rects).size).toBe(0);
+  });
+
+  // The signature symptom of the pre-2026-07-21 resolver's livelock exit —
+  // and what the hydrate heal exists for.
+  it("shelves an identical-coordinate stack clear", () => {
+    const rects: VesselRect[] = [
+      { id: "a", x: 820, y: 300, w: 340, h: 260 },
+      { id: "b", x: 820, y: 300, w: 250, h: 260 },
+      { id: "c", x: 0, y: 0, w: 300, h: 200 },
+    ];
+    const updates = repairRestingLayout(rects);
+    expect(updates.size).toBe(1);
+    const settled = rects.map((r) => {
+      const u = updates.get(r.id);
+      return u ? { ...r, x: u.x, y: u.y } : r;
+    });
+    for (let i = 0; i < settled.length; i++) {
+      for (let j = i + 1; j < settled.length; j++) {
+        expect(overlaps(settled[i], settled[j])).toBe(false);
+      }
+    }
+  });
+
+  it("never moves the pinned rect", () => {
+    const rects: VesselRect[] = [
+      { id: "held", x: 500, y: 100, w: 300, h: 400 },
+      { id: "under", x: 500, y: 100, w: 300, h: 400 },
+    ];
+    const updates = repairRestingLayout(rects, { pinned: "held" });
+    expect(updates.has("held")).toBe(false);
+    expect(updates.has("under")).toBe(true);
+  });
+
+  it("keeps shelved vessels mutually clear whatever their heights", () => {
+    // Three vessels all stacked on a fourth at the same y-band: each must
+    // advance the shelf, not share it.
+    const rects: VesselRect[] = [
+      { id: "base", x: 0, y: 0, w: 400, h: 400 },
+      { id: "p1", x: 10, y: 10, w: 300, h: 400 },
+      { id: "p2", x: 20, y: 20, w: 300, h: 400 },
+      { id: "p3", x: 30, y: 30, w: 300, h: 400 },
+    ];
+    const updates = repairRestingLayout(rects, { pinned: "base" });
+    expect(updates.size).toBe(3);
+    const settled = rects.map((r) => {
+      const u = updates.get(r.id);
+      return u ? { ...r, x: u.x, y: u.y } : r;
+    });
+    for (let i = 0; i < settled.length; i++) {
+      for (let j = i + 1; j < settled.length; j++) {
+        expect(overlaps(settled[i], settled[j])).toBe(false);
+      }
+    }
+    // Everything shelved landed on the lattice.
+    for (const [, u] of updates) {
+      expect(u.x % 10).toBe(0);
+    }
   });
 });

@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { snap } from "../lib/workspace/grid";
+import {
+  snap,
+  VESSEL_MIN_W,
+  VESSEL_MIN_H,
+  VESSEL_DEFAULT_W,
+} from "../lib/workspace/grid";
+import { repairRestingLayout } from "../lib/workspace/collision";
 import {
   normalizeBrightness,
   normalizeDensity,
@@ -111,6 +117,38 @@ function readFromStorage(userId: string): Record<string, VesselLayout> {
   }
 }
 
+// One-shot heal on hydrate: layouts persisted by the pre-2026-07-21 resolver
+// can hold RESTING overlaps — its livelocked waves settled vessels at
+// identical coordinates, which renders as one vessel on a floor with no
+// retrieval affordance, so the user can never drag the pile apart themselves
+// (they cannot see it) and the mover-scoped resolver never revisits it.
+// Detection is deliberately conservative so a deliberate arrangement is never
+// disturbed: stored width is exact and intrinsic width is the known default,
+// but intrinsic HEIGHT is content-driven and unknowable here, so absent
+// heights are taken at the vessel minimum — any overlap found at minimum size
+// is real whatever the content height. Under-detects partial overlaps of
+// tall intrinsic vessels; never false-positives. Shelving (rightward, past
+// everything kept) comes from the same repair primitive the resolver's
+// budget-exhaustion path uses.
+function healRestingOverlaps(
+  positions: Record<string, VesselLayout>,
+): Record<string, VesselLayout> {
+  const rects = Object.entries(positions).map(([id, l]) => ({
+    id,
+    x: l.x,
+    y: l.y,
+    w: Math.max(l.w ?? VESSEL_DEFAULT_W, VESSEL_MIN_W),
+    h: l.h ?? VESSEL_MIN_H,
+  }));
+  const repairs = repairRestingLayout(rects);
+  if (repairs.size === 0) return positions;
+  const next = { ...positions };
+  for (const [id, pos] of repairs) {
+    next[id] = { ...next[id], x: snap(pos.x), y: snap(pos.y) };
+  }
+  return next;
+}
+
 function scheduleWrite(
   userId: string,
   positions: Record<string, VesselLayout>,
@@ -154,8 +192,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         clearTimeout(writeTimer);
         writeTimer = null;
       }
-      const positions = readFromStorage(userId);
+      const stored = readFromStorage(userId);
+      const positions = healRestingOverlaps(stored);
       set({ userId, positions, hydrated: true });
+      // A heal is a real layout change — persist it so the repair is
+      // once-per-pile, not once-per-session.
+      if (positions !== stored) scheduleWrite(userId, positions);
     },
 
     setVesselPosition: (feedId, pos) =>
