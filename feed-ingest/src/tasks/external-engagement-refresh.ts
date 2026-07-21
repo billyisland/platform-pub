@@ -20,7 +20,9 @@ import {
 //   - <7d  old → one daily run            — long-tail decay
 // Engagement is long-tail decay, so a 6-day-old item polled as often as a
 // 1-hour-old one is wasted load on public.api.bsky.app / Mastodon instances.
-// A per-run budget cap bounds the worst case.
+// A per-run budget cap bounds the worst case; the daily sweep pages through
+// its window across successive runs via a persisted keyset cursor (below), so
+// the cap defers long-tail coverage instead of permanently starving it.
 //
 // Bluesky:  batch getPosts (up to 25 URIs per call)
 // Mastodon: individual GET /statuses/:id, parallelised per instance
@@ -60,6 +62,7 @@ interface ExternalItemRow {
   like_count: number;
   reply_count: number;
   repost_count: number;
+  published_at: string;
 }
 
 interface CountUpdate {
@@ -67,6 +70,47 @@ interface CountUpdate {
   like: number;
   reply: number;
   repost: number;
+}
+
+// ---------------------------------------------------------------------------
+// Daily-sweep keyset cursor. Freshest-first + a fixed budget means a DAILY <7d
+// sweep whose window exceeds the budget only ever reaches the freshest slice —
+// deterministically, so the remainder is starved FOREVER, not "deferred to
+// next run" (dev measure 2026-07-21: 19,944 eligible, ~90% unreachable; their
+// counts freeze at ~age 6h and the resonance baselines build medians from
+// frozen Es). So the daily run pages: it persists the oldest published_at it
+// reached, the NEXT daily run resumes strictly below it, and a short page
+// resets the cursor for a fresh top-down rotation. Every long-tail item is
+// refreshed once per ceil(window/budget) days. The 30m/hourly tiers stay
+// freshest-first (their windows recur within hours, so nothing starves).
+//
+// RUNTIME STATE, not a tuning dial — deliberately absent from
+// config-defaults.sql (like payouts_halted): absence simply means "start from
+// the top". Read fresh + upserted (never a bare UPDATE), DELETEd to reset.
+// ---------------------------------------------------------------------------
+const DAILY_SWEEP_CURSOR_KEY = "engagement_daily_sweep_cursor";
+
+async function readDailySweepCursor(): Promise<string | null> {
+  const { rows } = await pool.query<{ value: string }>(
+    `SELECT value FROM platform_config WHERE key = $1`,
+    [DAILY_SWEEP_CURSOR_KEY],
+  );
+  return rows.length > 0 ? rows[0].value : null;
+}
+
+async function writeDailySweepCursor(publishedAt: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO platform_config (key, value, description)
+     VALUES ($1, $2, 'Runtime state: where the daily engagement long-tail sweep resumes (oldest published_at reached). Absent = start from the top.')
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [DAILY_SWEEP_CURSOR_KEY, publishedAt],
+  );
+}
+
+async function clearDailySweepCursor(): Promise<void> {
+  await pool.query(`DELETE FROM platform_config WHERE key = $1`, [
+    DAILY_SWEEP_CURSOR_KEY,
+  ]);
 }
 
 /**
@@ -148,31 +192,59 @@ export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
     parseInt(config.get("feed_ingest_engagement_max_items") ?? "", 10) || 2000;
 
   const lookbackHours = engagementLookbackHours(new Date());
+  const isDailySweep = lookbackHours === MAX_LOOKBACK_DAYS * 24;
   const cutoff = new Date(
     Date.now() - lookbackHours * 60 * 60 * 1000,
   ).toISOString();
 
   // Freshest-first within the budget — newest items decay fastest and matter
-  // most; the cap is a safety valve well above expected volume at this scale.
-  const { rows } = await pool.query<ExternalItemRow>(
-    `SELECT id, protocol, source_item_uri, interaction_data, media,
-            like_count, reply_count, repost_count
-     FROM external_items
-     WHERE published_at >= $1
-       AND deleted_at IS NULL
-       AND protocol IN ('atproto', 'activitypub')
-     ORDER BY published_at DESC
-     LIMIT $2`,
-    [cutoff, maxItems],
-  );
+  // most. The daily sweep additionally resumes below the persisted cursor so
+  // successive daily runs rotate through the whole <7d window (see the cursor
+  // block above); ties on published_at can slip a strict `<` keyset, which is
+  // acceptable for a periodic lossy refresh.
+  const selectPage = (cursor: string | null) =>
+    pool.query<ExternalItemRow>(
+      `SELECT id, protocol, source_item_uri, interaction_data, media,
+              like_count, reply_count, repost_count, published_at
+       FROM external_items
+       WHERE published_at >= $1
+         AND deleted_at IS NULL
+         AND protocol IN ('atproto', 'activitypub')
+         AND ($3::timestamptz IS NULL OR published_at < $3)
+       ORDER BY published_at DESC
+       LIMIT $2`,
+      [cutoff, maxItems, cursor],
+    );
 
-  if (rows.length === 0) return;
-  if (rows.length === maxItems) {
+  let cursor = isDailySweep ? await readDailySweepCursor() : null;
+  let { rows } = await selectPage(cursor);
+  if (isDailySweep && cursor !== null && rows.length === 0) {
+    // Cursor aged out below the moving 7d window — restart from the top NOW
+    // rather than wasting today's long-tail slot on an empty page.
+    cursor = null;
+    await clearDailySweepCursor();
+    ({ rows } = await selectPage(null));
+  }
+  if (isDailySweep) {
+    if (rows.length === maxItems) {
+      const resumeAt = rows[rows.length - 1].published_at;
+      await writeDailySweepCursor(resumeAt);
+      logger.info(
+        { maxItems, resumeAt },
+        "daily engagement sweep hit the per-run budget — resumes below the cursor at the next daily run",
+      );
+    } else {
+      // Window exhausted for this rotation: next daily run starts from the top.
+      await clearDailySweepCursor();
+    }
+  } else if (rows.length === maxItems) {
     logger.warn(
       { maxItems, lookbackHours },
-      "engagement refresh hit the per-run budget cap — older items deferred to next run",
+      "engagement refresh hit the per-run budget cap — un-reached older items are covered by the rotating daily sweep",
     );
   }
+
+  if (rows.length === 0) return;
 
   const atprotoItems = rows.filter((r) => r.protocol === "atproto");
   const mastodonItems = rows.filter((r) => r.protocol === "activitypub");
@@ -189,6 +261,10 @@ export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
 
   // Nostr is queried separately (own tighter budget) since its relay REQ latency
   // would otherwise let a backlog of nostr rows crowd out the fast HTTP refresh.
+  // It does NOT share the daily keyset cursor (different budget ⇒ different
+  // page floor), so at scale it inherits the freshest-first starvation shape —
+  // give it its own cursor before lighting NOSTR_ENGAGEMENT_COUNTS_ENABLED on
+  // a backlog larger than NOSTR_MAX_ITEMS.
   if (nostrEngagementEnabled()) {
     const { rows: nostrRows } = await pool.query<ExternalItemRow>(
       `SELECT id, protocol, source_item_uri, interaction_data, media,
