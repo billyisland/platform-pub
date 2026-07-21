@@ -13,7 +13,8 @@ import nextDynamic from "next/dynamic";
 import { useAuth } from "../../stores/auth";
 import { useWorkspace } from "../../stores/workspace";
 import {
-  resolveCollisions,
+  findRestingPosition,
+  clampSizeClear,
   type VesselRect,
 } from "../../lib/workspace/collision";
 import {
@@ -333,7 +334,6 @@ export function WorkspaceView() {
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation);
   const setVesselTextSize = useWorkspace((s) => s.setVesselTextSize);
   const removeVesselLayout = useWorkspace((s) => s.removeVessel);
-  const batchUpdatePositions = useWorkspace((s) => s.batchUpdatePositions);
 
   // ── Infinite horizontal floor ────────────────────────────────────────────
   // The floor pans sideways over a canvas whose extent is DERIVED from the
@@ -431,10 +431,11 @@ export function WorkspaceView() {
   const dragActiveRef = useRef<string | null>(null);
   // The vessel the pointer is currently inside during a drag — the ARMED merge
   // target (WORKSPACE-DESIGN-SPEC.md › Addendum — No-overlap governs the
-  // resting state). Merge asks a POINTER question; collision asks a RECT
-  // question. Keeping them separate is what stops the two fighting: while a
-  // target is armed, collision is suspended for that vessel alone, so the
-  // dragged vessel visibly rides over it instead of shoving it away.
+  // resting state). Merge asks a POINTER question; placement asks a RECT
+  // question. The dragged vessel rides freely over the whole floor (nothing
+  // moves until it rests), so arming is purely about reading intent at the
+  // cursor — never the dragged vessel's centre, which routinely sits over
+  // things the user never aimed at.
   const [armedMergeTarget, setArmedMergeTarget] = useState<string | null>(null);
   const armedMergeTargetRef = useRef<string | null>(null);
   armedMergeTargetRef.current = armedMergeTarget;
@@ -473,20 +474,28 @@ export function WorkspaceView() {
   }
 
   /**
-   * Restore the no-overlap invariant around one vessel. Every gesture that
-   * produces a resting state owes this — drag, resize, and the declined-merge
-   * path alike. `spare` is the armed merge target, exempt for the duration of
-   * the gesture that is aiming at it.
+   * Bring one vessel to rest without disturbing anything else: mover-yields.
+   * The vessel settles at the nearest clear spot to where the gesture left it
+   * — obstacles NEVER move, so a drop can't bounce a neighbour aside. Every
+   * gesture that produces a resting position owes this — drag and the
+   * declined-merge path alike (resize keeps the invariant from the other
+   * side, by clamping the stretch at neighbours).
    */
-  const resolveFloorAround = useCallback(
-    (feedId: string, pos: { x: number; y: number }, spare?: string | null) => {
+  const settleMoverAt = useCallback(
+    (feedId: string, pos: { x: number; y: number }) => {
       const read = readFloorRects(feedId);
-      if (!read) return;
+      if (!read) {
+        setVesselPosition(feedId, pos);
+        return;
+      }
       const { floor, others } = read;
       const moverEl = floor.querySelector<HTMLElement>(
         `[data-vessel-id="${feedId}"]`,
       );
-      if (!moverEl) return;
+      if (!moverEl) {
+        setVesselPosition(feedId, pos);
+        return;
+      }
 
       const mover: VesselRect = {
         id: feedId,
@@ -496,16 +505,42 @@ export function WorkspaceView() {
         h: moverEl.offsetHeight,
       };
 
-      // Vertical bound only — a pushed vessel may land at any x (the canvas
-      // grows to cover it); bounding x would pin it to the viewport edge.
-      const updates = resolveCollisions(
-        mover,
-        spare ? others.filter((o) => o.id !== spare) : others,
-        { h: floor.clientHeight },
+      // Vertical bound only — the mover may settle at any x (the canvas grows
+      // to cover it); bounding x would pin it to the viewport edge.
+      setVesselPosition(
+        feedId,
+        findRestingPosition(mover, others, { h: floor.clientHeight }),
       );
-      if (updates.size > 0) batchUpdatePositions(Object.fromEntries(updates));
     },
-    [batchUpdatePositions],
+    [setVesselPosition],
+  );
+
+  /**
+   * Resize twin of settleMoverAt: the stretch is clamped at the first
+   * neighbour it would hit, so a resize never displaces anything — not the
+   * neighbours, and not the resized vessel, whose anchored edge the user
+   * placed deliberately. Applied on every resize frame (the handle visibly
+   * stops at the neighbour), so the committed size is clear by construction.
+   */
+  const clampVesselResize = useCallback(
+    (
+      feedId: string,
+      start: { w: number; h: number },
+      proposed: { w: number; h: number },
+    ) => {
+      const read = readFloorRects(feedId);
+      const layout = useWorkspace.getState().positions[feedId];
+      if (!read || !layout) return proposed;
+      return clampSizeClear(
+        { x: layout.x, y: layout.y },
+        start,
+        proposed,
+        read.others,
+      );
+    },
+    // readFloorRects only touches refs and store getState — stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   function handleVesselDragStart(feedId: string) {
@@ -542,12 +577,12 @@ export function WorkspaceView() {
       }
     });
     if (armed !== armedMergeTargetRef.current) setArmedMergeTarget(armed);
-
-    resolveFloorAround(feedId, pos, armed);
+    // No placement work mid-drag: the held vessel rides over the floor (raised
+    // z-order) and nothing else moves. The invariant is a RESTING-state rule,
+    // settled once on release.
   }
 
   function handleVesselDragEnd(feedId: string, pos: { x: number; y: number }) {
-    setVesselPosition(feedId, pos);
     dragActiveRef.current = null;
     if (useExplain.getState().draggingFeedId) useExplain.getState().setDragging(null);
 
@@ -558,29 +593,32 @@ export function WorkspaceView() {
       const source = vessels.find((v) => v.feed.id === feedId);
       const target = vessels.find((v) => v.feed.id === armed);
       if (source && target) {
-        setPendingMerge({ source: source.feed, target: target.feed });
         // Left overlapping on purpose, pending the answer. Whichever way the
-        // confirmation goes, the floor is resolved before it comes to rest.
+        // confirmation goes, the source settles before it comes to rest.
+        setVesselPosition(feedId, pos);
+        setPendingMerge({ source: source.feed, target: target.feed });
         return;
       }
     }
 
-    resolveFloorAround(feedId, pos);
+    settleMoverAt(feedId, pos);
   }
 
   /**
    * The merge did not happen — declined, or it failed. The source vessel is
    * sitting on top of the target because the gesture aimed it there, so the
    * invariant has to be restored now: this is the cancel path that keeps "no
-   * overlap in any scenario" true rather than usually-true.
+   * overlap in any scenario" true rather than usually-true. Mover-yields makes
+   * it read right too — the vessel the user dragged slides off; the target
+   * they declined to merge into stays put.
    */
   const settleAfterAbandonedMerge = useCallback(
     (sourceId: string) => {
       const layout = useWorkspace.getState().positions[sourceId];
       if (!layout) return;
-      resolveFloorAround(sourceId, { x: layout.x, y: layout.y });
+      settleMoverAt(sourceId, { x: layout.x, y: layout.y });
     },
-    [resolveFloorAround],
+    [settleMoverAt],
   );
 
   async function handleMergeConfirm() {
@@ -1545,13 +1583,13 @@ export function WorkspaceView() {
                     y: next.y,
                   })
                 }
-                // A stretch produces a resting state exactly as a drop does, so
-                // it owes the same resolution pass — and is worse left
-                // unresolved, since no later gesture repairs it.
-                onSizeCommit={(next) => {
-                  setVesselSize(v.feed.id, next);
-                  resolveFloorAround(v.feed.id, { x: layout.x, y: layout.y });
-                }}
+                // A stretch produces a resting state exactly as a drop does.
+                // clampResize keeps every frame of it clear (the handle stops
+                // at neighbours), so the commit is clear by construction.
+                onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
+                clampResize={(start, proposed) =>
+                  clampVesselResize(v.feed.id, start, proposed)
+                }
                 onDragStart={() => handleVesselDragStart(v.feed.id)}
                 onDragFrame={(pos, pointer) =>
                   handleVesselDragFrame(

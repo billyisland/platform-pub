@@ -67,9 +67,6 @@ interface WorkspaceState {
   // after its value has been pushed to the server (feeds.hidden). Without the
   // clear, a stale local flag would re-hide a feed the user later unhid.
   clearLegacyHidden: (feedId: string) => void;
-  batchUpdatePositions: (
-    updates: Record<string, { x: number; y: number }>,
-  ) => void;
   removeVessel: (feedId: string) => void;
   reset: () => void;
 }
@@ -128,8 +125,8 @@ function readFromStorage(userId: string): Record<string, VesselLayout> {
 // heights are taken at the vessel minimum — any overlap found at minimum size
 // is real whatever the content height. Under-detects partial overlaps of
 // tall intrinsic vessels; never false-positives. Shelving (rightward, past
-// everything kept) comes from the same repair primitive the resolver's
-// budget-exhaustion path uses.
+// everything kept) comes from the collision module's repair primitive — this
+// heal is its sole remaining caller now that placement is mover-yields.
 function healRestingOverlaps(
   positions: Record<string, VesselLayout>,
 ): Record<string, VesselLayout> {
@@ -225,23 +222,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (!existing || existing.hidden === undefined) return;
       const { hidden: _legacy, ...rest } = existing;
       const next = { ...get().positions, [feedId]: rest };
-      set({ positions: next });
-      if (userId) scheduleWrite(userId, next);
-    },
-
-    batchUpdatePositions: (updates) => {
-      const userId = get().userId;
-      const current = get().positions;
-      const next = { ...current };
-      let changed = false;
-      for (const [feedId, pos] of Object.entries(updates)) {
-        const existing = next[feedId];
-        if (!existing) continue;
-        if (existing.x === pos.x && existing.y === pos.y) continue;
-        next[feedId] = { ...existing, x: snap(pos.x), y: snap(pos.y) };
-        changed = true;
-      }
-      if (!changed) return;
       set({ positions: next });
       if (userId) scheduleWrite(userId, next);
     },

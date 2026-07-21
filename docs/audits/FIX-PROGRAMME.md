@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-07-21 (night)** — **Collision physics replaced with mover-yields
+  placement: nothing else on the floor ever moves.** User report: putting a
+  feed down bounced neighbours aside — the push-wave resolver's third-party
+  displacement WAS the glitch, and its livelock budget + verify-and-repair
+  machinery existed only to make that displacement safe. The no-overlap
+  invariant, resting-state reading, pointer/rect merge split, and horizontal
+  escape valve all stand; who yields is reversed. `collision.ts` rewritten:
+  `resolveCollisions` (wave, MAX_OPS, in-resolver repair) deleted;
+  `findRestingPosition` places the mover at the nearest clear lattice-aligned
+  in-bounds spot against immovable obstacles (candidate set = requested coords
+  × obstacle-edge escapes, directional snap; guaranteed non-empty since x is
+  unbounded); `clampSizeClear` stops a resize stretch at the first neighbour
+  (per-obstacle cut on the axis losing less of the proposal, floored at vessel
+  minimums). `WorkspaceView`: `resolveFloorAround` → `settleMoverAt` (drop +
+  declined/failed merge — the SOURCE now slides off; under push the cancel
+  path shoved the target away); drag frames do no placement work (the held
+  vessel rides over the floor); resize wires the new Vessel `clampResize` prop
+  per frame so the commit is clear by construction; the store's dead
+  `batchUpdatePositions` removed. `repairRestingLayout` survives with one
+  caller (hydrate heal for pre-2026-07-21 persisted piles).
+  `collision.test.ts` rewritten to the new contract (22 tests: nearest-spot
+  preference, signed-x escape, vertical boxing → sideways, idempotence,
+  3000-trial random corpus at resize scale, clamp fixtures incl. mid-cell
+  snap + diagonal axis choice + start-size fallback; repair suite kept).
+  WORKSPACE-DESIGN-SPEC gains the *Mover-yields placement* addendum;
+  CLAUDE.md floor bullets rewritten. Verified: web suite 156/156, root lint
+  0 errors, hairline tripwire clean, `next build` clean.
+
 - **2026-07-21 (late evening)** — **Floor slack made gesture-scoped; Ctrl+←/→
   end-jump; lens disc solid-white fix (the fixed-container stacking context).**
   Three user-reported issues from the first eyeball pass of the day's work.

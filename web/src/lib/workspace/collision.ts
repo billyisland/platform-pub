@@ -1,37 +1,34 @@
-import { GRID } from "./grid";
+import { GRID, VESSEL_MIN_W, VESSEL_MIN_H } from "./grid";
 
 // Vessels never come to REST overlapping (WORKSPACE-DESIGN-SPEC.md › Addendum
-// — No-overlap governs the resting state). This resolver is what enforces
-// that: given the vessel the user is holding, it displaces everything it
-// intersects until the layout is clear.
+// — No-overlap governs the resting state). Since 2026-07-21 the invariant is
+// enforced MOVER-YIELDS: the vessel the user is acting on finds its own clear
+// spot, and the vessels it lands near NEVER move. This replaces the push-wave
+// resolver (displace-what-you-hit, propagate in waves), whose third-party
+// displacement — feeds bouncing aside as another was put down — was the
+// glitch, and whose livelock/verify-repair machinery existed only to make the
+// wave safe.
 //
-// Three rules do the work, all load-bearing:
+// Two rules do the work:
 //
-//   1. The MOVER IS IMMOVABLE and is itself an obstacle. It is the thing under
-//      the user's hand, so it never yields — and no chain push may land a
-//      vessel back underneath it (the old resolver seeded the queue with the
-//      mover but left it out of the obstacle set, so nothing was ever tested
-//      against it after the first pass).
-//   2. HORIZONTAL IS THE ESCAPE VALVE. y is bounded by the viewport, x is not.
-//      A vertical push that would clamp against the floor is not available:
-//      the resolver goes sideways instead of accepting the overlap. Only the
-//      unbounded axis can guarantee resolution, and "no overlap in any
-//      scenario" requires that resolution always succeed.
-//   3. RELAXATION TO A FIXED POINT, not a single pass. A vessel displaced a
-//      second time must propagate that displacement (the old `visited` guard
-//      enqueued each vessel as a pusher only once, which is how a nudge into a
-//      packed row left two vessels stacked at the same coordinate).
+//   1. OBSTACLES ARE IMMOVABLE. A gesture moves exactly the vessel under the
+//      user's hand. Nothing else on the floor ever changes position, so a
+//      drop can never surprise the user at a distance.
+//   2. HORIZONTAL IS THE ESCAPE VALVE. y is bounded by the viewport, x is
+//      not; at the mover's own y there is always clear ground past the
+//      furthest right edge. Only the unbounded axis can guarantee placement,
+//      and "no overlap in any scenario" requires that placement always
+//      succeed.
 //
-// Snapping is directional — ceil when pushing right/down, floor when pushing
-// left/up — so a resting position is on the lattice AND provably clear of the
-// obstacle. Rounding to nearest would let a push settle back inside by up to
-// half a cell.
+// Resize keeps the same contract from the other side: a stretch is CLAMPED at
+// the first neighbour it would hit (clampSizeClear), so a resize commit never
+// needs to move anything — including the resized vessel itself, whose anchor
+// edge the user placed deliberately.
 //
-// The three rules make resolution CORRECT when the wave converges; they do
-// not make it always converge (wide movers can livelock the wave — see
-// MAX_OPS). What makes "no overlap in any scenario" a guarantee rather than
-// an intent is the verify-and-repair pass at the end: the resolver checks its
-// own output and deterministically shelves anything still intersecting.
+// Snapping is directional — ceil when escaping right/down, floor when
+// escaping left/up — so a resting position is on the lattice AND provably
+// clear of the obstacle it was derived from. Rounding to nearest would let a
+// candidate settle back inside by up to half a cell.
 
 export interface VesselRect {
   id: string;
@@ -40,19 +37,6 @@ export interface VesselRect {
   w: number;
   h: number;
 }
-
-/**
- * Propagation budget — the number of vessels popped as pushers, not the number
- * of pushes. A wave usually visits each vessel a handful of times, but the
- * wave can genuinely LIVELOCK on legal geometry: a wide mover (a resize
- * commit is a mover, and width may legally reach VESSEL_MAX_W) can cycle a
- * group of vessels between each other's escape candidates forever, at any
- * budget. So exhaustion is a reachable exit, not a theoretical backstop — and
- * it must never return the overlapping intermediate state. It falls through
- * to the verify-and-repair pass at the end of resolveCollisions, which
- * restores the invariant deterministically.
- */
-const MAX_OPS = 400;
 
 function intersects(a: VesselRect, b: VesselRect): boolean {
   return !(
@@ -65,202 +49,126 @@ function intersects(a: VesselRect, b: VesselRect): boolean {
 
 const snapUp = (v: number) => Math.ceil(v / GRID) * GRID;
 const snapDown = (v: number) => Math.floor(v / GRID) * GRID;
-
-interface Candidate {
-  x: number;
-  y: number;
-  /** Displacement distance — the resolver prefers the cheapest move. */
-  cost: number;
-}
+const snapNearest = (v: number) => Math.round(v / GRID) * GRID;
 
 /**
- * The four ways `target` can leave `obstacle`, each snapped clear of it.
- * Ordered right, left, down, up so ties break outward along the unbounded
- * axis rather than into the bounded one.
+ * Where the mover comes to rest: the clear, lattice-aligned, in-bounds
+ * position nearest to where the user let go. Obstacles are never displaced —
+ * if the requested spot is occupied, the MOVER slides to the closest spot
+ * that isn't.
+ *
+ * Candidate positions combine the requested coordinate with coordinates
+ * derived from obstacle edges (the standard slide-until-blocked argument: an
+ * optimal clear position can always be translated axis-wise toward the
+ * request until each axis either reaches it or touches an edge). x may be
+ * negative — store coordinates are signed and the canvas extent grows to
+ * cover them; bounding x would pin vessels to the viewport edge, the exact
+ * limit the infinite floor removes.
+ *
+ * `floorBounds` carries the vertical bound only. The requested y is clamped
+ * into it, so the result is in-bounds even if the caller's y is not.
  */
-function candidates(target: VesselRect, obstacle: VesselRect): Candidate[] {
-  return [
-    {
-      x: snapUp(obstacle.x + obstacle.w),
-      y: target.y,
-      cost: obstacle.x + obstacle.w - target.x,
-    },
-    {
-      x: snapDown(obstacle.x - target.w),
-      y: target.y,
-      cost: target.x + target.w - obstacle.x,
-    },
-    {
-      x: target.x,
-      y: snapUp(obstacle.y + obstacle.h),
-      cost: obstacle.y + obstacle.h - target.y,
-    },
-    {
-      x: target.x,
-      y: snapDown(obstacle.y - target.h),
-      cost: target.y + target.h - obstacle.y,
-    },
-  ];
-}
-
-/**
- * Displace `target` clear of `obstacle`, choosing the cheapest move that is
- * actually available. A candidate is unavailable if it would be clamped by the
- * vertical bound (rule 2) or would park the target under the mover (rule 1).
- */
-function pushClear(
-  target: VesselRect,
-  obstacle: VesselRect,
+export function findRestingPosition(
   mover: VesselRect,
+  obstacles: VesselRect[],
   floorBounds?: { h: number },
 ): { x: number; y: number } {
-  const viable = candidates(target, obstacle).filter((c) => {
-    // Rule 2 — a vertical move that the floor would clamp is not a move. x is
-    // unbounded, so a horizontal candidate is always geometrically available.
-    if (floorBounds && c.y !== target.y) {
-      if (c.y < 0 || c.y + target.h > floorBounds.h) return false;
-    }
-    // Rule 1 — never resolve one overlap by creating one with the mover.
-    // (When the mover IS the obstacle every candidate clears it by
-    // construction, so this filter is a no-op there.)
-    if (obstacle.id !== mover.id) {
-      if (intersects({ ...target, x: c.x, y: c.y }, mover)) return false;
-    }
-    return true;
-  });
+  const { w, h } = mover;
+  const maxY = floorBounds ? Math.max(0, snapDown(floorBounds.h - h)) : null;
+  const clampY = (y: number) =>
+    maxY === null ? Math.max(0, y) : Math.max(0, Math.min(y, maxY));
+  const inBoundsY = (y: number) => y >= 0 && (maxY === null || y <= maxY);
 
-  // Squeezed from every side — take the unbounded axis out. The floor extends
-  // sideways without limit precisely so this case has an answer.
-  if (viable.length === 0) {
-    return { x: snapUp(obstacle.x + obstacle.w), y: target.y };
+  const home = { x: snapNearest(mover.x), y: clampY(snapNearest(mover.y)) };
+  const rel = obstacles.filter((o) => o.id !== mover.id);
+  const clearAt = (x: number, y: number) =>
+    rel.every((o) => !intersects({ id: mover.id, x, y, w, h }, o));
+
+  if (clearAt(home.x, home.y)) return home;
+
+  const xs = new Set<number>([home.x]);
+  const ys = new Set<number>([home.y]);
+  for (const o of rel) {
+    xs.add(snapUp(o.x + o.w));
+    xs.add(snapDown(o.x - w));
+    const above = snapDown(o.y - h);
+    const below = snapUp(o.y + o.h);
+    if (inBoundsY(above)) ys.add(above);
+    if (inBoundsY(below)) ys.add(below);
   }
 
-  let best = viable[0];
-  for (const c of viable) if (c.cost < best.cost) best = c;
-  return { x: best.x, y: best.y };
+  let best: { x: number; y: number } | null = null;
+  let bestCost = Infinity;
+  for (const y of ys) {
+    for (const x of xs) {
+      const cost = (x - home.x) ** 2 + (y - home.y) ** 2;
+      if (cost >= bestCost) continue;
+      if (!clearAt(x, y)) continue;
+      best = { x, y };
+      bestCost = cost;
+    }
+  }
+  if (best) return best;
+
+  // Unreachable while rel is non-empty (xs contains a column right of every
+  // obstacle, ys contains home.y), but the escape valve is stated explicitly
+  // rather than trusted implicitly: sideways past everything, at the user's y.
+  const rightEdge = Math.max(...rel.map((o) => o.x + o.w));
+  return { x: snapUp(rightEdge), y: home.y };
 }
 
 /**
- * Resolve every overlap the mover has caused.
- *
- * Returns the vessels that had to move, in store coordinates. The mover is
- * never among them — it is immovable by construction, so a caller can apply
- * the result without re-reading the position it is mid-gesture on.
- *
- * `floorBounds` carries the vertical bound only: the floor extends infinitely
- * to the sides, so a displaced vessel may land at any x (including negative)
- * and the canvas extent grows to cover it. Bounding x here would pin vessels
- * against the viewport edge — the exact limit the infinite floor removes.
+ * Clamp a resize gesture so the stretched rect never enters a neighbour:
+ * the handle stops at the first obstacle on the offending axis. `origin` and
+ * `start` are the vessel's resting position/size (a resting state is clear by
+ * invariant, so every intersecting obstacle lies beyond the start rect on at
+ * least one axis and a valid cut always exists). Cuts are floored at the
+ * vessel minimums; per obstacle the axis losing less of the proposal yields.
  */
-export function resolveCollisions(
-  mover: VesselRect,
-  others: VesselRect[],
-  floorBounds?: { h: number },
-): Map<string, { x: number; y: number }> {
-  // Normalise onto the lattice at entry, so an axis a vessel is never pushed
-  // along still comes to rest on it. Candidate positions are lattice-aligned by
-  // construction (snapUp/snapDown); this covers the carried-through axis.
-  const onLattice = (r: VesselRect): VesselRect => ({
-    ...r,
-    x: Math.round(r.x / GRID) * GRID,
-    y: Math.round(r.y / GRID) * GRID,
-  });
-
-  const held = onLattice(mover);
-  const live = new Map<string, VesselRect>();
-  for (const r of others) {
-    if (r.id === mover.id) continue;
-    live.set(r.id, onLattice(r));
-  }
-
-  // Displacement propagates in WAVES out from the mover: the mover pushes what
-  // it overlaps, those push what they overlap, and so on. A vessel is only ever
-  // displaced by one nearer the mover in the chain, so a 40px nudge travels
-  // down a row as a 40px shuffle. Resolving every pair at once instead lets a
-  // vessel be shoved by a neighbour that is itself about to move out of the
-  // way, which compounds into displacements far larger than the gesture.
-  //
-  // Unlike the previous implementation there is NO visited guard: a vessel
-  // displaced a second time re-enters the queue and propagates again. That
-  // guard is what left vessels stacked at identical coordinates. Termination
-  // rests on the operation budget instead.
-  const queue: string[] = [];
-  const seed = { ...held };
-  let ops = 0;
-
-  const propagate = (pusher: VesselRect) => {
-    for (const [id, other] of live) {
-      if (id === pusher.id) continue;
-      if (!intersects(pusher, other)) continue;
-      const next = pushClear(other, pusher, held, floorBounds);
-      if (next.x === other.x && next.y === other.y) continue;
-      live.set(id, { ...other, x: next.x, y: next.y });
-      queue.push(id);
-    }
-  };
-
-  propagate(seed);
-  while (queue.length > 0 && ops < MAX_OPS) {
-    ops++;
-    const id = queue.shift()!;
-    const pusher = live.get(id);
-    if (pusher) propagate(pusher);
-  }
-
-  // Verify-and-repair — the guarantee of last resort. The wave terminates by
-  // fixed point or by budget; the budget exit means a livelock, and returning
-  // its intermediate state would REST vessels overlapping — the exact failure
-  // this module exists to prevent (and its worst form: the livelock's
-  // signature is vessels stacked at identical coordinates). So the resolver
-  // checks its own output and shelves any residual overlap clear. This also
-  // backstops pushClear's squeezed-from-every-side fallback, which ignores
-  // the mover by construction.
-  const repairs = repairRestingLayout([held, ...live.values()], {
-    pinned: held.id,
-  });
-  if (repairs.size > 0) {
-    warnRepairOnce(repairs.size);
-    for (const [id, pos] of repairs) {
-      const cur = live.get(id);
-      if (cur) live.set(id, { ...cur, x: pos.x, y: pos.y });
+export function clampSizeClear(
+  origin: { x: number; y: number },
+  start: { w: number; h: number },
+  proposed: { w: number; h: number },
+  obstacles: VesselRect[],
+): { w: number; h: number } {
+  let w = proposed.w;
+  let h = proposed.h;
+  // Each pass clears at least the obstacle it found by strictly shrinking one
+  // axis, so obstacles.length passes suffice.
+  for (let pass = 0; pass <= obstacles.length; pass++) {
+    const rect = { id: "", x: origin.x, y: origin.y, w, h };
+    const hit = obstacles.find((o) => intersects(rect, o));
+    if (!hit) return { w, h };
+    const wCut = snapDown(hit.x - origin.x);
+    const hCut = snapDown(hit.y - origin.y);
+    const wValid = wCut >= VESSEL_MIN_W && wCut < w;
+    const hValid = hCut >= VESSEL_MIN_H && hCut < h;
+    if (wValid && (!hValid || w - wCut <= h - hCut)) {
+      w = wCut;
+    } else if (hValid) {
+      h = hCut;
+    } else {
+      // No valid cut means the start rect itself intersects — not a resting
+      // state this function is specified for. Fall back to the start size,
+      // which is the last size the invariant vouched for.
+      return { w: start.w, h: start.h };
     }
   }
-
-  const updates = new Map<string, { x: number; y: number }>();
-  for (const original of others) {
-    const settled = live.get(original.id);
-    if (!settled) continue;
-    if (settled.x !== original.x || settled.y !== original.y) {
-      updates.set(original.id, { x: settled.x, y: settled.y });
-    }
-  }
-  return updates;
-}
-
-// The repair path is exceptional (livelock geometry) and the resolver runs
-// per drag frame, so shout once per session rather than per frame.
-let warnedRepair = false;
-function warnRepairOnce(count: number) {
-  if (warnedRepair) return;
-  warnedRepair = true;
-  console.warn(
-    `[workspace] collision wave hit its propagation budget; shelved ${count} vessel(s) clear of the pile`,
-  );
+  return { w, h };
 }
 
 /**
  * Deterministic total repair: make `rects` mutually clear by SHELVING.
- * Vessels are kept in place greedily — the pinned one first (the mover, never
- * displaced), then left-to-right — and any vessel that overlaps a kept one is
- * parked past the right edge of everything kept, the horizontal escape valve
- * applied wholesale. Shelved vessels advance the shelf one at a time, so the
- * result is provably clear whatever their heights.
+ * Vessels are kept in place greedily — the pinned one first, then
+ * left-to-right — and any vessel that overlaps a kept one is parked past the
+ * right edge of everything kept, the horizontal escape valve applied
+ * wholesale. Shelved vessels advance the shelf one at a time, so the result
+ * is provably clear whatever their heights.
  *
- * Two callers: resolveCollisions on budget exhaustion (above), and the
- * workspace store's hydrate heal — layouts persisted by the pre-2026-07-21
- * resolver can hold resting piles (identical-coordinate stacks) that a
- * mover-scoped resolution would never revisit, because the user cannot drag
- * a vessel they cannot see.
+ * Sole caller: the workspace store's hydrate heal — layouts persisted by the
+ * pre-2026-07-21 push-wave resolver can hold resting piles
+ * (identical-coordinate stacks) that no gesture ever revisits, because the
+ * user cannot drag a vessel they cannot see.
  */
 export function repairRestingLayout(
   rects: VesselRect[],

@@ -95,9 +95,16 @@ interface VesselProps {
   onHide?: () => void;
   onPositionCommit: (pos: { x: number; y: number }) => void;
   onSizeCommit?: (size: { w: number; h: number }) => void;
+  /** Mover-yields resize: the host clamps each proposed size so the stretch
+   *  stops at the first neighbour instead of entering it — a resize never
+   *  displaces anything. Applied per frame, so the commit inherits it. */
+  clampResize?: (
+    start: { w: number; h: number },
+    proposed: { w: number; h: number },
+  ) => { w: number; h: number };
   onDragStart?: () => void;
   /** `pointer` is the cursor in VIEWPORT coordinates — the probe the host uses
-   *  to arm a merge target. Merge is a pointer question, collision a rect one
+   *  to arm a merge target. Merge is a pointer question, placement a rect one
    *  (WORKSPACE-DESIGN-SPEC.md › Addendum — No-overlap governs the resting
    *  state); `pos` answers the second, `pointer` the first. */
   onDragFrame?: (
@@ -144,6 +151,7 @@ export function Vessel({
   onHide,
   onPositionCommit,
   onSizeCommit,
+  clampResize,
   onDragStart: onDragStartProp,
   onDragFrame,
   armed,
@@ -371,7 +379,11 @@ export function Vessel({
     const dy = event.clientY - state.startY;
     const w = snap(Math.max(MIN_W, Math.min(state.maxW, state.startW + dx)));
     const h = snap(Math.max(MIN_H, Math.min(state.maxH, state.startH + dy)));
-    setLiveSize({ w, h });
+    setLiveSize(
+      clampResize
+        ? clampResize({ w: state.startW, h: state.startH }, { w, h })
+        : { w, h },
+    );
   }
 
   function handleResizePointerUp(event: React.PointerEvent<HTMLDivElement>) {
