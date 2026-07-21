@@ -71,6 +71,8 @@ export const feedItemsAuthorRefresh: Task = async (_payload, _helpers) => {
 
   // 4. Refresh external reply-parent author (author_handle of the parent item).
   //    Constrain on protocol so the parent lookup hits UNIQUE(protocol, source_item_uri).
+  //    Origin-deleted parents (deleted_at set by kind-5 / Jetstream delete) are
+  //    excluded — resolving from one would re-pin the very name pass 6 clears.
   const externalReplyResult = await pool.query(`
     UPDATE feed_items fi SET reply_to_author = ei_p.author_handle
     FROM external_items ei
@@ -80,6 +82,7 @@ export const feedItemsAuthorRefresh: Task = async (_payload, _helpers) => {
     WHERE fi.external_item_id = ei.id
       AND fi.is_reply
       AND fi.deleted_at IS NULL
+      AND ei_p.deleted_at IS NULL
       AND fi.reply_to_author IS DISTINCT FROM ei_p.author_handle
   `)
 
@@ -90,10 +93,12 @@ export const feedItemsAuthorRefresh: Task = async (_payload, _helpers) => {
   //      the trigger writes for a reply whose parent hasn't landed, and the read
   //      path already renders it as no parent attribution.
   //
-  //      Both passes mirror their sibling's join chain EXACTLY (and the trigger's
-  //      — there is no third resolution path), so "unresolvable" means the same
-  //      thing on the way out as on the way in. Note a resolvable parent with a
-  //      NULL display_name is NOT this case: pass 3 already NULLs that row.
+  //      Pass 5 mirrors pass 3's join chain EXACTLY (and the trigger's — there
+  //      is no third resolution path), so "unresolvable" means the same thing
+  //      on the way out as on the way in; pass 6 deliberately diverges from
+  //      pass 4 (see its own comment: soft-deleted ⇒ clear, hard-pruned ⇒
+  //      retain). Note a resolvable parent with a NULL display_name is NOT
+  //      this case: pass 3 already NULLs that row.
   const nativeReplyCleared = await pool.query(`
     UPDATE feed_items fi SET reply_to_author = NULL
     WHERE fi.is_reply
@@ -109,19 +114,30 @@ export const feedItemsAuthorRefresh: Task = async (_payload, _helpers) => {
       )
   `)
 
+  //      External deletion is SOFT (kind-5 / Jetstream delete set deleted_at;
+  //      nostr-ingest.ts), while a HARD-gone parent row means retention prune /
+  //      context GC — storage management, the post likely still live at origin.
+  //      So pass 6 deliberately does NOT mirror pass 5's absence test: it clears
+  //      only on an origin-deleted parent (deleted_at set — "author deleted
+  //      their post", the byline is genuinely stale) and RETAINS the last-known
+  //      attribution when the row is merely pruned (clearing there would strip
+  //      valid attributions wholesale once prune churn starts). Native stays
+  //      absence-based: notes hard-DELETE on origin deletion, so for pass 5
+  //      absence IS the origin-deletion signal.
   const externalReplyCleared = await pool.query(`
     UPDATE feed_items fi SET reply_to_author = NULL
     WHERE fi.is_reply
       AND fi.external_item_id IS NOT NULL
       AND fi.reply_to_author IS NOT NULL
       AND fi.deleted_at IS NULL
-      AND NOT EXISTS (
+      AND EXISTS (
         SELECT 1
         FROM external_items ei
         JOIN external_items ei_p
           ON ei_p.protocol = ei.protocol
          AND ei_p.source_item_uri = ei.source_reply_uri
         WHERE ei.id = fi.external_item_id
+          AND ei_p.deleted_at IS NOT NULL
       )
   `)
 

@@ -287,6 +287,16 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
 
         if (updateResult.rowCount === 0) return null;
 
+        // Remove from every workspace feed, mirroring unpublish above (the
+        // §0f-1/M6 bug class): feed queries filter only on
+        // feed_items.deleted_at, so without this the deleted article's card
+        // lingers until the daily reconcile's deleted_at repair pass — up to
+        // 24h. Unscoped by publication, so it must only run when the
+        // publication-scoped UPDATE above matched (same guard as unpublish).
+        await client.query(`DELETE FROM feed_items WHERE article_id = $1`, [
+          articleId,
+        ]);
+
         await enqueueRelayPublish(client, {
           entityType: "article_deletion",
           entityId: articleId,
