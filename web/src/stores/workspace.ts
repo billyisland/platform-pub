@@ -67,6 +67,15 @@ interface WorkspaceState {
   // after its value has been pushed to the server (feeds.hidden). Without the
   // clear, a stale local flag would re-hide a feed the user later unhid.
   clearLegacyHidden: (feedId: string) => void;
+  // Bootstrap-time reconcile against the authoritative server feed list:
+  // prune layouts for feeds that no longer exist (deleted on another device —
+  // removeVessel only ever runs locally, so ghosts otherwise persist forever)
+  // and heal resting overlaps among the VISIBLE feeds only. Runs here, not at
+  // hydrate: the store cannot know hidden/deleted at hydrate time, and a
+  // blind heal shelves legal arrangements (a vessel resting over a HIDDEN
+  // feed's stored rect is invariant-conforming — hidden feeds are not
+  // obstacles).
+  reconcileLayouts: (liveIds: string[], visibleIds: string[]) => void;
   removeVessel: (feedId: string) => void;
   reset: () => void;
 }
@@ -114,29 +123,36 @@ function readFromStorage(userId: string): Record<string, VesselLayout> {
   }
 }
 
-// One-shot heal on hydrate: layouts persisted by the pre-2026-07-21 resolver
-// can hold RESTING overlaps — its livelocked waves settled vessels at
-// identical coordinates, which renders as one vessel on a floor with no
-// retrieval affordance, so the user can never drag the pile apart themselves
-// (they cannot see it) and the mover-scoped resolver never revisits it.
-// Detection is deliberately conservative so a deliberate arrangement is never
-// disturbed: stored width is exact and intrinsic width is the known default,
-// but intrinsic HEIGHT is content-driven and unknowable here, so absent
-// heights are taken at the vessel minimum — any overlap found at minimum size
-// is real whatever the content height. Under-detects partial overlaps of
-// tall intrinsic vessels; never false-positives. Shelving (rightward, past
-// everything kept) comes from the collision module's repair primitive — this
-// heal is its sole remaining caller now that placement is mover-yields.
+// Overlap heal, run from reconcileLayouts once the server feed list is known
+// (bootstrap): layouts persisted by the pre-2026-07-21 resolver can hold
+// RESTING overlaps — its livelocked waves settled vessels at identical
+// coordinates, which renders as one vessel on a floor with no retrieval
+// affordance, so the user can never drag the pile apart themselves (they
+// cannot see it) and the mover-scoped resolver never revisits it. Only the
+// layouts passing `include` (the VISIBLE feeds) participate; hidden feeds'
+// stored rects are not on the floor and must neither be moved nor treated as
+// obstacles. Size detection is deliberately conservative so a deliberate
+// arrangement is never disturbed: stored width is exact and intrinsic width
+// is the known default, but intrinsic HEIGHT is content-driven and unknowable
+// here, so absent heights are taken at the vessel minimum — any overlap found
+// at minimum size is real whatever the content height. Under-detects partial
+// overlaps of tall intrinsic vessels; never false-positives on size. Shelving
+// (rightward, past everything kept) comes from the collision module's repair
+// primitive — this heal is its sole remaining caller now that placement is
+// mover-yields.
 function healRestingOverlaps(
   positions: Record<string, VesselLayout>,
+  include: (id: string) => boolean,
 ): Record<string, VesselLayout> {
-  const rects = Object.entries(positions).map(([id, l]) => ({
-    id,
-    x: l.x,
-    y: l.y,
-    w: Math.max(l.w ?? VESSEL_DEFAULT_W, VESSEL_MIN_W),
-    h: l.h ?? VESSEL_MIN_H,
-  }));
+  const rects = Object.entries(positions)
+    .filter(([id]) => include(id))
+    .map(([id, l]) => ({
+      id,
+      x: l.x,
+      y: l.y,
+      w: Math.max(l.w ?? VESSEL_DEFAULT_W, VESSEL_MIN_W),
+      h: l.h ?? VESSEL_MIN_H,
+    }));
   const repairs = repairRestingLayout(rects);
   if (repairs.size === 0) return positions;
   const next = { ...positions };
@@ -189,12 +205,30 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         clearTimeout(writeTimer);
         writeTimer = null;
       }
-      const stored = readFromStorage(userId);
-      const positions = healRestingOverlaps(stored);
-      set({ userId, positions, hydrated: true });
-      // A heal is a real layout change — persist it so the repair is
-      // once-per-pile, not once-per-session.
-      if (positions !== stored) scheduleWrite(userId, positions);
+      // No heal here: at hydrate time the store cannot tell hidden feeds or
+      // deleted-elsewhere ghosts from live vessels, and a blind repair
+      // shelves legal arrangements. reconcileLayouts (bootstrap, once the
+      // server list is in — before anything paints) owns pruning + healing.
+      set({ userId, positions: readFromStorage(userId), hydrated: true });
+    },
+
+    reconcileLayouts: (liveIds, visibleIds) => {
+      const userId = get().userId;
+      const positions = get().positions;
+      const live = new Set(liveIds);
+      let pruned = positions;
+      const ghosts = Object.keys(positions).filter((id) => !live.has(id));
+      if (ghosts.length > 0) {
+        pruned = { ...positions };
+        for (const id of ghosts) delete pruned[id];
+      }
+      const visible = new Set(visibleIds);
+      const healed = healRestingOverlaps(pruned, (id) => visible.has(id));
+      if (healed === positions) return;
+      set({ positions: healed });
+      // A repair is a real layout change — persist it so it is once-per-pile,
+      // not once-per-session.
+      if (userId) scheduleWrite(userId, healed);
     },
 
     setVesselPosition: (feedId, pos) =>

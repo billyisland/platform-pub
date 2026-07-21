@@ -257,7 +257,7 @@ export function Vessel({
   // shift with a scrollLeft adjustment in its layout effect; this one moves the
   // motion value by the same delta, also pre-paint — the pair lands in a single
   // frame and the shift is visually a no-op. Instant set, never the spring: the
-  // spring below is for REAL position changes (pushes, snaps), and after this
+  // spring below is for REAL position changes (settle snaps), and after this
   // runs it sees dx ≈ 0 for a pure origin shift. Skipped mid-drag — framer owns
   // the value there, and the drag conversions read the same originX prop.
   const prevOriginXRef = useRef(originX);
@@ -303,7 +303,13 @@ export function Vessel({
     // commit, so contract-to-fit batches into the position-commit render.
     if (onFloorGesture) {
       onFloorGesture(true);
-      const end = () => {
+      const pointerId = event.pointerId;
+      const end = (e: PointerEvent) => {
+        // Only the INITIATING pointer closes the slack. A second finger's
+        // pointerup mid-drag would collapse the origin under the live gesture
+        // — mx is deliberately not origin-compensated while framer owns it,
+        // so the eventual commit would land ~a viewport off.
+        if (e.pointerId !== pointerId) return;
         window.removeEventListener("pointerup", end);
         window.removeEventListener("pointercancel", end);
         onFloorGesture(false);
@@ -342,7 +348,14 @@ export function Vessel({
     const chassisEl = vesselRef.current?.querySelector(
       "[data-vessel-chassis]",
     ) as HTMLElement | null;
-    const startH = effH ?? chassisEl?.getBoundingClientRect().height ?? MIN_H;
+    // Floor the seed to the lattice: an intrinsic height is fractional, and a
+    // press-with-no-move commits this seed as-is — the store's round-NEAREST
+    // snap would then grow it up to half a cell into a flush neighbour below
+    // (a minted resting overlap from a click on the handle). Flooring only
+    // ever shrinks, which cannot overlap, and it hands clampSizeClear the
+    // lattice-aligned clear start rect its contract assumes.
+    const measuredH = effH ?? chassisEl?.getBoundingClientRect().height ?? MIN_H;
+    const startH = Math.max(MIN_H, Math.floor(measuredH / GRID) * GRID);
     // Width is bounded only by MAX_W — a vessel widened past the current right
     // edge stretches the canvas, same as dragging it there. Height still stops
     // at the viewport floor.

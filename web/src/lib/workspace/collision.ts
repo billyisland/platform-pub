@@ -165,7 +165,8 @@ export function clampSizeClear(
  * wholesale. Shelved vessels advance the shelf one at a time, so the result
  * is provably clear whatever their heights.
  *
- * Sole caller: the workspace store's hydrate heal — layouts persisted by the
+ * Sole caller: the workspace store's bootstrap reconcile heal
+ * (reconcileLayouts, over visible feeds only) — layouts persisted by the
  * pre-2026-07-21 push-wave resolver can hold resting piles
  * (identical-coordinate stacks) that no gesture ever revisits, because the
  * user cannot drag a vessel they cannot see.
