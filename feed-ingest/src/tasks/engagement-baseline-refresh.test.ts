@@ -235,6 +235,28 @@ describe.skipIf(!DB_URL)("engagement baseline refresh (step 2)", () => {
     expect(parseFloat(rows[0].p50_e)).toBe(20);
   });
 
+  it("prunes an ambient pair with no qualifying posts in the window (§0i.9)", async () => {
+    // A protocol whose counts flag was toggled off contributes nothing to
+    // tmp_e; leaving its last percentiles behind means any future count write
+    // re-arms scoring against months-old medians. Absent pair ⇒ absent row —
+    // absence is the signal the scorer already treats as "no ambient
+    // evidence". A pair WITH qualifying posts must survive the same run.
+    await seedAuthor([{ ageHours: 120, likes: 10 }]); // live pair (TEST_PROTOCOL)
+    await client.query(
+      `INSERT INTO protocol_engagement_ambient (protocol, post_type, p50_e, p90_e, sample_n, updated_at)
+       VALUES ('test_proto_stale', 'all', 5, 50, 40, now() - interval '90 days')`,
+    );
+
+    await refresh(client, WEIGHTS);
+
+    const { rows } = await client.query<{ protocol: string }>(
+      `SELECT protocol FROM protocol_engagement_ambient
+       WHERE protocol IN ($1, 'test_proto_stale')`,
+      [TEST_PROTOCOL],
+    );
+    expect(rows.map((r) => r.protocol)).toEqual([TEST_PROTOCOL]);
+  });
+
   // --- D3: recompute is idempotent ------------------------------------------
 
   it("is a no-op on median_e and n when run twice over the same corpus", async () => {

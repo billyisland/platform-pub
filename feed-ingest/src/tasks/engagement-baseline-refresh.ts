@@ -194,6 +194,22 @@ export async function refresh(
     `,
   );
 
+  // Pairs absent from this rebuild are DELETED, not left behind (§0i.9): a
+  // protocol whose counts flag was toggled off otherwise keeps its last
+  // percentiles forever, and the moment any count write recurs, scoring
+  // re-arms against months-old medians. Absence is the honest signal the
+  // scorer already understands (no ambient row ⇒ no ambient evidence ⇒ no
+  // band), and a pair with live counts rebuilds on the next daily run.
+  const ambientPruned = await client.query(
+    `
+    DELETE FROM protocol_engagement_ambient pea
+    WHERE NOT EXISTS (
+      SELECT 1 FROM tmp_e t
+      WHERE t.protocol = pea.protocol AND t.post_type = pea.post_type
+    )
+    `,
+  );
+
   // ── author baselines: median over last ≤20 qualifying posts ───────────────
   const baselines = await client.query(
     `
@@ -233,6 +249,7 @@ export async function refresh(
   logger.info(
     {
       ambientRows: ambient.rowCount,
+      ambientPruned: ambientPruned.rowCount,
       authorBaselines: baselines.rowCount,
       prunedBaselines: pruned.rowCount,
       nostrIncluded: nostrEngagementEnabled(),

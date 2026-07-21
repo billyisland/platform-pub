@@ -11,6 +11,7 @@ import {
   type JetstreamCommit,
 } from "../adapters/atproto.js";
 import { insertAtprotoItem } from "../lib/atproto-ingest.js";
+import { ATPROTO_ENRICH_FAILED_ERROR } from "../tasks/feed-ingest-atproto-backfill.js";
 import { recordRepostEdge } from "../lib/repost-edge.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
 
@@ -340,16 +341,24 @@ export class JetstreamListener {
   // sooner drops out of the filter the moment its handle lands).
   private async enrichMissingHandles(rows: SourceRow[]): Promise<void> {
     const ENRICH_FAST_ATTEMPTS = 6;
-    const candidates = rows.filter((r) => !r.handle || r.handle.trim() === "");
-    if (candidates.length === 0) return;
+    if (rows.length === 0) return;
     try {
+      // Two candidate classes (one heal loop): a NULL/empty handle (never
+      // resolved), and a source whose last enrichment attempt FAILED (the
+      // ATPROTO_ENRICH_FAILED_ERROR marker) — the rename case (§0i.10): an
+      // identity event's one-shot re-resolve that hit a transient getProfile
+      // failure leaves the OLD handle in place, so the NULL-handle filter
+      // alone would never retry it and the rename was lost forever. Both
+      // classes are self-limiting: a successful enrichment writes the handle
+      // and resets error_count/last_error, dropping the source out.
       const { rows: due } = await pool.query<{ id: string }>(
         `SELECT id FROM external_sources
           WHERE id = ANY($1)
+            AND (handle IS NULL OR btrim(handle) = '' OR last_error = $3)
             AND (error_count < $2
                  OR last_fetched_at IS NULL
                  OR last_fetched_at < now() - interval '24 hours')`,
-        [candidates.map((r) => r.id), ENRICH_FAST_ATTEMPTS],
+        [rows.map((r) => r.id), ENRICH_FAST_ATTEMPTS, ATPROTO_ENRICH_FAILED_ERROR],
       );
       if (due.length === 0) return;
       for (const row of due) {
@@ -364,8 +373,8 @@ export class JetstreamListener {
         );
       }
       logger.info(
-        { count: due.length, skippedBackedOff: candidates.length - due.length },
-        "Enqueued atproto handle enrichment for sources missing a handle",
+        { count: due.length },
+        "Enqueued atproto handle enrichment (missing or failed-resolve handles)",
       );
     } catch (err) {
       logger.warn(

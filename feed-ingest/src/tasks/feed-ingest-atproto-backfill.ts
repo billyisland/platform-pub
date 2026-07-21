@@ -88,6 +88,15 @@ interface AuthorFeedResponse {
   feed: FeedViewPost[];
 }
 
+// The enrichment-failure marker written to external_sources.last_error when
+// getProfile fails. The Jetstream listener's 60s self-heal keys on it (its
+// enrichMissingHandles filter): a rename whose one-shot re-resolve failed
+// transiently would otherwise be lost forever — the source keeps its OLD
+// handle, so the NULL-handle heal never sees it (§0i.10). Keep string and
+// filter in lockstep via this constant.
+export const ATPROTO_ENRICH_FAILED_ERROR =
+  "atproto handle enrichment failed (getProfile)";
+
 export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
   const { sourceId } = payload as { sourceId: string };
 
@@ -272,10 +281,10 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
         `UPDATE external_sources
             SET last_fetched_at = now(),
                 error_count = error_count + 1,
-                last_error = 'atproto handle enrichment failed (getProfile)',
+                last_error = $2,
                 updated_at = now()
           WHERE id = $1`,
-        [sourceId],
+        [sourceId, ATPROTO_ENRICH_FAILED_ERROR],
       );
     } else {
       await pool.query(
