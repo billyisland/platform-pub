@@ -483,9 +483,23 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 
 All API routes are served by the gateway under `/api/v1` (except RSS, inbound mail, and AT Protocol well-knowns). The gateway registers the following route modules (see `gateway/src/index.ts`). The detailed endpoint tables for the core modules follow.
 
-`auth`, `google-auth`, `signing`, `writers`, `articles` (incl. earnings, gate-pass, manage, publish, subscription-convert), `notes`, `drafts`, `replies`, `media`, `follows`, `moderation`, `search`, `rss`, `inbound-mail`, `subscriptions` (events, publication, settings, subscribers, writer), `unsubscribe`, `my-account`, `receipts`, `export`, `notifications`, `votes`, `history`, `gift-links`, `subscription-offers`, `messages`, `timeline`, `social`, `publications` (cms, core, members, public, revenue), `drives`, `traffology`, `bookmarks`, `tags`, `resolve`, `external-feeds`, `external-items`, `linked-accounts`, `trust`, `reading-positions`, `feeds` (workspace — mounted at `/api/v1/workspace`), `extract`, `author-card`.
+`auth`, `google-auth`, `signing`, `writers`, `articles` (incl. earnings, gate-pass, manage, publish, subscription-convert), `notes`, `drafts`, `replies`, `media`, `follows`, `moderation`, `admin-dashboard` (owner dashboard — see below), `search`, `rss`, `inbound-mail`, `subscriptions` (events, publication, settings, subscribers, writer), `unsubscribe`, `my-account`, `receipts`, `export`, `notifications`, `votes`, `history`, `gift-links`, `subscription-offers`, `messages`, `timeline`, `social`, `publications` (cms, core, members, public, revenue), `drives`, `traffology`, `bookmarks`, `tags`, `resolve`, `external-feeds`, `external-items`, `linked-accounts`, `trust`, `reading-positions`, `feeds` (workspace — mounted at `/api/v1/workspace`), `extract`, `author-card`.
 
 Well-known / unprefixed: `GET /.well-known/oauth-client-metadata.json`, `GET /.well-known/jwks.json`, `GET /rss`, `GET /rss/:username`, `GET /health`.
+
+### Owner dashboard (admin)
+
+All under `requireAdmin` (session + `platform_config.admin_account_ids`; `ADMIN_ACCOUNT_IDS` env is the fallback). **Post-deploy step: set `admin_account_ids` to the owner's account UUID** — while it is empty every admin route (dashboard *and* moderation) returns 403. The regulatory `tax_*`/`regulatory_*` dials are seeded by the standard migrate step (config-defaults.sql; expect `seeded 6 missing dial(s)` on the first run after this ships).
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET | /api/v1/admin/dashboard/overview | Money pipeline (accrual/settlement/payout), revenue, custody, counts, `payouts_halted` |
+| GET | /api/v1/admin/dashboard/users | Account totals, growth, conversion funnel, KYC-incomplete writers holding earnings |
+| GET | /api/v1/admin/dashboard/content | Publishing activity, engagement, drives, system health (feed scorer, jetstream, relay outbox) |
+| GET | /api/v1/admin/dashboard/config | All `platform_config` rows (runtime-state keys flagged read-only) |
+| PATCH | /api/v1/admin/dashboard/config | Update existing dials only — unknown keys refused (new dials go via config-defaults.sql), state keys refused, numeric/`_bps`/`_pct` validated; changes logged |
+| POST | /api/v1/admin/dashboard/trigger-settlements | Proxy → payment-service `POST /settlement-check/monthly` (`x-internal-token`) |
+| POST | /api/v1/admin/dashboard/trigger-payouts | Proxy → payment-service `POST /payout-cycle` (`x-internal-token`) |
 
 ### Auth
 
@@ -733,7 +747,7 @@ Other routes (not re-audited in the feed-retirement pass — verify against the 
 | /account | Balance, transaction ledger, subscriptions, pledges |
 | /subscribe/[code] | Subscription offer redemption |
 | /auth, /auth/verify, /auth/google/callback | Signup/login, magic-link verify, Google OAuth callback |
-| /admin, /admin/reports | Moderation/admin surfaces |
+| /admin, /admin/{overview,reports,users,content,config,regulatory} | Owner dashboard (money pipeline, users, content/health, config editor, regulatory thresholds) + moderation reports. `/admin` redirects to `/admin/overview` |
 | /traffology, /traffology/overview, /traffology/piece/[pieceId] | Writer analytics |
 | /invite/[token] | Publication invite acceptance |
 | /about | About page |
