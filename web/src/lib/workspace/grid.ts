@@ -1,14 +1,17 @@
 // The lattice every draggable surface snaps to: vessel position/size on the
 // workspace floor, the canvas origin, and the Glasshouse pane's drag/resize.
 //
-// Halved from 20px to 10px (2026-07-20) for finer placement. 10 is still even,
-// so panes and vessels keep landing on whole pixels — the sub-pixel blur a
-// free-positioned odd-width pane would show is still ruled out. What it gives
-// up is the old 20 = LCM(10, 4) property: the lattice no longer falls in phase
-// with the 4px design rhythm (Tailwind spacing + the 4px slab), so chrome and
-// content no longer share every gridline. 8px would be the nearest value that
-// preserves that phase, if the drift ever shows.
-export const GRID = 10;
+// 20 → 10 (2026-07-20, finer placement) → 8 (2026-07-22). 8 restores the
+// phase with the 4px design rhythm (Tailwind spacing + the 4px slab) that 10
+// broke — the exact repair this comment used to anticipate — and it equals the
+// vessel WALL (Vessel.tsx), so on the columnar floor a gutter between adjacent
+// vessels reads as three even coloured bands: wall / buffer / wall. The grid
+// is invisible; the stripes are how you feel it (WORKSPACE-COLUMN-LAYOUT-ADR
+// §II.3). Still even, so panes and vessels land on whole pixels.
+//
+// Values persisted on the 10px lattice re-snap to 8 on the next gesture —
+// invisible in practice, and it saves a two-lattice interregnum.
+export const GRID = 8;
 
 export function snap(v: number): number {
   return Math.round(v / GRID) * GRID;

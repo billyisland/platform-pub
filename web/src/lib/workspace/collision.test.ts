@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { GRID } from "./grid";
 import {
   findRestingPosition,
   clampSizeClear,
@@ -37,35 +38,35 @@ function expectClear(
 
 describe("findRestingPosition", () => {
   it("returns the requested spot when it is already clear", () => {
-    const mover: VesselRect = { id: "M", x: 0, y: 100, w: 300, h: 400 };
+    const mover: VesselRect = { id: "M", x: 0, y: 104, w: 300, h: 400 };
     const others: VesselRect[] = [
-      { id: "A", x: 400, y: 100, w: 300, h: 400 },
-      { id: "B", x: 800, y: 100, w: 300, h: 400 },
+      { id: "A", x: 400, y: 104, w: 300, h: 400 },
+      { id: "B", x: 800, y: 104, w: 300, h: 400 },
     ];
     expect(findRestingPosition(mover, others, { h: 800 })).toEqual({
       x: 0,
-      y: 100,
+      y: 104,
     });
   });
 
   it("slides the mover clear of a single overlapped neighbour", () => {
-    const mover: VesselRect = { id: "M", x: 300, y: 100, w: 300, h: 400 };
-    const others: VesselRect[] = [{ id: "A", x: 560, y: 100, w: 300, h: 400 }];
+    const mover: VesselRect = { id: "M", x: 300, y: 104, w: 300, h: 400 };
+    const others: VesselRect[] = [{ id: "A", x: 560, y: 104, w: 300, h: 400 }];
     const pos = findRestingPosition(mover, others, { h: 800 });
     expectClear(mover, pos, others);
     // The cheap escape is a small slide left, not a fling.
-    expect(pos.y).toBe(100);
-    expect(pos.x).toBe(260);
+    expect(pos.y).toBe(104);
+    expect(pos.x).toBe(256);
   });
 
   it("prefers the nearest clear spot over any further one", () => {
     // Overlapping A's right edge by 40px: settling right of A (x=560) costs
     // 40; every other escape costs hundreds.
-    const mover: VesselRect = { id: "M", x: 520, y: 100, w: 300, h: 400 };
-    const others: VesselRect[] = [{ id: "A", x: 260, y: 100, w: 300, h: 400 }];
+    const mover: VesselRect = { id: "M", x: 520, y: 104, w: 300, h: 400 };
+    const others: VesselRect[] = [{ id: "A", x: 260, y: 104, w: 300, h: 400 }];
     expect(findRestingPosition(mover, others, { h: 800 })).toEqual({
       x: 560,
-      y: 100,
+      y: 104,
     });
   });
 
@@ -109,8 +110,8 @@ describe("findRestingPosition", () => {
       { id: "B", x: 533, y: 187, w: 300, h: 400 },
     ];
     const pos = findRestingPosition(mover, others, { h: 800 });
-    expect(pos.x % 10).toBe(0);
-    expect(pos.y % 10).toBe(0);
+    expect(pos.x % GRID).toBe(0);
+    expect(pos.y % GRID).toBe(0);
     expectClear(mover, pos, others);
   });
 
@@ -211,8 +212,8 @@ describe("findRestingPosition", () => {
       ).toBeLessThanOrEqual(floorH);
       // Math.abs: a negative lattice x makes `%` return -0, which toBe(0)
       // rejects under Object.is.
-      expect(Math.abs(pos.x % 10), `${label}: x off-lattice`).toBe(0);
-      expect(Math.abs(pos.y % 10), `${label}: y off-lattice`).toBe(0);
+      expect(Math.abs(pos.x % GRID), `${label}: x off-lattice`).toBe(0);
+      expect(Math.abs(pos.y % GRID), `${label}: y off-lattice`).toBe(0);
     }
   });
 });
@@ -241,17 +242,17 @@ describe("clampSizeClear", () => {
     const others: VesselRect[] = [{ id: "A", x: 100, y: 600, w: 300, h: 200 }];
     expect(clampSizeClear(origin, start, { w: 300, h: 700 }, others)).toEqual({
       w: 300,
-      h: 500,
+      h: 496,
     });
   });
 
   it("cuts the axis losing less of the proposal on a diagonal stretch", () => {
     // Obstacle at the diagonal corner: cutting w loses 200 of the proposal,
-    // cutting h loses 100 — h yields.
+    // cutting h loses ~104 — h yields.
     const others: VesselRect[] = [{ id: "A", x: 500, y: 600, w: 300, h: 200 }];
     expect(clampSizeClear(origin, start, { w: 600, h: 600 }, others)).toEqual({
       w: 600,
-      h: 500,
+      h: 496,
     });
   });
 
@@ -269,10 +270,10 @@ describe("clampSizeClear", () => {
 
   it("snaps the cut to the lattice, outward-safe (floor, never round)", () => {
     // Neighbour's left edge mid-cell at x=497: the widest lattice width that
-    // clears is 390, not 400.
+    // clears is 392, not 397.
     const others: VesselRect[] = [{ id: "A", x: 497, y: 100, w: 300, h: 400 }];
     expect(clampSizeClear(origin, start, { w: 700, h: 400 }, others)).toEqual({
-      w: 390,
+      w: 392,
       h: 400,
     });
   });
@@ -350,7 +351,7 @@ describe("repairRestingLayout", () => {
     }
     // Everything shelved landed on the lattice.
     for (const [, u] of updates) {
-      expect(u.x % 10).toBe(0);
+      expect(u.x % GRID).toBe(0);
     }
   });
 });
