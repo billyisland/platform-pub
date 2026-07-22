@@ -130,6 +130,15 @@ interface VesselProps {
   onLoadMore?: (feedId: string) => void;
   caughtUp?: boolean;
   onCaughtUpDismiss?: () => void;
+  /** Virtualization (WORKSPACE-COLUMN-LAYOUT-ADR §VII): `false` PARKS the
+   *  vessel — chassis, numeral and bar stay mounted (so it remains a drag
+   *  obstacle, a merge target and an explainable root), while the card tree is
+   *  unmounted and the interior renders as a flat wash. The vessel instance
+   *  survives, so it owns the two things an unmount would otherwise lose: the
+   *  scroll body's scroll position, and — for an intrinsic-height vessel — its
+   *  measured height, pinned so a collapsed wash can't lie to the floor's
+   *  geometry readers. Defaults to mounted. */
+  contentsMounted?: boolean;
 }
 
 export function Vessel({
@@ -161,7 +170,9 @@ export function Vessel({
   onLoadMore,
   caughtUp,
   onCaughtUpDismiss,
+  contentsMounted = true,
 }: VesselProps) {
+  const parked = !contentsMounted;
   const dragControls = useDragControls();
   const [isDragTarget, setIsDragTarget] = useState(false);
   const vesselRef = useRef<HTMLDivElement>(null);
@@ -182,6 +193,16 @@ export function Vessel({
   const [liveSize, setLiveSize] = useState<{ w: number; h: number } | null>(
     null,
   );
+  // Parked-vessel height pin (see `contentsMounted`). `measuredHRef` tracks the
+  // live chassis height while the contents are up; `pinnedH` freezes it for the
+  // wash so an intrinsic-height vessel doesn't collapse to nothing the moment
+  // its cards unmount — readFloorRects reads offsetHeight for collision and
+  // merge hit-testing, and a collapsed vessel would lie to both.
+  const measuredHRef = useRef<number | null>(null);
+  const [pinnedH, setPinnedH] = useState<number | null>(null);
+  // Scroll position survives a park: the DOM node keeps its scrollTop only for
+  // as long as it has content to scroll.
+  const savedScrollRef = useRef({ top: 0, left: 0 });
   const resizeStateRef = useRef<{
     startX: number;
     startY: number;
@@ -339,6 +360,64 @@ export function Vessel({
   const effW = liveSize?.w ?? size?.w ?? WIDTH;
   const effH = liveSize?.h ?? size?.h; // undefined = intrinsic content height
   const heightSet = effH !== undefined;
+  // An explicit height needs no pin. Otherwise a parked vessel wears its last
+  // measured height, and the body flexes to fill it so the bar stays welded to
+  // the bottom edge exactly as it is when the cards are up.
+  const chassisH = heightSet ? effH : parked ? (pinnedH ?? undefined) : undefined;
+  const bodyFills = heightSet || (parked && pinnedH !== null);
+
+  // Track the intrinsic chassis height while the contents are mounted. A
+  // ResizeObserver keeps this off the render path — the vessel re-renders on
+  // every drag frame, and an offsetHeight read there would force layout each
+  // time.
+  useEffect(() => {
+    if (parked || heightSet) return;
+    const chassis = vesselRef.current?.querySelector(
+      "[data-vessel-chassis]",
+    ) as HTMLElement | null;
+    if (!chassis) return;
+    const record = () => {
+      measuredHRef.current = chassis.offsetHeight;
+    };
+    record();
+    const ro = new ResizeObserver(record);
+    ro.observe(chassis);
+    return () => ro.disconnect();
+  }, [parked, heightSet]);
+
+  // Freeze / release the pin at the park boundary. A layout effect so the
+  // pinned height lands in the same frame the cards leave — no collapsed frame
+  // ever paints. A vessel parked before it was ever measured (an intrinsic
+  // vessel that started outside the band) has no height to freeze, so it wears
+  // MIN_H until it enters the band and measures itself — bounded, rather than
+  // collapsing to the bar and under-reporting to the floor's geometry readers.
+  useLayoutEffect(() => {
+    setPinnedH(
+      parked && !heightSet ? (measuredHRef.current ?? MIN_H) : null,
+    );
+  }, [parked, heightSet]);
+
+  // Hold the scroll position across a park. Recorded continuously while
+  // mounted (the node's own scrollTop is lost with its content), restored
+  // pre-paint on the way back in.
+  useEffect(() => {
+    if (parked) return;
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      savedScrollRef.current = { top: el.scrollTop, left: el.scrollLeft };
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [parked]);
+  useLayoutEffect(() => {
+    if (parked) return;
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    const { top, left } = savedScrollRef.current;
+    if (top) el.scrollTop = top;
+    if (left) el.scrollLeft = left;
+  }, [parked]);
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (!onSizeCommit) return;
@@ -515,7 +594,7 @@ export function Vessel({
           position: "relative",
           ...wallStyle,
           background: palette.interior,
-          height: heightSet ? effH : undefined,
+          height: chassisH,
           display: "flex",
           flexDirection: "column",
           outline:
@@ -579,7 +658,7 @@ export function Vessel({
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             padding: `${PAD}px`,
-            flex: heightSet ? "1 1 0" : undefined,
+            flex: bodyFills ? "1 1 0" : undefined,
             minHeight: 0,
             overflowY: heightSet && !isHorizontal ? "auto" : undefined,
             overflowX: isHorizontal ? "auto" : undefined,
@@ -588,7 +667,11 @@ export function Vessel({
         >
           {/* The gap lives on the element that actually contains the cards, not
               on the scroll body (whose only direct child is PullToRefresh). */}
-          {onRefresh ? (
+          {parked ? (
+            // Parked: a flat wash over the interior. No cards, no media, and no
+            // PullToRefresh listeners — the chassis around it is unchanged.
+            <div aria-hidden style={{ width: "100%", height: "100%" }} />
+          ) : onRefresh ? (
             <PullToRefresh onRefresh={onRefresh} scrollRef={scrollBodyRef}>
               <div
                 style={{

@@ -89,6 +89,11 @@ import { useGlasshousePresence } from "../../stores/glasshouse";
 const FLOOR = "var(--ah-bone)"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
 
+/** Px of pan before the virtualization band is re-read (hysteresis dead band).
+ *  Well under the one-viewport mount margin, so a vessel is never parked while
+ *  any part of it is on screen. */
+const VIRT_QUANT = 200;
+
 // Map a feed Post to a reader-skip entry — articles only (the reader-pane click
 // targets), mirroring openReaderFromPost's native/external split. Non-articles
 // (notes, external short posts) expand inline and return null, so they drop out
@@ -471,6 +476,78 @@ export function WorkspaceView() {
   const [armedMergeTarget, setArmedMergeTarget] = useState<string | null>(null);
   const armedMergeTargetRef = useRef<string | null>(null);
   armedMergeTargetRef.current = armedMergeTarget;
+
+  // ── Virtualization (WORKSPACE-COLUMN-LAYOUT-ADR §VII) ────────────────────
+  // What is off-screen costs nothing: a vessel more than a viewport away keeps
+  // its chassis and loses its contents. The heavy per-feed state (items,
+  // nextCursor, caught-up watermark) is VesselState, here in the host, so an
+  // unmount discards only the React tree, its DOM and its decoded media —
+  // there is nothing to tear down and nothing to refetch (the client holds no
+  // relay connections; content arrives over the gateway REST API).
+  //
+  // The band is measured in STORE space, keyed off `panOffset = scrollLeft +
+  // originX`. That sum is INVARIANT under the gesture-slack origin shift
+  // (originX moves by −d, the compensation effect above moves scrollLeft by
+  // +d), so beginning a drag cannot transiently mis-read the band and unmount
+  // half the floor mid-gesture. A dead band of VIRT_QUANT px of pan before the
+  // set is re-read supplies the hysteresis: a vessel straddling the boundary
+  // needs a real scroll, not a jitter, to flip.
+  const [panOffset, setPanOffset] = useState(0);
+  const panOffsetRef = useRef(0);
+  const originXRef = useRef(extent.originX);
+  originXRef.current = extent.originX;
+  const virtRafRef = useRef<number | null>(null);
+  const syncPan = useCallback(() => {
+    const floor = floorRef.current;
+    if (!floor) return;
+    const next = floor.scrollLeft + originXRef.current;
+    if (Math.abs(next - panOffsetRef.current) < VIRT_QUANT) return;
+    panOffsetRef.current = next;
+    setPanOffset(next);
+  }, []);
+  useEffect(() => {
+    const floor = floorRef.current;
+    if (!floor || isMobile) return;
+    function onScroll() {
+      if (virtRafRef.current !== null) return;
+      virtRafRef.current = requestAnimationFrame(() => {
+        virtRafRef.current = null;
+        syncPan();
+      });
+    }
+    floor.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      floor.removeEventListener("scroll", onScroll);
+      if (virtRafRef.current !== null)
+        cancelAnimationFrame(virtRafRef.current);
+      virtRafRef.current = null;
+    };
+    // Same re-attach reason as the floorScrollRef listener above: the pre-auth
+    // frame renders a Floor without the ref.
+  }, [user, loading, isMobile, syncPan]);
+  // Cold start and layout changes. The dead band only fires on real scroll
+  // events, and the first-paint scroll init sets scrollLeft without dispatching
+  // one — so a workspace whose feeds all sit far from store-x 0 would otherwise
+  // start with an empty band. Declared AFTER the origin-compensation layout
+  // effect so it always reads a scrollLeft that has already been corrected.
+  useLayoutEffect(() => {
+    if (isMobile) return;
+    syncPan();
+  }, [isMobile, syncPan, extent.originX, vessels.length, bootstrap]);
+
+  const visibleIds = useMemo(() => {
+    const lo = panOffset - viewport.w;
+    const hi = panOffset + viewport.w * 2;
+    const ids = new Set<string>();
+    for (const v of vessels) {
+      if (v.feed.hidden) continue;
+      const l = positions[v.feed.id];
+      const x = l?.x ?? 0;
+      const w = l?.w ?? VESSEL_DEFAULT_W;
+      if (x + w >= lo && x <= hi) ids.add(v.feed.id);
+    }
+    return ids;
+  }, [vessels, positions, panOffset, viewport.w]);
 
   /**
    * Read the floor's live geometry in STORE coordinates. `exclude` drops the
@@ -1714,6 +1791,7 @@ export function WorkspaceView() {
                   )
                 }
                 armed={armedMergeTarget === v.feed.id}
+                contentsMounted={visibleIds.has(v.feed.id)}
                 hidden={ceremony?.feedId === v.feed.id}
                 floorRef={floorRef}
                 onCardDrop={(raw) => handleCardDrop(v.feed.id, raw)}
