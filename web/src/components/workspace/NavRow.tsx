@@ -13,9 +13,18 @@
 // as part of the trigger, while still killing the separate fixed wordmark layer
 // the difference lens used to need.
 //
-// GLOBAL CHROME, NOT A FEED ISLAND: the ground is `var(--ah-bone)` and the slab
-// `var(--ah-ink)` — both neutral slugs, so the row inverts with `html.dark`
-// rather than carrying a per-feed colourway. Same treatment as the mobile bar.
+// GLOBAL CHROME, NOT A FEED ISLAND: the ground is `var(--ah-bone)`, a neutral
+// slug, so the row inverts with `html.dark` rather than carrying a per-feed
+// colourway. Same treatment as the mobile bar.
+//
+// NO DIVIDER. The row shipped with a 4px slab on its top edge so it would read
+// against the bone floor it shares a colour with; that was removed 2026-07-22 —
+// the lockup docked at its right end is indicator enough, and a full-width rule
+// across the viewport is a heavier statement than the row is making. The row is
+// now a silent reserved band: it holds the ∀ clear of the feeds and keeps the
+// floor from running under it, and is otherwise invisible. Do not reinstate the
+// slab — and never a thinner rule in its place, which the sitewide no-single-
+// pixel-lines invariant forbids outright.
 //
 // Z-ORDER: z-58, mirroring the mobile bar — above the Glasshouse scrim (z-55)
 // and pane (z-56) so navigation stays live over any open pane (destination
@@ -50,11 +59,6 @@ export function NavRow() {
         background: "var(--ah-bone)",
         zIndex: 58,
       }}
-    >
-      {/* The one divider in the workspace shell — the canonical 4px slab. It is
-          what makes the row read against the bone floor, which is the same
-          colour; nothing thinner is permitted anywhere on the site. */}
-      <div className="slab-rule-4" />
-    </div>
+    />
   );
 }

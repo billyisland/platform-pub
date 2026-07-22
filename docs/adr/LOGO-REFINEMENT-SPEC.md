@@ -4,7 +4,13 @@ Execution doc for Claude Code. Repo: `billyisland/platform-pub`. All paths relat
 
 > **Status: SHIPPED 2026-07-06.** Implemented as specified, on the wider-splay canonical decided below. Rasters regenerated from `favicon.svg` via the repo-root `sharp`; the 32px crossbar check passed numerically (two full-intensity rows — the 4.6 fallback was not needed). Retained as the canonical reference for the ∀ geometry.
 >
-> **Geometry note (2026-07-21, `FORALL-CUT-AND-LOCKUP-ADR` §III):** the **cut (disc) form** — the ∀ punched through an opaque disc as a real hole — carries its own rim treatment that supersedes this spec's "apex clear of rim / feet bleed and stop" description **for that form only**: apex mitred to a point kissing the bottom rim, feet overshooting so the disc circle trims them flush through the top (200-frame values in the ADR). Exported assets live in `web/public/brand/`; the live idle workspace disc is the punched **lens** (`ForallMenu.tsx`) but deliberately keeps this spec's clear-of-rim glyph (ADR §IV.4 — a rim-kiss pinches to aliasing at button size). The bare glyph (`ForAllMark`) and every **in-app** painted disc instance (favicon, open-menu disc) remain exactly as specified here. **Caveat (2026-07-21):** the brand *exports* — including the painted `allhaus-disc-on-*` pairs — do NOT: the ADR's rim-pinned construction forces a ≈16.7° leg splay against this spec's ~20.5°, so the supersession is more than rim treatment. Reconciliation is an open decision (ADR §III.1 honesty note; CONSOLIDATED-TODO §0i.10).
+> **Geometry note — REWRITTEN 2026-07-22, and it now cuts deeper than a rim treatment. Read this before using any disc value below.**
+>
+> This spec's stance (~20.5° splay, apex clear of the rim, feet bleeding through the top) is **the BARE GLYPH's only**: `ForAllMark` — the crimson ∀ in Nav/Footer/About, which has no disc and so no rim to meet. It still defines the canonical construction, and File 1 below is still live.
+>
+> **Every DISC instance now carries `FORALL-CUT-AND-LOCKUP-ADR` §III.1's rim-kiss geometry instead** — the `ForallMenu` trigger, `favicon.svg` (+ its rasters), and the brand exports in `web/public/brand/`. Apex mitred to a point kissing the bottom rim, feet overshooting so the disc circle trims them flush through the top; pinning both ends to the rim forces a ≈16.7° splay, narrower and taller than the ~20.5° above. That is a **consequence of the construction, not a second design** — which is why it belongs to every disc instance and to no bare one. 200-frame values in the ADR; the 56-frame port is legs `M14.36 1.61 L28 47.15 L41.64 1.61` w5.06, crossbar (19.96,20.26)→(36.04,20.26) w4.17, clip at the literal rim **r=28** (an inset clip leaves the ink slice the overshoot exists to remove).
+>
+> So **the disc values in Files 2 and 3 below are superseded** — they are the record of the 2026-07-06 pass, not current geometry. The earlier caveat here (exports drifted from the in-app discs; ADR §IV.4 kept the live button clear of the rim; reconciliation open at CONSOLIDATED-TODO §10) is **closed**: the trigger and favicon were ported onto the export geometry 2026-07-22, so all three disc instances agree again. ADR §IV.4 is superseded with it, its pinched-crescent warning retained as the standing visual check at 36–40 px.
 
 ## Why
 
@@ -70,6 +76,8 @@ Update the component's doc comment: crossbar is **upper third**, not "low crossb
 
 ## File 2 — `web/src/components/workspace/ForallMenu.tsx` (trigger)
 
+> **SUPERSEDED on geometry (2026-07-22).** The "New" values below shipped 2026-07-06 and were replaced by the disc-form rim-kiss construction — see the geometry note at the top. The *structural* instructions in this section (what not to touch: the double clip, the spin machinery, the ∀↔X morph, the close-X, the badge, stroke-via-style) all still stand; only the numbers moved, plus the clip radius 27 → 28.
+
 Geometry swap **only** inside the idle-∀ group (the first `clipPath="url(#forall-clip)"` group). Do not touch: the double-clip structure (SVG clip + `overflow:hidden` wrapper span), the hover-spin/`glyphRot` machinery, the ∀↔X morph groups, the close-X geometry, the unread badge, the `discBg`/`discGlyph` tokens, or the stroke-via-style pattern (the §III.3 comments explain why each exists — leave them, amend the geometry description).
 
 Current (56 frame):
@@ -93,11 +101,13 @@ New:
 
 Group attribute changes: `strokeWidth={6}` → `strokeWidth={5}`; `strokeLinecap="round"` → `strokeLinecap="butt"`. Stroke colour stays on the group `style` (var() references don't resolve in presentation attributes — existing comment covers this).
 
-The apex miter tip lands ≈(28,52.2), ~2.9 clear of the r=27 clip; legs overshoot the top rim and are clipped as before, so the background-independence guarantee is unchanged.
+The apex miter tip lands ≈(28,52.2), ~2.9 clear of the r=27 clip; legs overshoot the top rim and are clipped as before, so the background-independence guarantee is unchanged. *(2026-07-22: the clearance is now zero by design — the tip lands ≈(28,56), a point on the rim, and the clip is r=28. Background-independence is unchanged, since it rests on the double clip, not on the inset.)*
 
 Leave the close-X group exactly as-is (round caps on the X are fine and it never coexists with the ∀).
 
 ## File 3 — `web/public/favicon.svg`
+
+> **SUPERSEDED on geometry (2026-07-22)** — same as File 2: the favicon is a disc instance and now carries the rim-kiss construction (clip already `r=28` here). The palette, the clip structure and the "painted, never punched — a tab ground is not ours to control" rule are unchanged.
 
 Same swap, keeping the existing inverted palette (ink disc `#1A1A18`, bone glyph `#F0EFEB`) and the `#disc` clip:
 

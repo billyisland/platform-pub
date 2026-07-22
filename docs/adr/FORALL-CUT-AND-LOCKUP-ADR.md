@@ -96,6 +96,19 @@ both docs so the forms don't drift.
 > stance as a deliberate export-only form and amend the one-construction rule
 > to name it. Until decided, don't propagate the export geometry anywhere
 > else.
+>
+> **RESOLVED 2026-07-22 — neither branch: the narrow stance is the DISC FORM's
+> stance, in-app included.** The geometry above is now the live `ForallMenu`
+> trigger's and `favicon.svg`'s as well as the exports': ported by 28/94 into the
+> 56-unit frame, legs `M14.36 1.61 L28 47.15 L41.64 1.61` w5.06, crossbar
+> (19.96,20.26)→(36.04,20.26) w4.17, `#forall-clip` raised 27→28 so the trim is
+> flush and the apex kisses. The one-construction rule is amended, not broken:
+> the ≈16.7° splay is a *consequence* of pinning both ends to a rim, and only the
+> disc form has a rim — so the disc form kisses at ≈16.7° and the bare
+> `ForAllMark` (crimson ∀, no disc, Nav/Footer/About) keeps the canonical ~20.5°.
+> Two stances, one construction, the difference derived rather than drawn. §IV.4's
+> keep-the-trigger-clear recommendation is superseded with it; its
+> pinched-crescent warning is the standing visual check at 36–40 px.
 
 ### III.2 Two realisations of one mark
 
@@ -184,12 +197,17 @@ answer is to make it smooth (avoid re-rasterising the mask per frame; promote th
 §IV.5), **not** to quietly drop back to paint. If it cannot be made smooth, or if (b) cannot be made seamless,
 **stop and flag** rather than shipping jank or a visible open-flicker.
 
-### IV.4 Trigger geometry
+### IV.4 Trigger geometry — **SUPERSEDED 2026-07-22, the trigger kisses**
+
+> **The recommendation below was reversed.** The live trigger, the favicon and the
+> exports now carry one geometry: §III.1's kiss/flush construction. See the §III.1
+> resolution note. The paragraph is kept for its reasoning — the pinched-crescent
+> risk it names is real and is what the in-browser check watches for — not as a rule.
 
 The trigger _may_ adopt the §III.1 kiss/flush geometry, but at 36–56 px a rim-kiss
 pinches the ink crescents to nothing, which can alias or read as a nick, and a
-spinning button wants a whole outline. **Recommendation: the exported logo kisses; the
-live button keeps the ∀ clear of the rim** (as now) even once it punches — a hole clear
+spinning button wants a whole outline. ~~**Recommendation: the exported logo kisses; the
+live button keeps the ∀ clear of the rim** (as now) even once it punches~~ — a hole clear
 of the rim still shows content through the letter without breaking the disc silhouette.
 Treat any move to a kissing trigger as its own visual-QA pass, not a side-effect here.
 

@@ -740,32 +740,49 @@ export function ForallMenu({
       >
         {/* The ∀ is constructed, not typed: stroked bars forming the A
             skeleton, in the workspace floor colour, dividing the black disc.
-            The legs are one mitred path — a sharp interior apex (miter tip
-            ≈(28,52.2), ~2.9 clear of the r=27 clip) with both legs running up
-            through the top rim — and the straight crossbar sits in the upper
-            third of the glyph, slightly lighter than the legs (canonical
-            geometry + disc placement: docs/adr/LOGO-REFINEMENT-SPEC.md).
+            The legs are one mitred path, the straight crossbar sits in the upper
+            third, slightly lighter than the legs.
 
-            The legs' endpoints overshoot the top circumference, so each leg
-            fully reaches the rim with no anti-aliased gap — but the bar group
-            is then *doubly clipped to the
-            disc the user sees* (§III.3): the SVG `#forall-clip` (r=27, inset a
-            hair inside the literal rim so the anti-aliased seam never reaches it)
-            AND the `overflow:hidden`+`borderRadius:50%` wrapper span below, which
-            clips in the SAME scaled coordinate space as the rendered rim. The two
-            together make the disc background-independent — leg overshoot can never
-            paint past the edge under any transform or DPR, so the legs read
-            identically over the workspace floor and over the frosted scrim (the
-            old single floor-on-floor clip leaked once the open-menu scale + spin
-            stopped the compositor cancelling the tips against the floor).
-            Wrapper + inner SVG so the unread badge stays an UN-clipped sibling on
-            the button.
+            GEOMETRY = THE CUT MARK'S, ported (2026-07-22). The dimensions here
+            are FORALL-CUT-AND-LOCKUP-ADR §III.1's cut construction — feet on the
+            rim at ±28° from top (overshot along the leg axis so the disc trims
+            them flush), apex vertex set so the mitred outer tip resolves to a
+            point ON the bottom rim, crossbar spanning the leg centrelines —
+            transposed from its 200-unit frame (disc r=94 at (100,100)) into this
+            56-unit one (disc r=28 at (28,28)): scale 28/94, so
+            `M54.2 11.4 L100 164.3 L145.8 11.4` w17 becomes
+            `M14.36 1.61 L28 47.15 L41.64 1.61` w5.06, and the crossbar
+            (73,74)→(127,74) w14 becomes (19.96,20.26)→(36.04,20.26) w4.17.
 
-            The painted glyph is now the ONLY construction: the punched lens
-            variant (a masked white disc composited with mix-blend-mode:
-            difference) went with the floating disc — WORKSPACE-COLUMN-LAYOUT-ADR
-            §VI. The cut/punched realisation survives in the brand exports
-            (web/public/brand/), where the ground is ours to show. */}
+            That resolves the ADR §III.1 honesty note / CONSOLIDATED-TODO §10
+            open question in favour of "the DISC form carries the rim-kiss
+            stance": pinning both ends to the rim forces a ≈16.7° splay from
+            vertical rather than the bare glyph's ~20.5°, so the disc reads
+            narrower and taller than `ForAllMark` — deliberately. The splay is a
+            consequence of the rim constraint, and only the disc form has a rim;
+            the bare crimson ∀ (Nav/Footer/About) has nothing to kiss and keeps
+            the canonical stance. The trigger, the favicon and the brand exports
+            are the disc form and are now one geometry again. (§V's earlier
+            "the live button keeps the ∀ clear of the rim" recommendation is
+            superseded by this call.)
+
+            REALISATION is still PAINT, not punch — only the dimensions came
+            across. The punched lens (a masked white disc composited with
+            mix-blend-mode: difference) went with the floating disc,
+            WORKSPACE-COLUMN-LAYOUT-ADR §VI; the cut realisation survives only in
+            the brand exports (web/public/brand/), where the ground is ours.
+
+            The feet overshoot the top circumference by construction, so the bar
+            group is *doubly clipped to the disc the user sees* (§III.3): the SVG
+            `#forall-clip` AND the `overflow:hidden`+`borderRadius:50%` wrapper
+            span below, which clips in the SAME scaled coordinate space as the
+            rendered rim. The two together make the disc background-independent —
+            overshoot can never paint past the edge under any transform or DPR, so
+            the legs read identically over the workspace floor and over the frosted
+            scrim (the old single floor-on-floor clip leaked once the open-menu
+            scale + spin stopped the compositor cancelling the tips against the
+            floor). Wrapper + inner SVG so the unread badge stays an UN-clipped
+            sibling on the button. */}
         <span
           aria-hidden="true"
           style={{
@@ -785,9 +802,16 @@ export function ForallMenu({
             {/* The disc itself — clips the bars so their overshoot can never
                 paint past the rim. Centred on the rotation origin (28,28), so a
                 circle is invariant under both the hover spin and the group morph
-                rotations and stays aligned with the button's border-radius disc. */}
+                rotations and stays aligned with the button's border-radius disc.
+
+                r=28, the LITERAL rim, not the old r=27 hair-inset: under the cut
+                geometry the feet meet the rim flush and the apex kisses it, and a
+                1-unit inset would leave a ring of ink between letter and edge —
+                the exact "ink slice" §III.1 constructs the overshoot to avoid.
+                The anti-aliased seam the inset used to guard is handled by the
+                wrapper span, which clips in the rendered coordinate space. */}
             <clipPath id="forall-clip">
-              <circle cx="28" cy="28" r="27" />
+              <circle cx="28" cy="28" r="28" />
             </clipPath>
           </defs>
           {/* The ∀ and the close-X are stacked groups that cross-fade with a
@@ -808,19 +832,22 @@ export function ForallMenu({
               transition:
                 "opacity 200ms ease, transform 260ms cubic-bezier(0.4, 0, 0.2, 1)",
             }}
-            strokeWidth={5}
+            strokeWidth={5.06}
             strokeLinecap="butt"
             fill="none"
           >
             {/* legs: one path so the interior apex miter-joins — two separate
-                lines with butt caps would notch at the apex */}
+                lines with butt caps would notch at the apex. The apex vertex
+                (28, 47.15) puts the mitred outer tip at y≈56 — a point on the
+                bottom rim. miterlimit 12 per §III.1 (the join needs ≈3.5). */}
             <path
-              d="M10.6 -1.7 L28 45 L45.4 -1.7"
+              d="M14.36 1.61 L28 47.15 L41.64 1.61"
               strokeLinejoin="miter"
-              strokeMiterlimit={6}
+              strokeMiterlimit={12}
             />
-            {/* crossbar: upper third, slightly lighter than the legs */}
-            <line x1="18" y1="22" x2="38" y2="22" strokeWidth={4.2} />
+            {/* crossbar: upper third, spanning the leg centrelines, ~0.82 of
+                the legs' weight */}
+            <line x1="19.96" y1="20.26" x2="36.04" y2="20.26" strokeWidth={4.17} />
           </g>
           <g
             clipPath="url(#forall-clip)"

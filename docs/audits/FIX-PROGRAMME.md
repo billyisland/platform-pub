@@ -23,6 +23,71 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (brand — the nav row loses its slab; the disc adopts the cut mark's
+  dimensions)** — two review notes on the shipped columnar workspace, both design
+  calls by the operator.
+  **(1) The nav row's divider is gone.** `NavRow` shipped (Slice 4) with the
+  canonical 4px slab on its top edge, there because the row's ground is
+  `var(--ah-bone)` — the same colour as the floor — so without it the row does not
+  read as a distinct band. On review that is fine: the lockup docked at the row's
+  right end is indicator enough, and a full-width rule across the viewport is a
+  heavier statement than the row is making. The slab div is deleted; the row is
+  now a silent reserved band that still holds the ∀ clear of the feeds and still
+  stops the floor running under it (`deriveGeometry`'s `navRowH` is untouched, so
+  no geometry moved). Nothing thinner replaces it — the no-single-pixel-lines
+  invariant forbids that outright. Recorded in WORKSPACE-COLUMN-LAYOUT-ADR §VI +
+  its as-built notes and in CLAUDE.md's nav-row rule, in both cases as
+  *don't reinstate*, not as history.
+  **(2) The ∀ disc now carries the cut mark's geometry — and that closes the
+  two-stance drift.** FORALL-CUT-AND-LOCKUP-ADR §III.1's honesty note recorded
+  that the brand exports came out at a ≈16.7° leg splay rather than the canonical
+  ~20.5°: pinning BOTH ends to the rim (feet at ±28° from top, apex vertex set so
+  the mitred outer tip resolves to a point on the bottom rim) over-constrains the
+  stance, and the narrower letter fell out of the construction. The in-app disc
+  kept the old clear-of-the-rim glyph, so trigger and exports visibly disagreed;
+  §IV.4 had explicitly recommended that split, and CONSOLIDATED-TODO §10 carried
+  the decision as open with "don't propagate the export geometry" pending it.
+  **Resolved in favour of neither queued branch: the narrow stance is the DISC
+  FORM's stance, in-app included.** The trigger's idle-∀ group and `favicon.svg`
+  were ported onto §III.1 by scaling its 200-unit frame (disc r=94) into the
+  56-unit one (disc r=28) by 28/94 — legs `M10.6 -1.7 L28 45 L45.4 -1.7` w5
+  become `M14.36 1.61 L28 47.15 L41.64 1.61` w5.06 (miterlimit 6 → 12; the join
+  needs ≈3.5, and the apex vertex at y=47.15 puts the mitred tip at y≈56, a point
+  on the bottom rim), and the crossbar (18,22)→(38,22) w4.2 becomes
+  (19.96,20.26)→(36.04,20.26) w4.17. `#forall-clip` goes 27 → **28**, the literal
+  rim: under this construction the feet overshoot the circumference deliberately
+  so the clip trims them flush, and a 1-unit inset would leave exactly the ink
+  slice the overshoot exists to remove. The anti-aliasing the inset used to guard
+  is already covered by the wrapper `<span>`, which clips in the *rendered*
+  coordinate space — the second of the two clips §III.3 requires, so the disc
+  stays background-independent over floor and frost alike. **Realisation is
+  unchanged: still painted, not punched** — the lens died with the floating disc
+  (WORKSPACE-COLUMN-LAYOUT-ADR §VI) and the cut realisation remains exports-only;
+  only the dimensions came across. Favicon rasters `icon-32.png` /
+  `apple-touch-icon.png` regenerated from the SVG (sharp, density 1200) and
+  eyeballed against `allhaus-disc-on-bone.svg` rendered at the same size —
+  pixel-equivalent, so the three disc instances are one geometry again.
+  **The one-construction rule is amended, not broken**, and CLAUDE.md now says so:
+  the ≈16.7° splay is a *consequence* of having a rim to meet, so it belongs to
+  every disc instance (trigger, favicon, exports) and to no bare one — the bare
+  `ForAllMark` (crimson ∀, Nav/Footer/About) has nothing to kiss and keeps ~20.5°.
+  Two stances, one construction, the difference derived rather than drawn.
+  ADR §III.1 gains the resolution note, §IV.4 is marked superseded (its
+  pinched-crescent warning kept as the standing visual check at 36–40 px, which is
+  the one thing to watch on the live disc), CONSOLIDATED-TODO §10 closed. The
+  cross-referenced docs that still asserted the old split were corrected in the
+  same pass, since each would otherwise have sent the next reader back to the
+  superseded numbers: LOGO-REFINEMENT-SPEC's header note (it claimed the in-app
+  discs "remain exactly as specified here" and that §IV.4 deliberately kept the
+  live button clear of the rim) rewritten to scope this spec's stance to the bare
+  glyph alone, with Files 2/3 marked superseded on geometry but retained for their
+  still-live structural instructions; `ForAllMark`'s doc comment (it claimed the
+  disc marks derive their splay from it) rewritten to state the two-stance rule;
+  `web/public/brand/README.md` extended to say the exports are no longer a
+  special case.
+  Green: web tsc clean, `next build` clean, root eslint 0 errors, hairline
+  tripwire clean over both touched components, dev web image rebuilt.
+
 - **2026-07-22 (prod incident — a starter template merged away; the merge guard)** —
   the operator dragged the feed flagged `is_starter_template` onto another feed
   on live. `POST /workspace/feeds/:id/merge` is asymmetric and destructive: it

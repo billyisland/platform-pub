@@ -267,7 +267,13 @@ factory dimensions, ordered by numeral 1..n left to right — the parade-ground 
 
 The ∀ site-navigation control leaves its floating disc position and renders as a
 fixed row along the bottom of the viewport, full width, ordinary opaque chrome (walls
-palette, slab rule on its top edge). The workspace floor ends one GRID above it;
+palette, ~~slab rule on its top edge~~ — **no divider as of 2026-07-22**: the row
+shipped with the canonical 4px slab so it would read against the bone floor it shares
+a colour with, and the slab was removed on review. The lockup docked at its right end
+is indicator enough, and a full-width rule across the viewport is a heavier statement
+than the row is making; the row is now a silent reserved band. Do not reinstate it —
+and never anything thinner, the no-hairline rule standing either way).
+The workspace floor ends one GRID above it;
 §III.2's `H` already accounts for this. Feeds can never extend behind or below it.
 
 **Z-order and Glasshouse interplay** (decided 2026-07-22, mirroring the mobile
@@ -654,7 +660,8 @@ deviations; FIX-PROGRAMME 2026-07-22):
   only so the lens could blend without a stacking context between it and the
   canvas. It is now a plain child of the lockup container, which also collapses
   the outside-click handler's two `contains` checks to one. `NavRow.tsx`
-  exports `NAV_ROW_H` and renders the bar + its 4px slab, nothing else.
+  exports `NAV_ROW_H` and renders the bar, nothing else (it shipped with a 4px
+  slab on its top edge; removed 2026-07-22 — see §VI's note).
 - **The row-anchored disc is 40, not the floating 46.** 40 + 2·GRID lands
   exactly on `NAV_ROW_H = 56`, so the lockup is GRID-centred in the row by
   construction rather than by a tuned magic number. §V's ratio is preserved by
@@ -695,7 +702,8 @@ branch, the hoisted un-blended badge twin, and the now-dead `wordmarkRef`.
 - **The row.** New `components/workspace/NavRow.tsx` exporting `NAV_ROW_H`:
   `position: fixed`, bottom, full width, `zIndex: 58`, mode-aware neutral chrome
   (`var(--ah-ink)`-family tokens that invert with `html.dark` — the row is
-  global chrome, not a feed island), 4px slab on its top edge. It renders the
+  global chrome, not a feed island), and — as shipped — a 4px slab on its top
+  edge, **since removed** (§VI). It renders the
   wordmark (absorbing `ForallMenu`'s separate fixed wordmark layer) and docks
   the ∀. `ForallMenu` gains a third anchor, `"row"`, alongside
   `"floating"`/`"bar"`: container fixed within the row's right end, menu/search
