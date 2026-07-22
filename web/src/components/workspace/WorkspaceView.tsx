@@ -15,6 +15,7 @@ import { useWorkspace } from "../../stores/workspace";
 import { GRID } from "../../lib/workspace/grid";
 import {
   deriveGeometry,
+  regimentedLayout,
   resolveDrop,
   clampSlotSize,
   withSlotSize,
@@ -85,6 +86,7 @@ import { MergeFeedConfirm } from "./MergeFeedConfirm";
 import { MobileWorkspace } from "./MobileWorkspace";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGlasshousePresence } from "../../stores/glasshouse";
+import { useLightbox } from "../../stores/lightbox";
 
 const FLOOR = "var(--ah-bone)"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
@@ -328,6 +330,25 @@ export function WorkspaceView() {
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity);
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation);
   const setVesselTextSize = useWorkspace((s) => s.setVesselTextSize);
+  const regimented = useWorkspace((s) => s.regimented);
+  const setRegimented = useWorkspace((s) => s.setRegimented);
+  const materializeRegimented = useWorkspace((s) => s.materializeRegimented);
+
+  // The numeral is persisted rank, not creation order (MOBILE-LAYOUT-ADR
+  // §VII), and numbering skips hidden feeds (§V) — visible feeds read 1..N
+  // with no gaps, the same sequence the mobile pager swipes through. Hidden
+  // feeds carry no numeral until restored. Declared here rather than beside
+  // its consumers because the regimented view (§V) is ordered by it.
+  const visibleSorted = vessels
+    .filter((v) => !v.feed.hidden)
+    .sort(
+      (a, b) =>
+        a.feed.sortRank - b.feed.sortRank ||
+        a.feed.createdAt.localeCompare(b.feed.createdAt) ||
+        a.feed.id.localeCompare(b.feed.id),
+    );
+  const feedNumerals = new Map<string, number>();
+  visibleSorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
 
   // ── The columnar floor ───────────────────────────────────────────────────
   // Geometry is DERIVED, never stored: one pure function turns the persisted
@@ -363,12 +384,38 @@ export function WorkspaceView() {
     h: number;
   } | null>(null);
 
+  // §V. Regimented mode is a VIEW over the feed list, not an edit: the stored
+  // layout stays exactly as it was, so leaving the mode is free and there is no
+  // snapshot to lose. The parade order is the numeral order — `sortRank: i + 1`
+  // over `visibleSorted`, so the derived columns read 1..N left to right even
+  // where two feeds share a server rank. The id key keeps the array stable
+  // across renders; without it every render would re-derive the geometry and
+  // re-render every vessel.
+  const visibleIdsKey = visibleSorted.map((v) => v.feed.id).join(" ");
+  const regimentedFeeds = useMemo(
+    () =>
+      visibleIdsKey
+        ? visibleIdsKey
+            .split(" ")
+            .map((id, i) => ({ id, sortRank: i + 1 }))
+        : [],
+    [visibleIdsKey],
+  );
+  // The layout the floor is arranged by, before any live resize proposal:
+  // the stored one, or the transient parade-ground derivation.
+  const baseLayout = useMemo(
+    () => (regimented ? regimentedLayout(regimentedFeeds, vp) : layout),
+    [regimented, regimentedFeeds, vp, layout],
+  );
+  const baseLayoutRef = useRef(baseLayout);
+  baseLayoutRef.current = baseLayout;
+
   const geomLayout = useMemo(
     () =>
       resizePreview
-        ? withSlotSize(layout, resizePreview.feedId, resizePreview)
-        : layout,
-    [layout, resizePreview],
+        ? withSlotSize(baseLayout, resizePreview.feedId, resizePreview)
+        : baseLayout,
+    [baseLayout, resizePreview],
   );
   const geom = useMemo(
     () => deriveGeometry(geomLayout, vp),
@@ -413,6 +460,59 @@ export function WorkspaceView() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isMobile]);
+
+  // The local, non-Glasshouse transient surfaces. With `lensSuppress` gone
+  // (Slice 4) there is no generic "a modal is open" registry, and these are all
+  // plain component state anyway — so the `\` handler reads them off a ref
+  // instead of re-attaching its listener every time one opens.
+  const localSurfaceOpenRef = useRef(false);
+  localSurfaceOpenRef.current =
+    newFeedOpen ||
+    !!pendingMerge ||
+    !!pipPanel ||
+    !!feedComposerFor ||
+    !!composerOpen ||
+    bringWorld ||
+    !!ceremony;
+
+  // `\` toggles the regimented layout (§V): every visible feed on screen at
+  // once, numeral order, factory width — the parade ground. It is a VIEW, so
+  // the stored layout is untouched and a second press drops straight back to
+  // it. Guarded the way every other global binding here is: never in an
+  // editable field, never with a modifier (so ⌘\ / Ctrl+\ stay free), never
+  // while a Glasshouse pane, the lightbox, one of the local surfaces above or
+  // an Explain program owns the keyboard, and never mid-drag.
+  useEffect(() => {
+    if (isMobile) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "\\") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t?.closest(
+          'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
+        )
+      )
+        return;
+      // The frozen floor owns the keyboard while a program runs, and Explain is
+      // not in the Glasshouse presence registry — the pane check alone misses it.
+      if (useExplain.getState().isActive) return;
+      if (useGlasshousePresence.getState().isOpen) return;
+      if (useEditorOverlay.getState().isOpen) return;
+      if (useLightbox.getState().isOpen) return;
+      if (localSurfaceOpenRef.current) return;
+      if (dragActiveRef.current) return;
+      e.preventDefault();
+      const next = !useWorkspace.getState().regimented;
+      setRegimented(next);
+      // The parade reads 1..N from the left, so entering it starts at Feed 1.
+      // Instant, not smooth: the whole floor just changed shape under the
+      // scroll position, so there is nothing coherent to animate between.
+      if (next) floorRef.current?.scrollTo({ left: 0, behavior: "auto" });
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isMobile, setRegimented]);
 
   const dragActiveRef = useRef<string | null>(null);
   // What the last drag frame resolved to (§IV.2). One resolver answers both
@@ -502,12 +602,31 @@ export function WorkspaceView() {
    * column and the columns to the right slide), height stops at what the stack
    * can still hold. Nothing is displaced either way, so there is no
    * `clampSizeClear` successor.
+   *
+   * It clamps against the layout the floor is CURRENTLY arranged by, which
+   * under regimented mode is the parade derivation rather than the stored
+   * layout — the handle must stop where the visible stack ends, and the commit
+   * (which materialises that same derivation first) then agrees with it.
    */
   const clampVesselResize = useCallback(
     (feedId: string, proposed: { w: number; h: number }) =>
-      clampSlotSize(useWorkspace.getState().layout, feedId, proposed, vp),
+      clampSlotSize(baseLayoutRef.current, feedId, proposed, vp),
     [vp],
   );
+
+  /**
+   * §V. A layout MUTATION leaves regimented mode: the parade arrangement is
+   * stamped as the new custom layout, and the caller's one edit then applies on
+   * top of it. Both mutations (a committed drop, a resize commit) were resolved
+   * against exactly this derivation, so their indices and stack address the
+   * layout they land on. Feed-list changes — merge, hide, delete, adopt — are
+   * NOT layout edits: they apply to the stored layout and the parade view
+   * simply re-derives over the new list. Appearance changes likewise apply in
+   * place without exiting.
+   */
+  function materializeIfRegimented() {
+    if (regimented) materializeRegimented(regimentedFeeds, vp);
+  }
 
   function handleVesselDragStart(feedId: string) {
     dragActiveRef.current = feedId;
@@ -563,6 +682,7 @@ export function WorkspaceView() {
       return;
     }
 
+    materializeIfRegimented();
     applyDropToLayout(feedId, resolved);
   }
 
@@ -791,21 +911,6 @@ export function WorkspaceView() {
       }
     }
   }
-
-  // The numeral is persisted rank, not creation order (MOBILE-LAYOUT-ADR
-  // §VII), and numbering skips hidden feeds (§V) — visible feeds read 1..N
-  // with no gaps, the same sequence the mobile pager swipes through. Hidden
-  // feeds carry no numeral until restored.
-  const visibleSorted = vessels
-    .filter((v) => !v.feed.hidden)
-    .sort(
-      (a, b) =>
-        a.feed.sortRank - b.feed.sortRank ||
-        a.feed.createdAt.localeCompare(b.feed.createdAt) ||
-        a.feed.id.localeCompare(b.feed.id),
-    );
-  const feedNumerals = new Map<string, number>();
-  visibleSorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
 
   // The feed the ∀ relativises to: the mobile pager's active feed, resolved to
   // a live + still-visible row. A stale id (feed since hidden/deleted) yields
@@ -1501,9 +1606,10 @@ export function WorkspaceView() {
                 brightness={look.brightness}
                 orientation={look.orientation}
                 onHide={() => void handleSetFeedHidden(v.feed.id, true)}
-                onSizeCommit={(next) =>
-                  resizeSlotLayout(v.feed.id, next, vp)
-                }
+                onSizeCommit={(next) => {
+                  materializeIfRegimented();
+                  resizeSlotLayout(v.feed.id, next, vp);
+                }}
                 clampResize={(proposed) =>
                   clampVesselResize(v.feed.id, proposed)
                 }

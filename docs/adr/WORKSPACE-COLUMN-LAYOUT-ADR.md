@@ -4,9 +4,9 @@
 **Status:** Accepted, 2026-07-22; codebase-review + decision pass folded in the same
 day (drop-zone split, deferred column collapse, edge auto-pan, nav-row z-order,
 Explain adaptation, v1 appearance migration, virtualization-first sequencing).
-**Slices 0–4 SHIPPED 2026-07-22** (virtualization §VII · the pure layout
-module · the store · the floor · the nav row §VI) — see §X; Slice 5 (the
-regimented `\` hotkey, §V) is open, so that section alone is spec, not code.
+**Slices 0–5 SHIPPED 2026-07-22** (virtualization §VII · the pure layout
+module · the store · the floor · the nav row §VI · the regimented hotkey §V) —
+see §X. The ADR is fully implemented.
 Supersedes the free-coordinate floor (signed store
 coordinates, mover-yields collision, bootstrap heal) shipped across the 2026-07-20/21
 resolver rework, and the difference-blend ∀ lens. Retains the vessel chassis, the
@@ -19,11 +19,11 @@ merge flow's intent, per-feed appearance, and the mobile pager untouched.
 > implementation spec. It fixes the _what_ and the _why_; you own the _how_. Where it
 > names a file, constant, or function, treat that as the intended shape unless you find
 > a concrete reason it cannot work — in which case stop and flag it rather than
-> improvising a divergent design. Phasing is in §X; Slices 0–4 have shipped —
+> improvising a divergent design. Phasing is in §X; every slice has shipped —
 > `web/src/lib/workspace/layout.ts` is the _how_ for §III–§V, `stores/workspace.ts`
 > and `WorkspaceView.tsx`/`Vessel.tsx` are the _how_ for the floor, and where any
 > of them deviates from the sketch below the deviation is recorded in §X. Read
-> those notes before Slice 5.
+> those notes before touching workspace layout.
 
 ---
 
@@ -726,7 +726,50 @@ branch, the hoisted un-blended badge twin, and the now-dead `wordmarkRef`.
   lens sections, FORALL-CUT-AND-LOCKUP-ADR and WORKSPACE-DESIGN-SPEC status
   notes, the NDK correction.
 
-### Slice 5 — regimented hotkey (§V)
+### Slice 5 — regimented hotkey (§V) — **SHIPPED 2026-07-22**
+
+Pure `WorkspaceView` wiring: the store and `regimentedLayout` had shipped in
+Slices 1–2 and were used unchanged. **As built** (five narrow deviations;
+FIX-PROGRAMME 2026-07-22):
+
+- **The parade is ordered by the NUMERAL, not the server rank.** The feeds
+  handed to `regimentedLayout` carry `sortRank: i + 1` over `visibleSorted`,
+  not `feed.sortRank`. `regimentedLayout` breaks a rank tie by id, while
+  `visibleSorted` breaks it by `createdAt` — so passing the raw rank would let
+  the parade disagree with the numerals painted on the vessels, which is the
+  one thing the mode is for. Re-indexing makes the layout's own sort an
+  identity.
+- **`visibleSorted` moved above the geometry block**, and the feed list feeding
+  the derivation is memoised on a joined-id key. It is rebuilt every render
+  (a filter + sort over component state), and a fresh array in the
+  `deriveGeometry` input would re-derive the geometry and re-render every
+  vessel on every render for as long as the mode is on.
+- **The resize CLAMP reads the parade derivation, not the stored layout.**
+  `clampVesselResize` was reading `useWorkspace.getState().layout`; under
+  regimented mode that is the *hidden* custom layout, so the handle would stop
+  where a stack the user cannot see ends, while the commit — which materialises
+  the parade first — lands on a different one. It now reads the same
+  `baseLayout` the floor is arranged by. (`clampSlotSize` skips the target slot
+  when summing its siblings, so feeding it a layout that already carries the
+  live resize preview is safe; the clamp deliberately reads the preview-free
+  base anyway.)
+- **Only a committed drop and a resize commit exit the mode.** §V says "a
+  layout _mutation_", and merge / hide / delete / adopt are not layout edits —
+  they are feed-list changes. Materialising on those would silently overwrite
+  the user's custom layout with the parade every time they hid a feed. They
+  apply to the stored layout as always and the parade simply re-derives over
+  the new list; a declined merge touches nothing at all.
+- **Entering scrolls the floor to 0**, instantly. The parade reads 1..N from
+  the left, so a scroll position inherited from the custom floor would open the
+  mode part-way along the line; and the whole floor has just changed shape, so
+  there is nothing coherent to animate between.
+
+The guard list is §V's plus the lightbox, the editor overlay and a mid-drag
+check. The seven local non-Glasshouse surfaces ride a ref (`localSurfaceOpenRef`)
+rather than the effect's dep list, so opening any of them does not re-attach the
+listener.
+
+---
 
 - **Binding.** A `keydown` effect beside the existing ⌘K handler in
   `WorkspaceView` (desktop only): plain `\`, no modifier. Guard list, all

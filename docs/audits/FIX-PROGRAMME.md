@@ -23,6 +23,41 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (columnar floor, the regimented hotkey — WORKSPACE-COLUMN-LAYOUT-ADR
+  Slice 5, the last)** — plain `\` toggles the parade ground: every visible feed
+  on screen at once, one column each, numeral order, factory width scaled down
+  uniformly to fit. Pure `WorkspaceView` wiring — `regimentedLayout` and the
+  store's `setRegimented`/`materializeRegimented` shipped in Slices 1–2 and were
+  used unchanged, so the ADR is now fully implemented.
+  **The mode is a VIEW, not an edit:** the stored layout and the v2 key are
+  untouched while it is on, so leaving it is free and there is no snapshot to
+  lose. A layout **mutation** (a committed drop, a resize commit) materialises
+  the parade as the custom layout, applies its one edit, and leaves.
+  **Five as-built deviations**, all recorded in the ADR's §X: (1) the parade is
+  ordered by the **numeral** (`sortRank: i + 1` over `visibleSorted`), not the
+  raw server rank — `regimentedLayout` breaks a rank tie by id and
+  `visibleSorted` by `createdAt`, so the raw rank would let the parade disagree
+  with the numerals painted on the vessels, which is the one thing the mode is
+  for; (2) `visibleSorted` hoisted above the geometry block and its feed list
+  memoised on a joined-id key, or a fresh array each render would re-derive the
+  geometry and re-render every vessel for as long as the mode was on; (3) the
+  resize **clamp** re-pointed from `useWorkspace.getState().layout` to the
+  derivation the floor is actually arranged by — under the mode the store's
+  layout is the *hidden* custom one, so the handle would have stopped where an
+  invisible stack ends while the commit landed on a different layout; (4)
+  merge/hide/delete/adopt deliberately do **not** materialise (they are
+  feed-list changes, not layout edits — materialising there would silently
+  overwrite the user's custom layout every time they hid a feed) and the parade
+  simply re-derives; (5) entering scrolls the floor to 0, instantly, because the
+  parade reads 1..N from the left and the floor has just changed shape.
+  Guards are §V's plus the lightbox, the editor overlay and a mid-drag check;
+  the seven local non-Glasshouse surfaces ride a ref rather than the effect's
+  dep list so opening one doesn't re-attach the listener.
+  Green: `tsc --noEmit`, root `npm run lint` 0 errors, 197 web tests,
+  `next build`, hairline tripwire, `docker compose build web` + live at
+  `localhost:3010`. Docs: ADR header + §X Slice 5, CLAUDE.md's floor section
+  (new standing `\` bullet) and Key-docs line.
+
 - **2026-07-22 (columnar floor, the nav row — WORKSPACE-COLUMN-LAYOUT-ADR
   Slice 4)** — the ∀ leaves its floating position and the difference lens is
   deleted. New `components/workspace/NavRow.tsx` (`NAV_ROW_H = 56`) is chrome
