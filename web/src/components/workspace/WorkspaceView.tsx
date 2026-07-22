@@ -12,18 +12,17 @@ import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
 import { useAuth } from "../../stores/auth";
 import { useWorkspace } from "../../stores/workspace";
+import { GRID } from "../../lib/workspace/grid";
 import {
-  findRestingPosition,
-  clampSizeClear,
-  type VesselRect,
-} from "../../lib/workspace/collision";
-import {
-  snap,
-  VESSEL_MIN_W,
-  VESSEL_MIN_H as MIN_H,
-  VESSEL_DEFAULT_W,
-} from "../../lib/workspace/grid";
-import { computeExtent, EDGE_PAD } from "../../lib/workspace/canvas";
+  deriveGeometry,
+  resolveDrop,
+  clampSlotSize,
+  withSlotSize,
+  slotFor,
+  type Drop,
+  type Geometry,
+  type WorkspaceLayout,
+} from "../../lib/workspace/layout";
 import { prefersReducedMotion } from "../../lib/workspace/motion";
 import {
   workspaceFeeds as workspaceFeedsApi,
@@ -163,42 +162,28 @@ interface PendingCeremony {
   target: { x: number; y: number };
 }
 
-// Slice 5a: vessels are absolutely positioned on the floor and drag-to-move.
-// Layout state lives in useWorkspace (localStorage-backed). For any feed
-// without a stored position, we compute a default grid slot and write back.
+// The floor is COLUMNAR (WORKSPACE-COLUMN-LAYOUT-ADR): what persists is an
+// order — columns left to right, slots top to bottom — and every pixel is
+// derived from it by `deriveGeometry`. There is no default grid slot to
+// compute and no position to write back: a new feed appends a column
+// (`insertFeed`) and geometry does the rest.
 
-// MIN_H and VESSEL_DEFAULT_W come from the shared grid module (previously
-// mirrored here from Vessel.tsx) so the canvas extent can be derived at
-// render time from layout state alone, without a constant to keep in sync.
-
-const DEFAULT_GRID = {
-  paddingX: 40,
-  paddingY: 40,
-  colWidth: 340, // 300 vessel + 40 gutter
-  rowHeight: 600,
-};
-
-function defaultGridSlot(
-  index: number,
-  viewportWidth: number,
-  viewportHeight: number,
-) {
-  const usableWidth = Math.max(
-    viewportWidth - DEFAULT_GRID.paddingX * 2,
-    DEFAULT_GRID.colWidth,
-  );
-  const cols = Math.max(1, Math.floor(usableWidth / DEFAULT_GRID.colWidth));
-  const col = index % cols;
-  const row = Math.floor(index / cols);
-  const y = DEFAULT_GRID.paddingY + row * DEFAULT_GRID.rowHeight;
-  const maxH = snap(
-    Math.max(MIN_H, viewportHeight - y - DEFAULT_GRID.paddingY),
-  );
-  return {
-    x: DEFAULT_GRID.paddingX + col * DEFAULT_GRID.colWidth,
-    y,
-    h: Math.min(DEFAULT_GRID.rowHeight, maxH),
-  };
+/** Value equality for a resolved drop — the resolver mints a fresh object per
+ *  frame, so without this every pointermove would setState and re-render the
+ *  whole floor. */
+function sameDrop(a: Drop, b: Drop): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "merge" && b.kind === "merge")
+    return a.targetFeedId === b.targetFeedId;
+  if (a.kind === "new-column" && b.kind === "new-column")
+    return a.boundaryIndex === b.boundaryIndex;
+  if (a.kind === "into-column" && b.kind === "into-column")
+    return (
+      a.columnIndex === b.columnIndex &&
+      a.slotIndex === b.slotIndex &&
+      a.h === b.h
+    );
+  return false;
 }
 
 // The workspace items endpoint now emits the unified Post[] directly (gateway
@@ -330,21 +315,25 @@ export function WorkspaceView() {
     target: WorkspaceFeed;
   } | null>(null);
   const floorRef = useRef<HTMLDivElement>(null);
-  const positions = useWorkspace((s) => s.positions);
+  const layout = useWorkspace((s) => s.layout);
+  const appearance = useWorkspace((s) => s.appearance);
   const hydrated = useWorkspace((s) => s.hydrated);
   const hydrate = useWorkspace((s) => s.hydrate);
-  const setVesselPosition = useWorkspace((s) => s.setVesselPosition);
-  const setVesselSize = useWorkspace((s) => s.setVesselSize);
+  const applyDropToLayout = useWorkspace((s) => s.applyDrop);
+  const insertFeedLayout = useWorkspace((s) => s.insertFeed);
+  const removeFeedLayout = useWorkspace((s) => s.removeFeed);
+  const resizeSlotLayout = useWorkspace((s) => s.resizeSlot);
   const setVesselBrightness = useWorkspace((s) => s.setVesselBrightness);
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity);
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation);
   const setVesselTextSize = useWorkspace((s) => s.setVesselTextSize);
-  const removeVesselLayout = useWorkspace((s) => s.removeVessel);
 
-  // ── Infinite horizontal floor ────────────────────────────────────────────
-  // The floor pans sideways over a canvas whose extent is DERIVED from the
-  // vessels on it (lib/workspace/canvas.ts). Vertical extent is the viewport,
-  // always — the floor can be made wider, never taller.
+  // ── The columnar floor ───────────────────────────────────────────────────
+  // Geometry is DERIVED, never stored: one pure function turns the persisted
+  // order (columns × slots) into final canvas rects and a taut floor width.
+  // A state that violates the spacing rules is unrepresentable, so there is no
+  // extent to reconcile, no origin to compensate, and nothing to heal — the
+  // free-coordinate floor's canvas.ts and collision.ts are gone.
   const [viewport, setViewport] = useState({ w: 1280, h: 800 });
   useEffect(() => {
     function measure() {
@@ -355,80 +344,36 @@ export function WorkspaceView() {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  // Slack beyond the outermost vessel, on each side. GESTURE-SCOPED: at rest
-  // the floor is exactly the feeds' span plus EDGE_PAD of breathing room — no
-  // empty viewport to pan into, so "infinite sideways" means the space grows
-  // when a gesture asks it to, not that it is pre-stretched. While a drag is
-  // live the slack widens to a full viewport so there is somewhere to drag
-  // INTO; the origin shift that implies lands only at the gesture boundaries
-  // (pointerdown / pointerup), where the Vessel's originX layout effect and
-  // the scroll compensation below cancel it pre-paint in a single frame.
-  // Contract-to-fit falls out of the extent recompute on gesture end.
-  const [floorGesture, setFloorGesture] = useState(false);
-  const canvasSlack = floorGesture ? Math.max(EDGE_PAD, viewport.w) : EDGE_PAD;
-
-  const extent = useMemo(
-    () =>
-      computeExtent(
-        vessels
-          .filter((v) => !v.feed.hidden)
-          .map((v) => {
-            const l = positions[v.feed.id];
-            return { x: l?.x ?? 0, w: l?.w ?? VESSEL_DEFAULT_W };
-          }),
-        viewport.w,
-        canvasSlack,
-      ),
-    [vessels, positions, viewport.w, canvasSlack],
+  // navRowH is 0 until Slice 4 wires the fixed bottom nav row (§VI).
+  const vp = useMemo(
+    () => ({ w: viewport.w, h: viewport.h, navRowH: 0 }),
+    [viewport.w, viewport.h],
   );
 
-  // Keep the floor visually still when the origin moves. Canvas-x of every
-  // vessel is `store.x - originX`, so an origin that shifts left by d slides
-  // all content right by d; scrolling right by the same d cancels it exactly.
-  //
-  // The compensation must be ABSOLUTE, from the scroll position BEFORE this
-  // render committed the new canvas width. On contract-to-fit the browser has
-  // already clamped scrollLeft to the narrower scrollWidth by the time this
-  // layout effect runs (React mutates the DOM first), so a relative `+=` on
-  // the clamped value corrects twice — the floor lurched ~a viewport on any
-  // drop away from the left end, and even on a click on vessel chrome (a
-  // no-move gesture still opens and closes the slack). floorScrollRef holds
-  // the pre-commit position: scroll events — including the one the clamp
-  // itself queues — dispatch in the rendering steps, i.e. after this effect,
-  // so the ref is still pre-clamp when we read it.
-  const prevOriginRef = useRef(extent.originX);
-  const didInitScrollRef = useRef(false);
-  const floorScrollRef = useRef(0);
-  useEffect(() => {
-    const floor = floorRef.current;
-    if (!floor) return;
-    const onScroll = () => {
-      floorScrollRef.current = floor.scrollLeft;
-    };
-    floor.addEventListener("scroll", onScroll, { passive: true });
-    return () => floor.removeEventListener("scroll", onScroll);
-    // The pre-auth frame renders a Floor without the ref; re-attach once the
-    // authed tree (the ref-carrying Floor) is up.
-  }, [user, loading, isMobile]);
-  useLayoutEffect(() => {
-    const floor = floorRef.current;
-    if (!floor || isMobile) return;
-    if (!didInitScrollRef.current) {
-      // First paint: open on the content, not on the empty left slack.
-      if (vessels.length === 0) return;
-      floor.scrollLeft = Math.max(0, canvasSlack - EDGE_PAD);
-      floorScrollRef.current = floor.scrollLeft;
-      prevOriginRef.current = extent.originX;
-      didInitScrollRef.current = true;
-      return;
-    }
-    const delta = prevOriginRef.current - extent.originX;
-    if (delta !== 0) {
-      floor.scrollLeft = floorScrollRef.current + delta;
-      floorScrollRef.current = floor.scrollLeft;
-    }
-    prevOriginRef.current = extent.originX;
-  }, [extent.originX, canvasSlack, isMobile, vessels.length]);
+  // A live resize proposal, merged into the derivation input so the columns to
+  // the RIGHT of the handle slide with it instead of jumping on release. The
+  // store is untouched until the commit.
+  const [resizePreview, setResizePreview] = useState<{
+    feedId: string;
+    w: number;
+    h: number;
+  } | null>(null);
+
+  const geomLayout = useMemo(
+    () =>
+      resizePreview
+        ? withSlotSize(layout, resizePreview.feedId, resizePreview)
+        : layout,
+    [layout, resizePreview],
+  );
+  const geom = useMemo(
+    () => deriveGeometry(geomLayout, vp),
+    [geomLayout, vp],
+  );
+  const geomRef = useRef<Geometry>(geom);
+  geomRef.current = geom;
+  const geomLayoutRef = useRef(geomLayout);
+  geomLayoutRef.current = geomLayout;
 
   // Ctrl+←/→ jumps the floor to its far end — the keyboard twin of panning a
   // space whose resting extent is exactly the feeds' span. Plain arrows stay
@@ -466,16 +411,14 @@ export function WorkspaceView() {
   }, [isMobile]);
 
   const dragActiveRef = useRef<string | null>(null);
-  // The vessel the pointer is currently inside during a drag — the ARMED merge
-  // target (WORKSPACE-DESIGN-SPEC.md › Addendum — No-overlap governs the
-  // resting state). Merge asks a POINTER question; placement asks a RECT
-  // question. The dragged vessel rides freely over the whole floor (nothing
-  // moves until it rests), so arming is purely about reading intent at the
-  // cursor — never the dragged vessel's centre, which routinely sits over
-  // things the user never aimed at.
-  const [armedMergeTarget, setArmedMergeTarget] = useState<string | null>(null);
-  const armedMergeTargetRef = useRef<string | null>(null);
-  armedMergeTargetRef.current = armedMergeTarget;
+  // What the last drag frame resolved to (§IV.2). One resolver answers both
+  // questions the old floor asked separately: a `merge` arms the target under
+  // the pointer's CENTRAL region, an insertion paints the stripe at the
+  // boundary it would take. Kept in a ref as well so the release commit reads
+  // the frame's answer, not a stale render's.
+  const [drop, setDrop] = useState<Drop | null>(null);
+  const dropRef = useRef<Drop | null>(null);
+  const armedMergeTarget = drop?.kind === "merge" ? drop.targetFeedId : null;
 
   // ── Virtualization (WORKSPACE-COLUMN-LAYOUT-ADR §VII) ────────────────────
   // What is off-screen costs nothing: a vessel more than a viewport away keeps
@@ -485,22 +428,18 @@ export function WorkspaceView() {
   // there is nothing to tear down and nothing to refetch (the client holds no
   // relay connections; content arrives over the gateway REST API).
   //
-  // The band is measured in STORE space, keyed off `panOffset = scrollLeft +
-  // originX`. That sum is INVARIANT under the gesture-slack origin shift
-  // (originX moves by −d, the compensation effect above moves scrollLeft by
-  // +d), so beginning a drag cannot transiently mis-read the band and unmount
-  // half the floor mid-gesture. A dead band of VIRT_QUANT px of pan before the
-  // set is re-read supplies the hysteresis: a vessel straddling the boundary
-  // needs a real scroll, not a jitter, to flip.
+  // The band is measured against the derived rects, which ARE canvas
+  // coordinates — with the signed origin gone there is only one space, so the
+  // pan offset is plain `scrollLeft`. A dead band of VIRT_QUANT px of pan
+  // before the set is re-read supplies the hysteresis: a vessel straddling the
+  // boundary needs a real scroll, not a jitter, to flip.
   const [panOffset, setPanOffset] = useState(0);
   const panOffsetRef = useRef(0);
-  const originXRef = useRef(extent.originX);
-  originXRef.current = extent.originX;
   const virtRafRef = useRef<number | null>(null);
   const syncPan = useCallback(() => {
     const floor = floorRef.current;
     if (!floor) return;
-    const next = floor.scrollLeft + originXRef.current;
+    const next = floor.scrollLeft;
     if (Math.abs(next - panOffsetRef.current) < VIRT_QUANT) return;
     panOffsetRef.current = next;
     setPanOffset(next);
@@ -526,130 +465,44 @@ export function WorkspaceView() {
     // frame renders a Floor without the ref.
   }, [user, loading, isMobile, syncPan]);
   // Cold start and layout changes. The dead band only fires on real scroll
-  // events, and the first-paint scroll init sets scrollLeft without dispatching
-  // one — so a workspace whose feeds all sit far from store-x 0 would otherwise
-  // start with an empty band. Declared AFTER the origin-compensation layout
-  // effect so it always reads a scrollLeft that has already been corrected.
+  // events, so a floor that mounts already scrolled (a browser restoring a
+  // position, an auto-pan) would otherwise start with a stale band.
   useLayoutEffect(() => {
     if (isMobile) return;
     syncPan();
-  }, [isMobile, syncPan, extent.originX, vessels.length, bootstrap]);
+  }, [isMobile, syncPan, geom, bootstrap]);
 
   const visibleIds = useMemo(() => {
     const lo = panOffset - viewport.w;
     const hi = panOffset + viewport.w * 2;
     const ids = new Set<string>();
-    for (const v of vessels) {
-      if (v.feed.hidden) continue;
-      const l = positions[v.feed.id];
-      const x = l?.x ?? 0;
-      const w = l?.w ?? VESSEL_DEFAULT_W;
-      if (x + w >= lo && x <= hi) ids.add(v.feed.id);
+    for (const [id, r] of geom.rects) {
+      if (r.x + r.w >= lo && r.x <= hi) ids.add(id);
     }
     return ids;
-  }, [vessels, positions, panOffset, viewport.w]);
+  }, [geom, panOffset, viewport.w]);
 
-  /**
-   * Read the floor's live geometry in STORE coordinates. `exclude` drops the
-   * vessel being acted on; a vessel with no stored layout is skipped, since it
-   * has no store-space position to reason about.
-   */
-  function readFloorRects(exclude: string): {
-    floor: HTMLDivElement;
-    others: VesselRect[];
-  } | null {
+  /** Viewport pointer → floor coordinates, the space `geom.rects` live in. */
+  const toFloorSpace = useCallback((pointer: { x: number; y: number }) => {
     const floor = floorRef.current;
     if (!floor) return null;
-    const store = useWorkspace.getState();
-    const others: VesselRect[] = [];
-    floor.querySelectorAll<HTMLElement>("[data-vessel-id]").forEach((el) => {
-      const id = el.dataset.vesselId!;
-      if (id === exclude) return;
-      // A vessel hidden for a ceremony still renders (opacity 0), so it is in
-      // the DOM but is not on the floor as far as the user is concerned — it
-      // must neither be pushed nor be a merge target.
-      if (el.dataset.vesselInert === "true") return;
-      const layout = store.positions[id];
-      if (!layout) return;
-      others.push({
-        id,
-        x: layout.x,
-        y: layout.y,
-        w: el.offsetWidth,
-        h: el.offsetHeight,
-      });
-    });
-    return { floor, others };
-  }
+    const r = floor.getBoundingClientRect();
+    return {
+      x: pointer.x - r.left + floor.scrollLeft,
+      y: pointer.y - r.top,
+    };
+  }, []);
 
   /**
-   * Bring one vessel to rest without disturbing anything else: mover-yields.
-   * The vessel settles at the nearest clear spot to where the gesture left it
-   * — obstacles NEVER move, so a drop can't bounce a neighbour aside. Every
-   * gesture that produces a resting position owes this — drag and the
-   * declined-merge path alike (resize keeps the invariant from the other
-   * side, by clamping the stretch at neighbours).
-   */
-  const settleMoverAt = useCallback(
-    (feedId: string, pos: { x: number; y: number }) => {
-      const read = readFloorRects(feedId);
-      if (!read) {
-        setVesselPosition(feedId, pos);
-        return;
-      }
-      const { floor, others } = read;
-      const moverEl = floor.querySelector<HTMLElement>(
-        `[data-vessel-id="${feedId}"]`,
-      );
-      if (!moverEl) {
-        setVesselPosition(feedId, pos);
-        return;
-      }
-
-      const mover: VesselRect = {
-        id: feedId,
-        x: pos.x,
-        y: pos.y,
-        w: moverEl.offsetWidth,
-        h: moverEl.offsetHeight,
-      };
-
-      // Vertical bound only — the mover may settle at any x (the canvas grows
-      // to cover it); bounding x would pin it to the viewport edge.
-      setVesselPosition(
-        feedId,
-        findRestingPosition(mover, others, { h: floor.clientHeight }),
-      );
-    },
-    [setVesselPosition],
-  );
-
-  /**
-   * Resize twin of settleMoverAt: the stretch is clamped at the first
-   * neighbour it would hit, so a resize never displaces anything — not the
-   * neighbours, and not the resized vessel, whose anchored edge the user
-   * placed deliberately. Applied on every resize frame (the handle visibly
-   * stops at the neighbour), so the committed size is clear by construction.
+   * §IV.3's clamp, per resize frame: width is free (growing a slot widens its
+   * column and the columns to the right slide), height stops at what the stack
+   * can still hold. Nothing is displaced either way, so there is no
+   * `clampSizeClear` successor.
    */
   const clampVesselResize = useCallback(
-    (
-      feedId: string,
-      start: { w: number; h: number },
-      proposed: { w: number; h: number },
-    ) => {
-      const read = readFloorRects(feedId);
-      const layout = useWorkspace.getState().positions[feedId];
-      if (!read || !layout) return proposed;
-      return clampSizeClear(
-        { x: layout.x, y: layout.y },
-        start,
-        proposed,
-        read.others,
-      );
-    },
-    // readFloorRects only touches refs and store getState — stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    (feedId: string, proposed: { w: number; h: number }) =>
+      clampSlotSize(useWorkspace.getState().layout, feedId, proposed, vp),
+    [vp],
   );
 
   function handleVesselDragStart(feedId: string) {
@@ -658,87 +511,65 @@ export function WorkspaceView() {
     if (useExplain.getState().isActive) useExplain.getState().setDragging(feedId);
   }
 
-  function handleVesselDragFrame(
-    feedId: string,
-    pos: { x: number; y: number },
-    pointer: { x: number; y: number },
-  ) {
-    const floor = floorRef.current;
-    if (!floor) return;
+  /**
+   * One resolver per frame (§IV.2). The lifted vessel's slot is HELD OPEN for
+   * the whole gesture — nothing is spliced until release — so `geom` is stable
+   * and the resolver runs against a fixed frame; that is also what makes a
+   * cancelled drop a pure spring-back with no placement work at all.
+   */
+  const handleVesselDragFrame = useCallback(
+    (feedId: string, pointer: { x: number; y: number }) => {
+      const p = toFloorSpace(pointer);
+      if (!p) return;
+      const slot = slotFor(geomLayoutRef.current, feedId);
+      if (!slot) return;
+      const next = resolveDrop(geomLayoutRef.current, geomRef.current, p, {
+        feedId,
+        w: slot.w,
+        h: slot.h,
+      });
+      // Reference equality is meaningless on a freshly built Drop, so compare
+      // by value — a per-frame setState with an identical payload would
+      // re-render the whole floor on every pointermove.
+      const prev = dropRef.current;
+      if (prev && sameDrop(prev, next)) return;
+      dropRef.current = next;
+      setDrop(next);
+    },
+    [toFloorSpace],
+  );
 
-    // Merge arming — a POINTER hit-test, in viewport space. The dragged
-    // vessel's centre is the wrong probe: a vessel is grabbed by its numeral in
-    // the bottom-left corner as readily as anywhere else, so its centre
-    // routinely sits over something the user never aimed at.
-    let armed: string | null = null;
-    floor.querySelectorAll<HTMLElement>("[data-vessel-id]").forEach((el) => {
-      const id = el.dataset.vesselId!;
-      if (id === feedId || armed) return;
-      if (el.dataset.vesselInert === "true") return;
-      const r = el.getBoundingClientRect();
-      if (
-        pointer.x >= r.left &&
-        pointer.x <= r.right &&
-        pointer.y >= r.top &&
-        pointer.y <= r.bottom
-      ) {
-        armed = id;
-      }
-    });
-    if (armed !== armedMergeTargetRef.current) setArmedMergeTarget(armed);
-    // No placement work mid-drag: the held vessel rides over the floor (raised
-    // z-order) and nothing else moves. The invariant is a RESTING-state rule,
-    // settled once on release.
-  }
-
-  function handleVesselDragEnd(feedId: string, pos: { x: number; y: number }) {
+  function handleVesselDragEnd(feedId: string) {
     dragActiveRef.current = null;
     if (useExplain.getState().draggingFeedId) useExplain.getState().setDragging(null);
 
-    const armed = armedMergeTargetRef.current;
-    setArmedMergeTarget(null);
+    const resolved = dropRef.current;
+    dropRef.current = null;
+    setDrop(null);
+    if (!resolved) return;
 
-    if (armed) {
+    if (resolved.kind === "merge") {
       const source = vessels.find((v) => v.feed.id === feedId);
-      const target = vessels.find((v) => v.feed.id === armed);
-      if (source && target) {
-        // Left overlapping on purpose, pending the answer. Whichever way the
-        // confirmation goes, the source settles before it comes to rest.
-        setVesselPosition(feedId, pos);
+      const target = vessels.find((v) => v.feed.id === resolved.targetFeedId);
+      // The source never left the layout, so there is nothing to place while
+      // the question is open and nothing to repair if it is declined — the
+      // vessel simply springs back to its held-open slot.
+      if (source && target)
         setPendingMerge({ source: source.feed, target: target.feed });
-        return;
-      }
+      return;
     }
 
-    settleMoverAt(feedId, pos);
+    applyDropToLayout(feedId, resolved);
   }
-
-  /**
-   * The merge did not happen — declined, or it failed. The source vessel is
-   * sitting on top of the target because the gesture aimed it there, so the
-   * invariant has to be restored now: this is the cancel path that keeps "no
-   * overlap in any scenario" true rather than usually-true. Mover-yields makes
-   * it read right too — the vessel the user dragged slides off; the target
-   * they declined to merge into stays put.
-   */
-  const settleAfterAbandonedMerge = useCallback(
-    (sourceId: string) => {
-      const layout = useWorkspace.getState().positions[sourceId];
-      if (!layout) return;
-      settleMoverAt(sourceId, { x: layout.x, y: layout.y });
-    },
-    [settleMoverAt],
-  );
 
   async function handleMergeConfirm() {
     if (!pendingMerge) return;
     const { source, target } = pendingMerge;
     // A failed merge REJECTS to the dialog, which owns failure: it stays open,
-    // paints the error line, and offers retry; its Cancel/Escape path runs
-    // settleAfterAbandonedMerge via onClose, restoring the no-overlap
-    // invariant. Clearing pendingMerge here on error unmounted the dialog
-    // before its error state could ever paint — a failed merge read as a
-    // silent close.
+    // paints the error line, and offers retry. Clearing pendingMerge here on
+    // error unmounted the dialog before its error state could ever paint — a
+    // failed merge read as a silent close. Neither outcome needs placement
+    // work: the source never left the layout (§IV.4).
     await workspaceFeedsApi.merge(target.id, source.id);
     setVessels((prev) => {
       const next = prev.filter((v) => v.feed.id !== source.id);
@@ -746,7 +577,7 @@ export function WorkspaceView() {
       if (targetVessel) void loadVesselItems(targetVessel.feed);
       return next;
     });
-    removeVesselLayout(source.id);
+    removeFeedLayout(source.id);
     clearExpandedFor(source.id);
     setPendingMerge(null);
   }
@@ -881,12 +712,19 @@ export function WorkspaceView() {
   // via the PATCH, not in per-device layout state. Optimistic flip so the
   // vessel hides/returns instantly; reconcile with the server row (or revert)
   // when the PATCH settles.
+  //
+  // The LAYOUT half is §IV.5: hiding splices the slot and recomputation
+  // compacts the floor — there are no holes to leave behind — and unhiding
+  // re-enters as a new right-most column at factory size. Both move with the
+  // optimistic flip, and both revert with it.
   async function handleSetFeedHidden(feedId: string, hidden: boolean) {
     setVessels((prev) =>
       prev.map((v) =>
         v.feed.id === feedId ? { ...v, feed: { ...v.feed, hidden } } : v,
       ),
     );
+    if (hidden) removeFeedLayout(feedId);
+    else insertFeedLayout(feedId);
     try {
       const { feed } = await workspaceFeedsApi.setHidden(feedId, hidden);
       setVessels((prev) =>
@@ -901,33 +739,12 @@ export function WorkspaceView() {
             : v,
         ),
       );
+      if (hidden) insertFeedLayout(feedId);
+      else removeFeedLayout(feedId);
     }
   }
 
   function handleRestoreHiddenFeed(feedId: string) {
-    // While hidden, this feed was not an obstacle — the user may have legally
-    // arranged the floor over its stored ground. The returner yields like any
-    // mover: settle it against the CURRENT floor before it re-renders, so
-    // nothing visible moves and the restore cannot mint a resting overlap.
-    // Sizes fall back to the same conservative estimates as the store's
-    // reconcile heal (intrinsic height is unknowable without the DOM).
-    const layout = useWorkspace.getState().positions[feedId];
-    const read = readFloorRects(feedId);
-    if (layout && read) {
-      const pos = findRestingPosition(
-        {
-          id: feedId,
-          x: layout.x,
-          y: layout.y,
-          w: Math.max(layout.w ?? VESSEL_DEFAULT_W, VESSEL_MIN_W),
-          h: layout.h ?? MIN_H,
-        },
-        read.others,
-        { h: read.floor.clientHeight },
-      );
-      if (pos.x !== layout.x || pos.y !== layout.y)
-        setVesselPosition(feedId, pos);
-    }
     void handleSetFeedHidden(feedId, false);
   }
 
@@ -1070,9 +887,8 @@ export function WorkspaceView() {
   // writes stay OUTSIDE the setVessels updater — an impure updater only
   // behaves while React evaluates it eagerly, and the multi-feed drain loop
   // below queues updates, deferring later updaters to the render phase. The
-  // ref append keeps same-tick loop calls deduped with sequential grid slots
-  // (the updater still re-checks membership itself, so it stays pure and
-  // double-invocation-safe).
+  // ref append keeps same-tick loop calls deduped (the updater still re-checks
+  // membership itself, so it stays pure and double-invocation-safe).
   function adoptFeed(feed: WorkspaceFeed) {
     if (vesselsRef.current.some((v) => v.feed.id === feed.id)) return;
     vesselsRef.current = [
@@ -1084,25 +900,11 @@ export function WorkspaceView() {
         ? prev
         : [...prev, { feed, items: [], sources: [], status: "loading" as const }],
     );
-    const slot = defaultGridSlot(
-      vesselsRef.current.length - 1,
-      window.innerWidth,
-      window.innerHeight,
-    );
-    // The index-derived slot is only a REQUEST — the user may have arranged a
-    // vessel over it. The newcomer yields like any mover (no-overlap governs
-    // the resting state, and a system-minted vessel earns it the same way):
-    // it settles at the nearest clear spot, and nothing on the floor moves.
-    const read = readFloorRects(feed.id);
-    const pos = read
-      ? findRestingPosition(
-          { id: feed.id, x: slot.x, y: slot.y, w: VESSEL_DEFAULT_W, h: slot.h },
-          read.others,
-          { h: read.floor.clientHeight },
-        )
-      : slot;
-    setVesselPosition(feed.id, pos);
-    setVesselSize(feed.id, { w: VESSEL_DEFAULT_W, h: slot.h });
+    // §III.5: a new feed appends a new right-most column at factory size and
+    // geometry does the rest — the strip stops centring once it exceeds the
+    // viewport and the scroll extent grows rightwards. `insertFeed` is
+    // idempotent, so a double-invoked adopt places nothing twice.
+    insertFeedLayout(feed.id);
     void loadVesselItems(feed);
   }
 
@@ -1202,33 +1004,11 @@ export function WorkspaceView() {
         }
         if (cancelled) return;
 
-        // One-time hide reconciliation (MOBILE-LAYOUT-ADR §V): hide used to
-        // be per-device layout state. Push any pre-migration local hides up
-        // to the feed row so they don't pop back on deploy. The local flag is
-        // stripped unconditionally, before the PATCH settles — a flag that
-        // survived a failed PATCH would re-run the migration on a later
-        // bootstrap and re-hide a feed the user has since unhidden from
-        // another device. (Worst case on a transient failure: the feed stays
-        // visible and the user hides it again — strictly better than the
-        // reverse.) Feeds the server already has hidden need no PATCH.
-        const legacyLayouts = useWorkspace.getState().positions;
-        const legacyHidden = list.filter(
-          (feed) => legacyLayouts[feed.id]?.hidden,
-        );
-        if (legacyHidden.length > 0) {
-          const legacyHiddenIds = new Set(legacyHidden.map((f) => f.id));
-          list = list.map((feed) =>
-            legacyHiddenIds.has(feed.id) && !feed.hidden
-              ? { ...feed, hidden: true }
-              : feed,
-          );
-          for (const feed of legacyHidden) {
-            useWorkspace.getState().clearLegacyHidden(feed.id);
-            if (!feed.hidden) {
-              workspaceFeedsApi.setHidden(feed.id, true).catch(() => {});
-            }
-          }
-        }
+        // (The pre-migration-113 local-hide push-up retired with the v1
+        // storage key — WORKSPACE-COLUMN-LAYOUT-ADR §VIII. `feeds.hidden` has
+        // been server-side for long enough that no live client still carries
+        // one, and the v1 blob it read is now discarded at hydrate.)
+
         // Seed each vessel from the aggregate payload where present (ready, with
         // sources + first items + cursor); leave the rest "loading" for the
         // lazy fallback below.
@@ -1265,82 +1045,33 @@ export function WorkspaceView() {
             .catch(() => {});
         }
 
-        // The authoritative feed list is now known — reconcile persisted
-        // layouts against it: prune ghosts (feeds deleted on another device;
-        // removeVessel only ever ran locally) and heal resting overlaps among
-        // VISIBLE feeds only. The heal used to run blind at hydrate, where the
-        // store cannot know hidden/deleted — a vessel legally resting over a
-        // hidden feed's stored rect got shelved as a false-positive pile.
-        useWorkspace.getState().reconcileLayouts(
+        // The authoritative feed list is now known — reconcile the stored
+        // layout against it: prune slots the server no longer returns (deleted
+        // on another device) or has hidden, and place every visible feed that
+        // has no slot. That second job subsumes the old default-grid-slot
+        // sweep, and this is also the FIRST-RUN path (§III.4): from an empty
+        // layout it lands one column per seeded starter feed, in list order.
+        // There is no heal, because there is no illegal state to heal.
+        useWorkspace.getState().reconcileFeeds(
           list.map((f) => f.id),
           list.filter((f) => !f.hidden).map((f) => f.id),
         );
 
-        const stored = useWorkspace.getState().positions;
-        const viewportWidth =
-          typeof window !== "undefined" ? window.innerWidth : 1280;
-        const viewportHeight =
-          typeof window !== "undefined" ? window.innerHeight : 800;
-        // Default slots are REQUESTS, cleared against the floor before they
-        // land: a stored (user-arranged) vessel may occupy the index-derived
-        // slot, and a system write must not mint a resting overlap. The DOM
-        // isn't up yet, so obstacles come from stored layouts with the same
-        // conservative size estimates as the reconcile heal; slotted feeds
-        // join the obstacle set so same-boot siblings clear each other too.
-        const obstacles: VesselRect[] = list
-          .filter((f) => !f.hidden && stored[f.id])
-          .map((f) => {
-            const l = stored[f.id];
-            return {
-              id: f.id,
-              x: l.x,
-              y: l.y,
-              w: Math.max(l.w ?? VESSEL_DEFAULT_W, VESSEL_MIN_W),
-              h: l.h ?? MIN_H,
-            };
-          });
-        list.forEach((feed, i) => {
-          if (!stored[feed.id]) {
-            const slot = defaultGridSlot(i, viewportWidth, viewportHeight);
-            const pos = findRestingPosition(
-              {
-                id: feed.id,
-                x: slot.x,
-                y: slot.y,
-                w: VESSEL_DEFAULT_W,
-                h: slot.h,
-              },
-              obstacles,
-              { h: viewportHeight },
-            );
-            setVesselPosition(feed.id, pos);
-            setVesselSize(feed.id, { w: VESSEL_DEFAULT_W, h: slot.h });
-            if (!feed.hidden) {
-              obstacles.push({
-                id: feed.id,
-                x: pos.x,
-                y: pos.y,
-                w: VESSEL_DEFAULT_W,
-                h: slot.h,
-              });
-            }
-          }
-        });
-
         // Per-feed appearance (feature-debt §3 + MOBILE-LAYOUT-ADR §VI): the
         // server-side feeds.appearance is authoritative — feed character
         // travels with the feed across devices. Reconcile scheme and density
-        // into the layout store, whose persisted fields double as the local
-        // cache (and, for feeds that have never picked, the legacy per-device
-        // fallback). One sync model for both axes, not two.
+        // into the appearance record, which doubles as the local cache (and,
+        // for feeds that have never picked, the per-device fallback). One sync
+        // model for both axes, not two.
+        const storedAppearance = useWorkspace.getState().appearance;
         list.forEach((feed) => {
           const scheme = feed.appearance?.scheme;
-          if (scheme && stored[feed.id]?.brightness !== scheme) {
+          if (scheme && storedAppearance[feed.id]?.brightness !== scheme) {
             setVesselBrightness(feed.id, normalizeBrightness(scheme));
           }
           if (feed.appearance?.density !== undefined) {
             const density = normalizeDensity(feed.appearance.density);
-            if (stored[feed.id]?.density !== density) {
+            if (storedAppearance[feed.id]?.density !== density) {
               setVesselDensity(feed.id, density);
             }
           }
@@ -1400,19 +1131,19 @@ export function WorkspaceView() {
     return () => {
       cancelled = true;
     };
-  }, [user, hydrated, loadVesselItems, setVesselPosition]);
+  }, [user, hydrated, loadVesselItems]);
 
   // The feed's card list — shared verbatim by the desktop vessel and the
   // mobile full-bleed page (MOBILE-LAYOUT-ADR §III), so the two surfaces
   // cannot drift. Orientation never reaches the cards (it is a chassis
   // property); scheme/density/text size ride the layout store as on desktop.
   function renderFeedContents(v: VesselState) {
-    const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
+    const look = appearance[v.feed.id] ?? {};
     // Both surfaces render the feed's colourway in the global mode's light or
     // dark variant. Desktop vessels and the mobile pages are both islanded
     // (LIGHT_ISLAND_STYLE), so the derived text slugs the palette references
     // resolve canonical regardless of mode and the variant supplies light/dark.
-    const feedPalette = paletteFor(layout.brightness, globalDark);
+    const feedPalette = paletteFor(look.brightness, globalDark);
     return (
       <>
             {v.status === "loading" && <Hint>LOADING…</Hint>}
@@ -1462,12 +1193,12 @@ export function WorkspaceView() {
                     const expandedHere = expandedByFeed[v.feed.id];
                     const isExpanded = expandedHere?.key === expandKey;
                     const ctx = {
-                      density: layout.density ?? DEFAULT_DENSITY,
+                      density: look.density ?? DEFAULT_DENSITY,
                       // Mobile: uniform global light/dark; desktop: the feed's
                       // colourway in the global mode's light/dark variant.
                       palette: feedPalette,
                       bodyPx:
-                        TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
+                        TEXT_SIZE_PX[look.textSize ?? DEFAULT_TEXT_SIZE],
                       feedId: v.feed.id,
                       dragData: (() => {
                         const fsId = matchItemToSource(item, v.sources);
@@ -1694,7 +1425,7 @@ export function WorkspaceView() {
           feeds={visibleSorted.map((v) => v.feed)}
           userId={user.id}
           interiorFor={(feedId) =>
-            paletteFor(positions[feedId]?.brightness, globalDark).interior
+            paletteFor(appearance[feedId]?.brightness, globalDark).interior
           }
           renderFeedContents={(feedId) => {
             const v = vessels.find((x) => x.feed.id === feedId);
@@ -1712,17 +1443,17 @@ export function WorkspaceView() {
         />
       )}
       {/* The canvas: an explicitly-sized plane inside the scrolling floor.
-          Width is derived from the vessels on it, height is always the
-          viewport. Vessels are absolutely positioned in CANVAS coordinates
-          (store x minus the extent origin); every other consumer of position —
-          collision, merge hit-testing, persistence — stays in store space, and
-          the conversion happens only at this seam. */}
+          Width is the derived floor width — taut, one GRID past the right-most
+          column — and height is always the viewport. Vessels position from
+          `geom.rects`, which are FINAL canvas coordinates with the first-run
+          centring already applied: derivation is the one conversion seam, and
+          nothing else converts anywhere. */}
       {bootstrap === "ready" && !isMobile && (
         <div
           data-workspace-canvas
           style={{
             position: "relative",
-            width: extent.width,
+            width: geom.floorWidth,
             height: "100%",
             // Confine vessel z-order (the drag/armed raise in Vessel.tsx) to
             // the canvas. The idle ∀ disc runs at z-index:auto in lens mode
@@ -1734,10 +1465,12 @@ export function WorkspaceView() {
             isolation: "isolate",
           }}
         >
+          <DropStripe drop={drop} layout={geomLayout} geom={geom} />
           {vessels
-            .filter((v) => !v.feed.hidden)
+            .filter((v) => geom.rects.has(v.feed.id))
             .map((v) => {
-              const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
+              const rect = geom.rects.get(v.feed.id)!;
+              const look = appearance[v.feed.id] ?? {};
               return (
               <Vessel
                 key={v.feed.id}
@@ -1760,36 +1493,28 @@ export function WorkspaceView() {
                     )
                     .catch(() => {});
                 }}
-                // store → canvas
-                position={{ x: layout.x - extent.originX, y: layout.y }}
-                originX={extent.originX}
-                onFloorGesture={setFloorGesture}
-                size={{ w: layout.w, h: layout.h }}
-                brightness={layout.brightness}
-                orientation={layout.orientation}
+                // The derived rect, verbatim — no conversion at this seam.
+                position={{ x: rect.x, y: rect.y }}
+                size={{ w: rect.w, h: rect.h }}
+                brightness={look.brightness}
+                orientation={look.orientation}
                 onHide={() => void handleSetFeedHidden(v.feed.id, true)}
-                // canvas → store
-                onPositionCommit={(next) =>
-                  handleVesselDragEnd(v.feed.id, {
-                    x: next.x + extent.originX,
-                    y: next.y,
-                  })
+                onSizeCommit={(next) =>
+                  resizeSlotLayout(v.feed.id, next, vp)
                 }
-                // A stretch produces a resting state exactly as a drop does.
-                // clampResize keeps every frame of it clear (the handle stops
-                // at neighbours), so the commit is clear by construction.
-                onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
-                clampResize={(start, proposed) =>
-                  clampVesselResize(v.feed.id, start, proposed)
+                clampResize={(proposed) =>
+                  clampVesselResize(v.feed.id, proposed)
                 }
-                onDragStart={() => handleVesselDragStart(v.feed.id)}
-                onDragFrame={(pos, pointer) =>
-                  handleVesselDragFrame(
-                    v.feed.id,
-                    { x: pos.x + extent.originX, y: pos.y },
-                    pointer,
+                onResizeFrame={(next) =>
+                  setResizePreview(
+                    next ? { feedId: v.feed.id, ...next } : null,
                   )
                 }
+                onDragStart={() => handleVesselDragStart(v.feed.id)}
+                onDragFrame={(pointer) =>
+                  handleVesselDragFrame(v.feed.id, pointer)
+                }
+                onDragEnd={() => handleVesselDragEnd(v.feed.id)}
                 armed={armedMergeTarget === v.feed.id}
                 contentsMounted={visibleIds.has(v.feed.id)}
                 hidden={ceremony?.feedId === v.feed.id}
@@ -1856,18 +1581,18 @@ export function WorkspaceView() {
         feed={feedComposerFor}
         deleteBlocked={vessels.filter((v) => !v.feed.hidden).length <= 1}
         scheme={
-          feedComposerFor ? positions[feedComposerFor.id]?.brightness : undefined
+          feedComposerFor ? appearance[feedComposerFor.id]?.brightness : undefined
         }
         density={
-          feedComposerFor ? positions[feedComposerFor.id]?.density : undefined
+          feedComposerFor ? appearance[feedComposerFor.id]?.density : undefined
         }
         orientation={
           feedComposerFor
-            ? positions[feedComposerFor.id]?.orientation
+            ? appearance[feedComposerFor.id]?.orientation
             : undefined
         }
         textSize={
-          feedComposerFor ? positions[feedComposerFor.id]?.textSize : undefined
+          feedComposerFor ? appearance[feedComposerFor.id]?.textSize : undefined
         }
         onSchemeChange={(next) => {
           if (!feedComposerFor) return;
@@ -1878,7 +1603,7 @@ export function WorkspaceView() {
           // handleSetFeedHidden) — a swallowed failure would look applied
           // here and silently reset on the next bootstrap.
           const feedId = feedComposerFor.id;
-          const prevScheme = positions[feedId]?.brightness;
+          const prevScheme = appearance[feedId]?.brightness;
           setVesselBrightness(feedId, next);
           workspaceFeedsApi
             .setAppearance(feedId, { scheme: next })
@@ -1899,7 +1624,7 @@ export function WorkspaceView() {
           // density as feed character, the refreshed row reconciles state,
           // failure reverts the repaint.
           const feedId = feedComposerFor.id;
-          const prevDensity = positions[feedId]?.density;
+          const prevDensity = appearance[feedId]?.density;
           setVesselDensity(feedId, next);
           workspaceFeedsApi
             .setAppearance(feedId, { density: next })
@@ -1963,7 +1688,7 @@ export function WorkspaceView() {
         }}
         onDeleted={(feedId) => {
           setVessels((prev) => prev.filter((v) => v.feed.id !== feedId));
-          removeVesselLayout(feedId);
+          removeFeedLayout(feedId);
           clearExpandedFor(feedId);
           setFeedComposerFor(null);
         }}
@@ -1980,11 +1705,12 @@ export function WorkspaceView() {
             ? feedDisplayName(pendingMerge.target.id, pendingMerge.target.name)
             : ""
         }
-        onClose={() => {
-          const sourceId = pendingMerge?.source.id;
-          setPendingMerge(null);
-          if (sourceId) settleAfterAbandonedMerge(sourceId);
-        }}
+        // Declined, or failed after the dialog painted its error: NO placement
+        // work at all. The source never left the layout — its slot was held
+        // open for the whole gesture (§IV.1/§IV.4) — so it has already sprung
+        // home and the target never moved. `settleAfterAbandonedMerge` has no
+        // successor because the state it repaired is unreachable.
+        onClose={() => setPendingMerge(null)}
         onConfirm={handleMergeConfirm}
       />
       <PipPanel
@@ -2122,6 +1848,69 @@ function Floor({
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * The insertion affordance (§IV.1): one GRID-wide stripe at the slot the drop
+ * would take. A `merge` paints nothing here — the target vessel's own `armed`
+ * outline is that answer. Positioned on the canvas in the same derived
+ * coordinates the vessels use, so it lands exactly in the gutter the
+ * recomputation will open.
+ */
+function DropStripe({
+  drop,
+  layout,
+  geom,
+}: {
+  drop: Drop | null;
+  layout: WorkspaceLayout;
+  geom: Geometry;
+}) {
+  if (!drop || drop.kind === "merge") return null;
+
+  let box: { x: number; y: number; w: number; h: number } | null = null;
+
+  if (drop.kind === "new-column") {
+    const cols = geom.columns;
+    const b = drop.boundaryIndex;
+    const x =
+      b < cols.length
+        ? cols[b].x - GRID
+        : cols.length > 0
+          ? cols[cols.length - 1].x + cols[cols.length - 1].w
+          : GRID;
+    box = { x, y: GRID, w: GRID, h: geom.columnH };
+  } else {
+    const col = layout.columns[drop.columnIndex];
+    const span = geom.columns[drop.columnIndex];
+    if (!col || !span) return null;
+    const at = col.slots[drop.slotIndex];
+    let y: number;
+    if (at) {
+      y = (geom.rects.get(at.feedId)?.y ?? GRID) - GRID;
+    } else {
+      const last = col.slots[col.slots.length - 1];
+      const r = last ? geom.rects.get(last.feedId) : undefined;
+      y = r ? r.y + r.h : GRID;
+    }
+    box = { x: span.x, y, w: span.w, h: GRID };
+  }
+
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        left: box.x,
+        top: box.y,
+        width: box.w,
+        height: box.h,
+        background: "var(--ah-crimson)",
+        zIndex: 4,
+        pointerEvents: "none",
+      }}
+    />
   );
 }
 

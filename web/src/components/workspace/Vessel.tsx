@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -22,8 +23,12 @@ import {
   VESSEL_MIN_H as MIN_H,
   VESSEL_MAX_W as MAX_W,
   VESSEL_MAX_H as MAX_H,
-  VESSEL_DEFAULT_W as WIDTH,
 } from "../../lib/workspace/grid";
+import {
+  AUTOPAN_MARGIN,
+  AUTOPAN_MAX_SPEED,
+  FACTORY_W,
+} from "../../lib/workspace/layout";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 import {
   paletteFor,
@@ -38,14 +43,18 @@ import { useExplainable } from "./ExplainProvider";
 
 // Vessel — the ⊔ chassis, per WIREFRAME-DECISIONS-CONSOLIDATED.md Step 1.
 //
-// Slice 5a: drag-to-position via the name label as drag handle.
-// Slice 5b: resize via bottom-right corner handle.
-// Slice 5c: brightness / orientation. Brightness drives a resolved palette
-// across walls, interior, name label, and (via prop) the cards inside.
-// Orientation toggles the chassis between vertical (⊔: left + right + bottom
-// walls) and horizontal (⊏: top + left + bottom walls, opening on the right) —
-// cards lay out in a row when horizontal, with horizontal scroll when h or w is
-// set. (Density is a per-feed control too, but it's applied to the cards in
+// On the columnar floor (WORKSPACE-COLUMN-LAYOUT-ADR) the vessel no longer owns
+// a position: it RENDERS a slot's derived rect and reports GESTURES. A drag
+// hands back the pointer and the host resolves it to a slot (§IV.2); a resize
+// hands back a proposed size the host clamps against the column (§IV.3). The
+// vessel commits no coordinates, so it can no longer place itself anywhere the
+// layout model forbids.
+//
+// Brightness drives a resolved palette across walls, interior, name label, and
+// (via prop) the cards inside. Orientation toggles the chassis between vertical
+// (⊔: left + right + bottom walls) and horizontal (⊏: top + left + bottom
+// walls, opening on the right) — cards lay out in a row when horizontal.
+// (Density is a per-feed control too, but it's applied to the cards in
 // WorkspaceView's CardContext, not threaded through the Vessel.)
 
 // Side-wall thickness. Exported so overlays launched from a feed (the reader /
@@ -60,11 +69,10 @@ const ROUNDEL_TOKENS = {
   fg: "var(--ah-bone)",
 };
 
-// Size envelope + intrinsic default width come from the shared grid module
-// (one definition for the component clamps, the canvas extent, and the
-// store's hydrate heal). Minimums per spec ("below which content becomes
-// illegible"); spec says no maximum, we clamp at sane upper bounds
-// defensively — the floor scrolls sideways to cover oversize.
+// The size envelope comes from the shared grid module — one definition for the
+// component's clamps and the layout module's SLOT_MIN_*. Minimums per spec
+// ("below which content becomes illegible"); spec says no maximum, we clamp at
+// sane upper bounds defensively.
 
 interface VesselProps {
   children: ReactNode;
@@ -77,49 +85,43 @@ interface VesselProps {
   fromStarter?: boolean;
   onNameClick?: () => void;
   onSourceAdded?: () => void;
+  /** The slot's DERIVED rect (lib/workspace/layout.ts::deriveGeometry). Final
+   *  canvas coordinates — centring already applied — because derivation is the
+   *  one conversion seam and there is no origin left to compensate. */
   position: { x: number; y: number };
-  /** Store-x that maps to canvas-x 0 (lib/workspace/canvas.ts). Threaded so an
-   *  origin SHIFT can be compensated instantly (pre-paint, never the spring):
-   *  the host moves scrollLeft by the same delta in its own layout effect, and
-   *  the two cancel to a visual no-op. */
-  originX?: number;
-  /** A floor gesture (drag) is beginning/ending. Fired on pointerdown — BEFORE
-   *  framer samples the drag origin — so the host can widen the canvas slack
-   *  and have the origin shift land pre-paint, and on pointerup/cancel so the
-   *  floor contracts back to fit in the same commit as the position commit. */
-  onFloorGesture?: (active: boolean) => void;
   size?: { w?: number; h?: number };
   brightness?: Brightness;
   orientation?: Orientation;
   hidden?: boolean;
   onHide?: () => void;
-  onPositionCommit: (pos: { x: number; y: number }) => void;
   onSizeCommit?: (size: { w: number; h: number }) => void;
-  /** Mover-yields resize: the host clamps each proposed size so the stretch
-   *  stops at the first neighbour instead of entering it — a resize never
-   *  displaces anything. Applied per frame, so the commit inherits it. */
-  clampResize?: (
-    start: { w: number; h: number },
-    proposed: { w: number; h: number },
-  ) => { w: number; h: number };
+  /** Clamp a proposed size to what the slot's column can hold (§IV.3: width
+   *  free, height bounded by the stack remainder). Applied per FRAME, so the
+   *  handle visibly stops where the commit would. */
+  clampResize?: (proposed: { w: number; h: number }) => { w: number; h: number };
+  /** Live resize proposal, so the host can feed it through derivation and let
+   *  the columns to the right slide WITH the handle. `null` clears it. */
+  onResizeFrame?: (size: { w: number; h: number } | null) => void;
   onDragStart?: () => void;
-  /** `pointer` is the cursor in VIEWPORT coordinates — the probe the host uses
-   *  to arm a merge target. Merge is a pointer question, placement a rect one
-   *  (WORKSPACE-DESIGN-SPEC.md › Addendum — No-overlap governs the resting
-   *  state); `pos` answers the second, `pointer` the first. */
-  onDragFrame?: (
-    pos: { x: number; y: number },
-    pointer: { x: number; y: number },
-  ) => void;
+  /**
+   * Per-frame cursor position in VIEWPORT coordinates. The pointer is the whole
+   * question now: §IV.2 resolves the drop from it (edge bands → insertion,
+   * central region → merge), so the host needs no rect probe and the vessel
+   * hands back no coordinates. It rides free over a layout that is held stable
+   * for the whole gesture (§IV.1).
+   */
+  onDragFrame?: (pointer: { x: number; y: number }) => void;
+  /** Released. The host commits whatever the last frame resolved to; this
+   *  vessel springs back to its derived rect either way (a held-open slot is
+   *  also the snap-back target for a cancelled drop). */
+  onDragEnd?: () => void;
   /** This vessel is the armed merge target: the dragged vessel is riding over
-   *  it and releasing here will offer to combine them. */
+   *  its central region and releasing here will offer to combine them. */
   armed?: boolean;
   /**
-   * The scroll viewport the floor lives in. Used for MEASUREMENT only (the
-   * vertical clamp + resize ceiling read its clientHeight) — never as a
-   * framer `dragConstraints` box, since the floor extends past it sideways.
-   * `position` and the coordinates handed back are CANVAS space; the host owns
-   * the canvas↔store conversion (web/src/lib/workspace/canvas.ts).
+   * The scroll viewport the floor lives in. Used for edge-proximity auto-pan
+   * (§IV.1) — never as a framer `dragConstraints` box, which would box the
+   * vessel into the viewport.
    */
   floorRef?: RefObject<HTMLElement>;
   onCardDrop?: (data: string) => void;
@@ -136,8 +138,9 @@ interface VesselProps {
    *  unmounted and the interior renders as a flat wash. The vessel instance
    *  survives, so it owns the two things an unmount would otherwise lose: the
    *  scroll body's scroll position, and — for an intrinsic-height vessel — its
-   *  measured height, pinned so a collapsed wash can't lie to the floor's
-   *  geometry readers. Defaults to mounted. */
+   *  measured height (dormant on the columnar floor — every slot has a derived
+   *  height — but retained for a caller that passes none). Defaults to
+   *  mounted. */
   contentsMounted?: boolean;
 }
 
@@ -151,18 +154,17 @@ export function Vessel({
   onNameClick,
   onSourceAdded,
   position,
-  originX = 0,
-  onFloorGesture,
   size,
   brightness,
   orientation,
   hidden,
   onHide,
-  onPositionCommit,
   onSizeCommit,
   clampResize,
+  onResizeFrame,
   onDragStart: onDragStartProp,
   onDragFrame,
+  onDragEnd: onDragEndProp,
   armed,
   floorRef,
   onCardDrop,
@@ -188,16 +190,17 @@ export function Vessel({
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const mx = useMotionValue(position.x);
   const my = useMotionValue(position.y);
-  const dragMovedRef = useRef(false);
   const [roundelHovered, setRoundelHovered] = useState(false);
   const [liveSize, setLiveSize] = useState<{ w: number; h: number } | null>(
     null,
   );
-  // Parked-vessel height pin (see `contentsMounted`). `measuredHRef` tracks the
-  // live chassis height while the contents are up; `pinnedH` freezes it for the
-  // wash so an intrinsic-height vessel doesn't collapse to nothing the moment
-  // its cards unmount — readFloorRects reads offsetHeight for collision and
-  // merge hit-testing, and a collapsed vessel would lie to both.
+  // Parked-vessel height pin (see `contentsMounted`): `pinnedH` freezes the
+  // last measured chassis height for the wash so an INTRINSIC-height vessel
+  // doesn't collapse the moment its cards unmount. DORMANT on the columnar
+  // floor — `deriveGeometry` gives every slot an explicit height, so
+  // `heightSet` is always true and both effects below return immediately. Kept
+  // because the height prop is still optional; nothing reads the DOM for
+  // geometry any more (the free-coordinate floor's readFloorRects is gone).
   const measuredHRef = useRef<number | null>(null);
   const [pinnedH, setPinnedH] = useState<number | null>(null);
   // Scroll position survives a park: the DOM node keeps its scrollTop only for
@@ -272,92 +275,111 @@ export function Vessel({
     return () => el.removeEventListener("scroll", onScroll);
   }, [onLoadMore, feedId, isHorizontal]);
 
-  // Origin-shift compensation. When the canvas origin moves (gesture slack
-  // widening/contracting, or a new outermost vessel), every canvas-x changes by
-  // the same delta while the STORE position is untouched. The host cancels the
-  // shift with a scrollLeft adjustment in its layout effect; this one moves the
-  // motion value by the same delta, also pre-paint — the pair lands in a single
-  // frame and the shift is visually a no-op. Instant set, never the spring: the
-  // spring below is for REAL position changes (settle snaps), and after this
-  // runs it sees dx ≈ 0 for a pure origin shift. Skipped mid-drag — framer owns
-  // the value there, and the drag conversions read the same originX prop.
-  const prevOriginXRef = useRef(originX);
-  useLayoutEffect(() => {
-    const delta = prevOriginXRef.current - originX;
-    prevOriginXRef.current = originX;
-    if (delta === 0 || isDraggingRef.current) return;
-    mx.set(mx.get() + delta);
-  }, [originX, mx]);
+  // Spring the vessel to its DERIVED rect. Runs on every real geometry change
+  // (a neighbour's drop shunted this column, a resize widened the one to the
+  // left) and once more explicitly at drag end — a drop that resolves to a
+  // no-op leaves `position` untouched, so without that call the released vessel
+  // would sit wherever the gesture dropped it forever.
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const settleToPosition = useCallback(() => {
+    const { x, y } = positionRef.current;
+    const dx = Math.abs(mx.get() - x);
+    const dy = Math.abs(my.get() - y);
+    if ((dx > 1 || dy > 1) && !prefersReducedMotion()) {
+      const spring = {
+        type: "spring" as const,
+        stiffness: 600,
+        damping: 40,
+        mass: 0.6,
+      };
+      animate(mx, x, spring);
+      animate(my, y, spring);
+    } else {
+      mx.set(x);
+      my.set(y);
+    }
+  }, [mx, my]);
 
   useEffect(() => {
     if (isDraggingRef.current) return;
-    const dx = Math.abs(mx.get() - position.x);
-    const dy = Math.abs(my.get() - position.y);
-    if ((dx > 1 || dy > 1) && !prefersReducedMotion()) {
-      animate(mx, position.x, {
-        type: "spring",
-        stiffness: 600,
-        damping: 40,
-        mass: 0.6,
-      });
-      animate(my, position.y, {
-        type: "spring",
-        stiffness: 600,
-        damping: 40,
-        mass: 0.6,
-      });
-    } else {
-      mx.set(position.x);
-      my.set(position.y);
-    }
-  }, [position.x, position.y, mx, my]);
+    settleToPosition();
+  }, [position.x, position.y, settleToPosition]);
+
+  // ── Edge auto-pan (§IV.1) ────────────────────────────────────────────────
+  // The taut floor has no gesture slack to drag into, so holding the drag near
+  // a viewport edge pans the floor under it — the only way a drag reaches an
+  // off-screen column.
+  //
+  // Panning moves the canvas beneath an absolutely-positioned vessel, so
+  // without compensation the vessel would slide out from under the cursor.
+  // framer owns `mx` during a drag and rewrites it as `dragOrigin + offset` on
+  // every pointermove, so the accumulated pan CANNOT live in the motion value
+  // alone: we track framer's own last write (`framerBaseRef`) and re-apply the
+  // accumulated pan on top of it, both in the rAF loop (pointer held still, no
+  // framer write) and in `onDrag` (pointer moving, framer just overwrote).
+  const panAccumRef = useRef(0);
+  const framerBaseRef = useRef({ x: 0, y: 0 });
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const autoPanRafRef = useRef<number | null>(null);
+
+  const stopAutoPan = useCallback(() => {
+    if (autoPanRafRef.current !== null)
+      cancelAnimationFrame(autoPanRafRef.current);
+    autoPanRafRef.current = null;
+  }, []);
+
+  const startAutoPan = useCallback(() => {
+    if (autoPanRafRef.current !== null) return;
+    const step = () => {
+      autoPanRafRef.current = null;
+      if (!isDraggingRef.current) return;
+      const floor = floorRef?.current;
+      const pointer = lastPointerRef.current;
+      if (floor && pointer) {
+        const r = floor.getBoundingClientRect();
+        const fromLeft = pointer.x - r.left;
+        const fromRight = r.right - pointer.x;
+        let speed = 0;
+        if (fromLeft < AUTOPAN_MARGIN)
+          speed =
+            -AUTOPAN_MAX_SPEED *
+            Math.min(1, (AUTOPAN_MARGIN - fromLeft) / AUTOPAN_MARGIN);
+        else if (fromRight < AUTOPAN_MARGIN)
+          speed =
+            AUTOPAN_MAX_SPEED *
+            Math.min(1, (AUTOPAN_MARGIN - fromRight) / AUTOPAN_MARGIN);
+        if (speed !== 0) {
+          const before = floor.scrollLeft;
+          floor.scrollLeft = before + speed;
+          // The APPLIED delta, not the requested one — at either end of the
+          // floor the browser clamps, and compensating for a scroll that never
+          // happened would walk the vessel off the cursor.
+          const applied = floor.scrollLeft - before;
+          if (applied !== 0) {
+            panAccumRef.current += applied;
+            mx.set(framerBaseRef.current.x + panAccumRef.current);
+            onDragFrame?.(pointer);
+          }
+        }
+      }
+      autoPanRafRef.current = requestAnimationFrame(step);
+    };
+    autoPanRafRef.current = requestAnimationFrame(step);
+  }, [floorRef, mx, onDragFrame]);
+
+  useEffect(() => stopAutoPan, [stopAutoPan]);
 
   function startDrag(event: React.PointerEvent) {
     const target = event.target as HTMLElement;
     if (target.closest("button, a, input, textarea, select, [role='button']"))
       return;
-    dragMovedRef.current = false;
-    // Gesture slack opens on pointerdown, BEFORE framer samples its drag
-    // origin: the re-render + origin compensation flush before the first drag
-    // frame, so the wider canvas is in place by the time the gesture reads
-    // coordinates. Closes on pointerup/cancel — the same task as framer's own
-    // commit, so contract-to-fit batches into the position-commit render.
-    if (onFloorGesture) {
-      onFloorGesture(true);
-      const pointerId = event.pointerId;
-      const end = (e: PointerEvent) => {
-        // Only the INITIATING pointer closes the slack. A second finger's
-        // pointerup mid-drag would collapse the origin under the live gesture
-        // — mx is deliberately not origin-compensated while framer owns it,
-        // so the eventual commit would land ~a viewport off.
-        if (e.pointerId !== pointerId) return;
-        window.removeEventListener("pointerup", end);
-        window.removeEventListener("pointercancel", end);
-        onFloorGesture(false);
-      };
-      window.addEventListener("pointerup", end);
-      window.addEventListener("pointercancel", end);
-    }
     dragControls.start(event);
-  }
-
-  // Vertical clamp only. The floor extends infinitely to the sides, so x is
-  // free — dragging past the current edge is what stretches the canvas — while
-  // y stays boxed by the viewport, which can never be made taller.
-  function clampPos(x: number, y: number) {
-    const floor = floorRef?.current;
-    const vessel = vesselRef.current;
-    if (!floor || !vessel) return { x, y };
-    const maxY = Math.max(
-      0,
-      Math.floor((floor.clientHeight - vessel.offsetHeight) / GRID) * GRID,
-    );
-    return { x, y: Math.max(0, Math.min(y, maxY)) };
   }
 
   // Effective dimensions: liveSize during a resize gesture wins; otherwise
   // committed size from props; otherwise intrinsic defaults.
-  const effW = liveSize?.w ?? size?.w ?? WIDTH;
+  const effW = liveSize?.w ?? size?.w ?? FACTORY_W;
   const effH = liveSize?.h ?? size?.h; // undefined = intrinsic content height
   const heightSet = effH !== undefined;
   // An explicit height needs no pin. Otherwise a parked vessel wears its last
@@ -427,38 +449,20 @@ export function Vessel({
     const chassisEl = vesselRef.current?.querySelector(
       "[data-vessel-chassis]",
     ) as HTMLElement | null;
-    // Floor the seed to the lattice: an intrinsic height is fractional, and a
-    // press-with-no-move commits this seed as-is — the store's round-NEAREST
-    // snap would then grow it up to half a cell into a flush neighbour below
-    // (a minted resting overlap from a click on the handle). Flooring only
-    // ever shrinks, which cannot overlap, and it hands clampSizeClear the
-    // lattice-aligned clear start rect its contract assumes.
+    // Floor the seed to the lattice: a measured height is fractional, and a
+    // press-with-no-move commits this seed as-is — a round-NEAREST snap would
+    // grow it up to half a cell. Flooring only ever shrinks.
     const measuredH = effH ?? chassisEl?.getBoundingClientRect().height ?? MIN_H;
     const startH = Math.max(MIN_H, Math.floor(measuredH / GRID) * GRID);
-    // Width is bounded only by MAX_W — a vessel widened past the current right
-    // edge stretches the canvas, same as dragging it there. Height still stops
-    // at the viewport floor.
-    const maxW = MAX_W;
-    let maxH = MAX_H;
-    const floor = floorRef?.current;
-    const vessel = vesselRef.current;
-    if (floor && vessel) {
-      const overhead = vessel.offsetHeight - startH;
-      maxH = Math.max(
-        MIN_H,
-        Math.min(
-          MAX_H,
-          Math.floor((floor.clientHeight - my.get() - overhead) / GRID) * GRID,
-        ),
-      );
-    }
+    // Both axes are bounded by `clampResize` (the slot's column and the stack
+    // remainder, §IV.3) — these are only the defensive envelope.
     resizeStateRef.current = {
       startX: event.clientX,
       startY: event.clientY,
       startW,
       startH,
-      maxW,
-      maxH,
+      maxW: MAX_W,
+      maxH: MAX_H,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     setLiveSize({ w: startW, h: startH });
@@ -471,11 +475,11 @@ export function Vessel({
     const dy = event.clientY - state.startY;
     const w = snap(Math.max(MIN_W, Math.min(state.maxW, state.startW + dx)));
     const h = snap(Math.max(MIN_H, Math.min(state.maxH, state.startH + dy)));
-    setLiveSize(
-      clampResize
-        ? clampResize({ w: state.startW, h: state.startH }, { w, h })
-        : { w, h },
-    );
+    const next = clampResize ? clampResize({ w, h }) : { w, h };
+    setLiveSize(next);
+    // Feed the proposal back through derivation so the columns to the right
+    // slide WITH the handle rather than jumping on release.
+    onResizeFrame?.(next);
   }
 
   function handleResizePointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -488,10 +492,12 @@ export function Vessel({
     }
     if (!state || !liveSize || !onSizeCommit) {
       setLiveSize(null);
+      onResizeFrame?.(null);
       return;
     }
     onSizeCommit({ w: liveSize.w, h: liveSize.h });
     setLiveSize(null);
+    onResizeFrame?.(null);
   }
 
   function handleChassisDragOver(e: React.DragEvent) {
@@ -551,20 +557,31 @@ export function Vessel({
       onDragStart={() => {
         isDraggingRef.current = true;
         setIsDragging(true);
+        panAccumRef.current = 0;
+        framerBaseRef.current = { x: mx.get(), y: my.get() };
+        startAutoPan();
         onDragStartProp?.();
       }}
       onDrag={(_, info) => {
-        if (info.offset.x !== 0 || info.offset.y !== 0)
-          dragMovedRef.current = true;
-        const clamped = clampPos(snap(mx.get()), snap(my.get()));
-        mx.set(clamped.x);
-        my.set(clamped.y);
-        onDragFrame?.({ x: clamped.x, y: clamped.y }, info.point);
+        // framer has just written `dragOrigin + offset`; that is the base the
+        // accumulated auto-pan rides on top of.
+        framerBaseRef.current = { x: mx.get(), y: my.get() };
+        if (panAccumRef.current !== 0)
+          mx.set(framerBaseRef.current.x + panAccumRef.current);
+        lastPointerRef.current = info.point;
+        onDragFrame?.(info.point);
       }}
       onDragEnd={() => {
         isDraggingRef.current = false;
         setIsDragging(false);
-        onPositionCommit(clampPos(snap(mx.get()), snap(my.get())));
+        stopAutoPan();
+        panAccumRef.current = 0;
+        lastPointerRef.current = null;
+        onDragEndProp?.();
+        // The host may have committed a drop (new rect arrives as a prop) or
+        // resolved to a no-op (prop unchanged). Either way the vessel belongs
+        // at its derived rect, so settle unconditionally.
+        settleToPosition();
       }}
       style={{
         // Light island: desktop vessels keep their per-scheme colours

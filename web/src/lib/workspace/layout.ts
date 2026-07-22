@@ -571,22 +571,38 @@ export function removeFeed(
   return removed ? next : layout;
 }
 
+/** The slot a feed occupies, or null. Exported so the floor can read the
+ *  lifted slot's own `w`/`h` when it hands `resolveDrop` its `lifted` argument
+ *  — `h` in particular, because `null` (fill the column) must survive a drag
+ *  rather than being frozen into a number by the DOM. */
+export function slotFor(
+  layout: WorkspaceLayout,
+  feedId: string,
+): Slot | null {
+  return findSlot(layout, feedId)?.slot ?? null;
+}
+
 /**
- * §IV.3. Width is free to the envelope maximum — growing it grows the column's
- * bounding width and the columns to the right slide, so no clamp-at-neighbour
- * is needed. Height clamps at what the stack can still hold: fixed-height
- * siblings are not squeezed, `null` siblings compress to SLOT_MIN_H.
+ * §IV.3's clamps, without the commit. Width is free to the envelope maximum —
+ * growing it grows the column's bounding width and the columns to the right
+ * slide, so no clamp-at-neighbour is needed (the free-coordinate floor's
+ * `clampSizeClear` has no successor). Height clamps at what the stack can
+ * still hold: fixed-height siblings are not squeezed, `null` siblings compress
+ * to SLOT_MIN_H.
+ *
+ * Split out from `resizeSlot` so the live gesture can clamp every FRAME
+ * (the handle visibly stops where the commit would) with one definition of the
+ * envelope, not two.
  */
-export function resizeSlot(
+export function clampSlotSize(
   layout: WorkspaceLayout,
   feedId: string,
   size: { w: number; h: number },
   vp: Viewport,
-): WorkspaceLayout {
-  const at = findSlot(layout, feedId);
-  if (!at) return layout;
-
+): { w: number; h: number } {
   const w = Math.min(SLOT_MAX_W, snapAtLeast(size.w, SLOT_MIN_W));
+  const at = findSlot(layout, feedId);
+  if (!at) return { w, h: snapAtLeast(size.h, SLOT_MIN_H) };
 
   const col = layout.columns[at.columnIndex];
   const H = availableHeight(vp);
@@ -601,9 +617,40 @@ export function resizeSlot(
     SLOT_MIN_H,
     Math.min(Math.max(SLOT_MIN_H, maxH), snapAtLeast(size.h, SLOT_MIN_H)),
   );
+  return { w, h };
+}
 
+/**
+ * §IV.3. Commit a resize: clamp per `clampSlotSize`, then stamp the slot.
+ */
+export function resizeSlot(
+  layout: WorkspaceLayout,
+  feedId: string,
+  size: { w: number; h: number },
+  vp: Viewport,
+): WorkspaceLayout {
+  const at = findSlot(layout, feedId);
+  if (!at) return layout;
+  return withSlotSize(layout, feedId, clampSlotSize(layout, feedId, size, vp));
+}
+
+/**
+ * Stamp a slot's size with no clamping. The live-resize preview path: the
+ * gesture has already clamped (`clampSlotSize`), and feeding the proposal
+ * through derivation is what makes the columns to the right slide WITH the
+ * handle instead of jumping on release. Never a persistence path — `resizeSlot`
+ * is.
+ */
+export function withSlotSize(
+  layout: WorkspaceLayout,
+  feedId: string,
+  size: { w: number; h: number },
+): WorkspaceLayout {
+  const at = findSlot(layout, feedId);
+  if (!at) return layout;
+  const col = layout.columns[at.columnIndex];
   const slots = [...col.slots];
-  slots[at.slotIndex] = { ...slots[at.slotIndex], w, h };
+  slots[at.slotIndex] = { ...slots[at.slotIndex], w: size.w, h: size.h };
   const columns = [...layout.columns];
   columns[at.columnIndex] = { ...col, slots };
   return { columns };

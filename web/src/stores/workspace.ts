@@ -1,11 +1,18 @@
 import { create } from "zustand";
 import {
-  snap,
-  VESSEL_MIN_W,
-  VESSEL_MIN_H,
-  VESSEL_DEFAULT_W,
-} from "../lib/workspace/grid";
-import { repairRestingLayout } from "../lib/workspace/collision";
+  applyDrop as applyDropTo,
+  insertFeed as insertFeedInto,
+  removeFeed as removeFeedFrom,
+  resizeSlot as resizeSlotIn,
+  regimentedLayout,
+  layoutFeedIds,
+  FACTORY_W,
+  type Column,
+  type Drop,
+  type Slot,
+  type Viewport,
+  type WorkspaceLayout,
+} from "../lib/workspace/layout";
 import {
   normalizeBrightness,
   normalizeDensity,
@@ -16,187 +23,264 @@ import {
 } from "../components/workspace/tokens";
 
 // =============================================================================
-// useWorkspace — vessel layout state for the workspace experiment
+// useWorkspace — the columnar floor's state (WORKSPACE-COLUMN-LAYOUT-ADR §III,
+// §VIII). Two records, disjoint by design:
 //
-// Slice 5a: position ({x, y} in floor coordinates, top-left origin).
-// Slice 5b: width + height (optional — undefined means "intrinsic size").
-// Slice 5c: brightness, density, orientation (optional — undefined means
-// the per-axis default: medium / standard / vertical).
+//   layout      — purely STRUCTURAL: columns left to right, slots top to
+//                 bottom, per-slot sizes. Geometry is DERIVED from this by
+//                 lib/workspace/layout.ts and never stored, so a state that
+//                 violates the spacing rules is unrepresentable and there is
+//                 nothing to detect, resolve or heal. (This replaces the
+//                 free-coordinate `Record<feedId, {x, y, w, h}>` and, with it,
+//                 the resting-overlap heal that existed to escape the states
+//                 that model permitted.)
+//   appearance  — purely PER-FEED: brightness/density/orientation/textSize.
+//                 Neither record reaches into the other.
 //
-// Per WORKSPACE-EXPERIMENT-ADR.md §3, localStorage is the source of truth
-// for workspace layout. The store is hydrated from localStorage on first
-// authenticated load (keyed by user id) and writes back debounced 200ms.
-// No server sync this slice.
+// Proviso on `appearance` (§III.1): scheme and density are server-authoritative
+// FEED CHARACTER (feeds.appearance, MOBILE-LAYOUT-ADR §VI) — this record is
+// their local CACHE and fallback, so the bootstrap reconcile and the
+// FeedComposer's PATCH-with-revert are unchanged. `orientation` and `textSize`
+// are local-only and have no server copy.
 //
-// Storage shape stays Record<feedId, VesselLayout>. Slice-5a values
-// (`{x, y}` only) and slice-5b values (`{x, y, w, h}`) read forward cleanly
-// because every additional axis is optional.
+// Per WORKSPACE-EXPERIMENT-ADR §3 (now in planning-archive/) localStorage stays
+// the source of truth, keyed by user id, written back debounced 200ms.
 // =============================================================================
 
-export interface VesselLayout {
-  x: number;
-  y: number;
-  w?: number;
-  h?: number;
+export interface VesselAppearance {
   brightness?: Brightness;
   density?: Density;
   orientation?: Orientation;
   textSize?: TextSize;
-  minimized?: boolean;
-  // LEGACY (MOBILE-LAYOUT-ADR §V): hide moved server-side onto the feed row
-  // (feeds.hidden, migration 113). This field is read once on bootstrap to
-  // push pre-migration local hides up, then cleared via clearLegacyHidden.
-  // Nothing writes it anymore.
-  hidden?: boolean;
 }
 
 interface WorkspaceState {
   userId: string | null;
-  positions: Record<string, VesselLayout>;
+  layout: WorkspaceLayout;
+  appearance: Record<string, VesselAppearance>;
+  /** §V's parade-ground view. A VIEW over the feed list, not an edit — the
+   *  stored layout is untouched while it is on, which is what makes leaving it
+   *  trivial and crash-safe. */
+  regimented: boolean;
   hydrated: boolean;
 
   hydrate: (userId: string) => void;
-  setVesselPosition: (feedId: string, pos: { x: number; y: number }) => void;
-  setVesselSize: (feedId: string, size: { w: number; h: number }) => void;
+
+  applyDrop: (feedId: string, drop: Drop) => void;
+  insertFeed: (feedId: string) => void;
+  removeFeed: (feedId: string) => void;
+  resizeSlot: (
+    feedId: string,
+    size: { w: number; h: number },
+    vp: Viewport,
+  ) => void;
+
   setVesselBrightness: (feedId: string, brightness: Brightness) => void;
   setVesselDensity: (feedId: string, density: Density) => void;
   setVesselOrientation: (feedId: string, orientation: Orientation) => void;
   setVesselTextSize: (feedId: string, textSize: TextSize) => void;
-  setVesselMinimized: (feedId: string, minimized: boolean) => void;
-  // One-time migration sweeper: strip the legacy `hidden` flag from a layout
-  // after its value has been pushed to the server (feeds.hidden). Without the
-  // clear, a stale local flag would re-hide a feed the user later unhid.
-  clearLegacyHidden: (feedId: string) => void;
-  // Bootstrap-time reconcile against the authoritative server feed list:
-  // prune layouts for feeds that no longer exist (deleted on another device —
-  // removeVessel only ever runs locally, so ghosts otherwise persist forever)
-  // and heal resting overlaps among the VISIBLE feeds only. Runs here, not at
-  // hydrate: the store cannot know hidden/deleted at hydrate time, and a
-  // blind heal shelves legal arrangements (a vessel resting over a HIDDEN
-  // feed's stored rect is invariant-conforming — hidden feeds are not
-  // obstacles).
-  reconcileLayouts: (liveIds: string[], visibleIds: string[]) => void;
-  removeVessel: (feedId: string) => void;
+
+  /**
+   * Bootstrap-time reconcile against the authoritative server feed list. Two
+   * jobs, and NO third: prune slots whose feed the server no longer returns
+   * (deleted on another device) or has hidden, and append every visible feed
+   * that has no slot. There is no heal, because there is nothing to heal —
+   * illegal arrangements are unrepresentable. Appearance is pruned against the
+   * LIVE set, not the visible one: a hidden feed keeps its character for when
+   * it comes back.
+   */
+  reconcileFeeds: (liveIds: string[], visibleIds: string[]) => void;
+
+  setRegimented: (regimented: boolean) => void;
+  /** §V's edit-while-regimented: stamp the derived regimented arrangement as
+   *  the custom layout and leave the mode, for the caller to then apply its one
+   *  edit. */
+  materializeRegimented: (
+    feeds: { id: string; sortRank: number }[],
+    vp: Viewport,
+  ) => void;
+
   reset: () => void;
 }
 
-const STORAGE_PREFIX = "workspace:layout:";
+const STORAGE_PREFIX = "workspace:layout:v2:";
+const REGIMENTED_PREFIX = "workspace:regimented:";
+/** The free-coordinate floor's key. Read once at hydrate for its appearance
+ *  fields, then deleted (§VIII). */
+const V1_PREFIX = "workspace:layout:";
 const WRITE_DEBOUNCE_MS = 200;
 
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
 
-function storageKey(userId: string) {
-  return `${STORAGE_PREFIX}${userId}`;
+const storageKey = (userId: string) => `${STORAGE_PREFIX}${userId}`;
+const regimentedKey = (userId: string) => `${REGIMENTED_PREFIX}${userId}`;
+const v1Key = (userId: string) => `${V1_PREFIX}${userId}`;
+
+const EMPTY_LAYOUT: WorkspaceLayout = { columns: [] };
+
+interface Persisted {
+  layout: WorkspaceLayout;
+  appearance: Record<string, VesselAppearance>;
 }
 
-function readFromStorage(userId: string): Record<string, VesselLayout> {
-  if (typeof window === "undefined") return {};
+/** Retire stale values from older builds on the way in — the same normalisation
+ *  the v1 reader ran, so a scheme or density that has since been renamed lands
+ *  as its successor rather than falling back to the default. */
+function cleanAppearance(raw: unknown): Record<string, VesselAppearance> {
+  const out: Record<string, VesselAppearance> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [feedId, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (!val || typeof val !== "object") continue;
+    const v = val as Record<string, unknown>;
+    const a: VesselAppearance = {};
+    if (v.brightness !== undefined)
+      a.brightness = normalizeBrightness(v.brightness as Brightness);
+    if (v.density !== undefined)
+      a.density = normalizeDensity(v.density as Density);
+    if (v.orientation === "horizontal" || v.orientation === "vertical")
+      a.orientation = v.orientation;
+    if (
+      typeof v.textSize === "number" &&
+      v.textSize >= 1 &&
+      v.textSize <= 5 &&
+      Number.isInteger(v.textSize)
+    )
+      a.textSize = v.textSize as TextSize;
+    if (Object.keys(a).length > 0) out[feedId] = a;
+  }
+  return out;
+}
+
+/** Defensive parse: a malformed blob (hand-edited, or written by a build that
+ *  has since changed shape) must degrade to "no layout" and let the bootstrap
+ *  reconcile rebuild, never throw on the render path. */
+function cleanLayout(raw: unknown): WorkspaceLayout {
+  if (!raw || typeof raw !== "object") return EMPTY_LAYOUT;
+  const cols = (raw as { columns?: unknown }).columns;
+  if (!Array.isArray(cols)) return EMPTY_LAYOUT;
+  const seen = new Set<string>();
+  const columns: Column[] = [];
+  for (const c of cols) {
+    const col = c as { id?: unknown; slots?: unknown };
+    if (typeof col.id !== "string" || !Array.isArray(col.slots)) continue;
+    const slots: Slot[] = [];
+    for (const s of col.slots) {
+      const slot = s as { feedId?: unknown; w?: unknown; h?: unknown };
+      if (typeof slot.feedId !== "string") continue;
+      // One slot per feed, floor-wide: a duplicate would render two vessels
+      // for one feed and give drop resolution two answers.
+      if (seen.has(slot.feedId)) continue;
+      seen.add(slot.feedId);
+      slots.push({
+        feedId: slot.feedId,
+        w:
+          typeof slot.w === "number" && Number.isFinite(slot.w)
+            ? slot.w
+            : FACTORY_W,
+        h:
+          typeof slot.h === "number" && Number.isFinite(slot.h)
+            ? slot.h
+            : null,
+      });
+    }
+    if (slots.length > 0) columns.push({ id: col.id, slots });
+  }
+  return { columns };
+}
+
+function readFromStorage(userId: string): Persisted | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(storageKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      columns?: unknown;
+      appearance?: unknown;
+    };
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      layout: cleanLayout(parsed),
+      appearance: cleanAppearance(parsed.appearance),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * §VIII. The v1 key held `{x, y, w, h}` per feed alongside its appearance
+ * fields. COORDINATES ARE DISCARDED — the columnar model has no use for them,
+ * and the bootstrap reconcile places every feed from nothing. But `textSize`
+ * and `orientation` are LOCAL-ONLY (no server copy, unlike scheme/density), so
+ * a wholesale wipe would silently lose real settings; brightness and density
+ * come across too, as warm cache with the server still authoritative.
+ *
+ * A one-shot read, not a migration framework. The 5a- (`{x,y}`), 5b-
+ * (`{x,y,w,h}`) and 5c- (…+ appearance) era shapes all still occur in the wild
+ * and all read forward here, because every field is optional.
+ */
+function migrateV1(userId: string): Record<string, VesselAppearance> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(v1Key(userId));
     if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    const clean: Record<string, VesselLayout> = {};
-    for (const [key, val] of Object.entries(parsed)) {
-      const v = val as Record<string, unknown>;
-      if (
-        v &&
-        typeof v === "object" &&
-        typeof v.x === "number" &&
-        typeof v.y === "number" &&
-        Number.isFinite(v.x) &&
-        Number.isFinite(v.y)
-      ) {
-        const layout = v as unknown as VesselLayout;
-        // Retire stale brightness values ('medium'/'dim') from older builds,
-        // and the removed 'full' density (→ 'standard').
-        if (layout.brightness !== undefined)
-          layout.brightness = normalizeBrightness(layout.brightness);
-        if (layout.density !== undefined)
-          layout.density = normalizeDensity(layout.density);
-        clean[key] = layout;
-      }
-    }
-    return clean;
+    return cleanAppearance(JSON.parse(raw));
   } catch {
     return {};
   }
 }
 
-// Overlap heal, run from reconcileLayouts once the server feed list is known
-// (bootstrap): layouts persisted by the pre-2026-07-21 resolver can hold
-// RESTING overlaps — its livelocked waves settled vessels at identical
-// coordinates, which renders as one vessel on a floor with no retrieval
-// affordance, so the user can never drag the pile apart themselves (they
-// cannot see it) and the mover-scoped resolver never revisits it. Only the
-// layouts passing `include` (the VISIBLE feeds) participate; hidden feeds'
-// stored rects are not on the floor and must neither be moved nor treated as
-// obstacles. Size detection is deliberately conservative so a deliberate
-// arrangement is never disturbed: stored width is exact and intrinsic width
-// is the known default, but intrinsic HEIGHT is content-driven and unknowable
-// here, so absent heights are taken at the vessel minimum — any overlap found
-// at minimum size is real whatever the content height. Under-detects partial
-// overlaps of tall intrinsic vessels; never false-positives on size. Shelving
-// (rightward, past everything kept) comes from the collision module's repair
-// primitive — this heal is its sole remaining caller now that placement is
-// mover-yields.
-function healRestingOverlaps(
-  positions: Record<string, VesselLayout>,
-  include: (id: string) => boolean,
-): Record<string, VesselLayout> {
-  const rects = Object.entries(positions)
-    .filter(([id]) => include(id))
-    .map(([id, l]) => ({
-      id,
-      x: l.x,
-      y: l.y,
-      w: Math.max(l.w ?? VESSEL_DEFAULT_W, VESSEL_MIN_W),
-      h: l.h ?? VESSEL_MIN_H,
-    }));
-  const repairs = repairRestingLayout(rects);
-  if (repairs.size === 0) return positions;
-  const next = { ...positions };
-  for (const [id, pos] of repairs) {
-    next[id] = { ...next[id], x: snap(pos.x), y: snap(pos.y) };
+function writeNow(userId: string, layout: WorkspaceLayout, appearance: Record<string, VesselAppearance>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      storageKey(userId),
+      JSON.stringify({ columns: layout.columns, appearance }),
+    );
+  } catch {
+    // Quota exceeded / private browsing — silently drop. The UI keeps the
+    // in-memory layout; a write failure must not crash the floor.
   }
-  return next;
 }
 
 function scheduleWrite(
   userId: string,
-  positions: Record<string, VesselLayout>,
+  layout: WorkspaceLayout,
+  appearance: Record<string, VesselAppearance>,
 ) {
   if (typeof window === "undefined") return;
   if (writeTimer) clearTimeout(writeTimer);
   writeTimer = setTimeout(() => {
-    try {
-      window.localStorage.setItem(
-        storageKey(userId),
-        JSON.stringify(positions),
-      );
-    } catch {
-      // Quota exceeded / private browsing — silently drop. The UI keeps the
-      // in-memory layout; we don't want a write failure to crash the floor.
-    }
+    writeNow(userId, layout, appearance);
     writeTimer = null;
   }, WRITE_DEBOUNCE_MS);
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => {
-  function patchVessel(feedId: string, patch: Partial<VesselLayout>) {
+  /** Commit a structural change and persist it. A no-op transform (the layout
+   *  module returns the SAME object when nothing moved) writes nothing. */
+  function commitLayout(next: WorkspaceLayout) {
+    if (next === get().layout) return;
+    set({ layout: next });
     const userId = get().userId;
-    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
-    const next = {
-      ...get().positions,
-      [feedId]: { ...existing, ...patch },
+    if (userId) scheduleWrite(userId, next, get().appearance);
+  }
+
+  function patchAppearance(feedId: string, patch: VesselAppearance) {
+    const appearance = {
+      ...get().appearance,
+      [feedId]: { ...get().appearance[feedId], ...patch },
     };
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
+    set({ appearance });
+    const userId = get().userId;
+    if (userId) scheduleWrite(userId, get().layout, appearance);
   }
 
   return {
     userId: null,
-    positions: {},
+    layout: EMPTY_LAYOUT,
+    appearance: {},
+    regimented: false,
     hydrated: false,
 
     hydrate: (userId) => {
@@ -205,74 +289,124 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         clearTimeout(writeTimer);
         writeTimer = null;
       }
-      // No heal here: at hydrate time the store cannot tell hidden feeds or
-      // deleted-elsewhere ghosts from live vessels, and a blind repair
-      // shelves legal arrangements. reconcileLayouts (bootstrap, once the
-      // server list is in — before anything paints) owns pruning + healing.
-      set({ userId, positions: readFromStorage(userId), hydrated: true });
-    },
+      const stored = readFromStorage(userId);
+      const layout = stored?.layout ?? EMPTY_LAYOUT;
+      let appearance = stored?.appearance ?? {};
 
-    reconcileLayouts: (liveIds, visibleIds) => {
-      const userId = get().userId;
-      const positions = get().positions;
-      const live = new Set(liveIds);
-      let pruned = positions;
-      const ghosts = Object.keys(positions).filter((id) => !live.has(id));
-      if (ghosts.length > 0) {
-        pruned = { ...positions };
-        for (const id of ghosts) delete pruned[id];
+      if (!stored) {
+        // First run on this device since the rewrite: lift what the v1 key
+        // still has that this model uses, write v2 SYNCHRONOUSLY (so the
+        // deletion below can never outrun the debounce), then retire v1.
+        appearance = migrateV1(userId);
+        if (typeof window !== "undefined") {
+          if (Object.keys(appearance).length > 0)
+            writeNow(userId, layout, appearance);
+          try {
+            window.localStorage.removeItem(v1Key(userId));
+          } catch {
+            // Nothing to do — a surviving v1 key is inert, and the next
+            // hydrate would simply re-read the same appearance.
+          }
+        }
       }
-      const visible = new Set(visibleIds);
-      const healed = healRestingOverlaps(pruned, (id) => visible.has(id));
-      if (healed === positions) return;
-      set({ positions: healed });
-      // A repair is a real layout change — persist it so it is once-per-pile,
-      // not once-per-session.
-      if (userId) scheduleWrite(userId, healed);
+
+      let regimented = false;
+      if (typeof window !== "undefined") {
+        try {
+          regimented =
+            window.localStorage.getItem(regimentedKey(userId)) === "true";
+        } catch {
+          regimented = false;
+        }
+      }
+
+      // No placement here: at hydrate the store cannot tell a hidden feed from
+      // a deleted one. reconcileFeeds (bootstrap, once the server list is in)
+      // owns pruning and placement.
+      set({ userId, layout, appearance, regimented, hydrated: true });
     },
 
-    setVesselPosition: (feedId, pos) =>
-      patchVessel(feedId, { x: snap(pos.x), y: snap(pos.y) }),
+    applyDrop: (feedId, drop) =>
+      commitLayout(applyDropTo(get().layout, feedId, drop)),
 
-    setVesselSize: (feedId, size) =>
-      patchVessel(feedId, { w: snap(size.w), h: snap(size.h) }),
+    insertFeed: (feedId) => commitLayout(insertFeedInto(get().layout, feedId)),
+
+    removeFeed: (feedId) => commitLayout(removeFeedFrom(get().layout, feedId)),
+
+    resizeSlot: (feedId, size, vp) =>
+      commitLayout(resizeSlotIn(get().layout, feedId, size, vp)),
 
     setVesselBrightness: (feedId, brightness) =>
-      patchVessel(feedId, { brightness }),
+      patchAppearance(feedId, { brightness }),
 
-    setVesselDensity: (feedId, density) => patchVessel(feedId, { density }),
+    setVesselDensity: (feedId, density) => patchAppearance(feedId, { density }),
 
     setVesselOrientation: (feedId, orientation) =>
-      patchVessel(feedId, { orientation }),
+      patchAppearance(feedId, { orientation }),
 
-    setVesselTextSize: (feedId, textSize) => patchVessel(feedId, { textSize }),
+    setVesselTextSize: (feedId, textSize) =>
+      patchAppearance(feedId, { textSize }),
 
-    setVesselMinimized: (feedId, minimized) =>
-      patchVessel(feedId, { minimized }),
+    reconcileFeeds: (liveIds, visibleIds) => {
+      const live = new Set(liveIds);
+      const visible = new Set(visibleIds);
+      let layout = get().layout;
+      for (const id of layoutFeedIds(layout))
+        if (!visible.has(id)) layout = removeFeedFrom(layout, id);
+      // List order, so a first run lands the seeded starter feeds left to right
+      // in the order the gateway returned them (§III.4).
+      for (const id of visibleIds) layout = insertFeedInto(layout, id);
 
-    clearLegacyHidden: (feedId) => {
+      const appearance = get().appearance;
+      const stale = Object.keys(appearance).filter((id) => !live.has(id));
+      const nextAppearance =
+        stale.length > 0
+          ? Object.fromEntries(
+              Object.entries(appearance).filter(([id]) => live.has(id)),
+            )
+          : appearance;
+
+      if (layout === get().layout && nextAppearance === appearance) return;
+      set({ layout, appearance: nextAppearance });
       const userId = get().userId;
-      const existing = get().positions[feedId];
-      if (!existing || existing.hidden === undefined) return;
-      const { hidden: _legacy, ...rest } = existing;
-      const next = { ...get().positions, [feedId]: rest };
-      set({ positions: next });
-      if (userId) scheduleWrite(userId, next);
+      if (userId) scheduleWrite(userId, layout, nextAppearance);
     },
 
-    removeVessel: (feedId) => {
+    setRegimented: (regimented) => {
+      set({ regimented });
       const userId = get().userId;
-      if (!(feedId in get().positions)) return;
-      const next = { ...get().positions };
-      delete next[feedId];
-      set({ positions: next });
-      if (userId) scheduleWrite(userId, next);
+      if (userId && typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(
+            regimentedKey(userId),
+            regimented ? "true" : "false",
+          );
+        } catch {
+          // Worst case the mode doesn't survive a reload.
+        }
+      }
+    },
+
+    materializeRegimented: (feeds, vp) => {
+      const layout = regimentedLayout(feeds, vp);
+      set({ layout, regimented: false });
+      const userId = get().userId;
+      if (userId) {
+        scheduleWrite(userId, layout, get().appearance);
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(regimentedKey(userId), "false");
+          } catch {
+            // See setRegimented.
+          }
+        }
+      }
     },
 
     reset: () => {
       const userId = get().userId;
-      set({ positions: {} });
-      if (userId) scheduleWrite(userId, {});
+      set({ layout: EMPTY_LAYOUT, appearance: {} });
+      if (userId) scheduleWrite(userId, EMPTY_LAYOUT, {});
     },
   };
 });
