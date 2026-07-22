@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { apiErrorMessage } from "../../lib/api/client";
 
 const TOKENS = {
   scrim: "rgb(var(--ah-ink-925-rgb) / 0.4)",
   panelBg: "var(--ah-white)",
-  panelBorder: "var(--ah-ink-925)",
-  hintFg: "var(--ah-stone-400)",
+  panelFg: "var(--ah-ink-925)",
   errorFg: "var(--ah-crimson)",
   primaryBg: "var(--ah-ink-925)",
   primaryFg: "var(--ah-bone)",
@@ -52,7 +52,9 @@ export function MergeFeedConfirm({
     try {
       await onConfirm();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Merge failed.");
+      // Prefer the server's own copy (the starter-template refusal explains what
+      // to do); ApiError.message is the raw "API error 409: {...}" dump.
+      setError(apiErrorMessage(err) ?? "Merge failed.");
       setMerging(false);
     }
   }
@@ -84,34 +86,41 @@ export function MergeFeedConfirm({
           width: 420,
           maxWidth: "calc(100vw - 48px)",
           background: TOKENS.panelBg,
-          border: `1px solid ${TOKENS.panelBorder}`,
+          // No enclosing rule — lifted by its shadow alone, per the Glasshouse
+          // grammar. (Removed 2026-07-22; see the no-thin-line invariant.)
           padding: 24,
           boxShadow: "0 24px 48px rgba(0, 0, 0, 0.18)",
         }}
       >
         <p
           className="font-sans text-ui-sm leading-[1.5]"
-          style={{ color: TOKENS.panelBorder, marginBottom: 16 }}
+          style={{ color: TOKENS.panelFg, marginBottom: 16 }}
         >
           Merge <strong>{sourceName}</strong> into <strong>{targetName}</strong>
           ? Sources will be combined. <strong>{sourceName}</strong> will be
           deleted.
         </p>
 
+        {/* Own line, not inline beside the buttons: a server refusal is a full
+            sentence (the starter-template guard) and would otherwise squeeze
+            the actions out of the 420px panel. */}
+        {error && (
+          <p
+            className="font-mono text-mono-xs leading-[1.5]"
+            style={{ color: TOKENS.errorFg, marginBottom: 16 }}
+          >
+            {error}
+          </p>
+        )}
+
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: "flex-end",
             gap: 16,
           }}
         >
-          <div
-            className="font-mono text-mono-xs"
-            style={{ color: TOKENS.hintFg }}
-          >
-            {error && <span style={{ color: TOKENS.errorFg }}>{error}</span>}
-          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               type="button"
@@ -121,7 +130,7 @@ export function MergeFeedConfirm({
               style={{
                 padding: "8px 14px",
                 background: "transparent",
-                color: TOKENS.panelBorder,
+                color: TOKENS.panelFg,
                 border: "none",
                 cursor: merging ? "default" : "pointer",
               }}

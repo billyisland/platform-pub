@@ -203,6 +203,51 @@ Seven-agent verification of the §0j bug catalog: every §0h/§0i fix diagnosis 
 
 ---
 
+## 0l. 2026-07-22 prod incident — starter template merged away
+
+The feed flagged `is_starter_template` was dragged onto another feed on live and
+deleted by the merge (merge deletes its SOURCE feed). Diagnosis, the code guard
+that now prevents a recurrence, and the recovery levers: **FIX-PROGRAMME
+2026-07-22 "prod incident" entry**. Runnable diagnostic + repair queries (with
+placeholders): `docs/audits/starter-feed-repair-2026-07-22.sql`. Open:
+
+1. **PROD REPAIR — not yet applied (operator, DB-only, no deploy needed).** Two
+   steps, in this order. (a) The merge target is over-stuffed and blows the 10s
+   `statement_timeout`; split the wrong source cluster back out into its own
+   feed — `feed_sources.created_at` survives a merge (which only UPDATEs
+   `feed_id`), so the two original feeds are two distinct timestamp clusters.
+   (b) Then `UPDATE feeds SET is_starter_template = true` on the trimmed feed,
+   or rebuild the original template from a pre-incident clone (findable by name;
+   provenance pointers were nulled). **Flagging before trimming means every new
+   signup clones a feed that times out.** A hand-built template must also upsert
+   `external_subscriptions` for its external sources — writing `feed_sources`
+   directly bypasses `addSource`, and a row without a subscription lets the GC
+   orphan an in-use source. Until (b) lands, every signup gets the empty
+   client-side "Founder's feed" fallback.
+2. **`DELETE /feeds/:id` has the same hole (LOW-MED, live).** It guards "cannot
+   delete your only feed" but not `is_starter_template`, so the identical global
+   damage is reachable by another route. Same shape as the merge guard: refuse,
+   or require the flag be cleared first. Deliberate deletion is a less likely
+   slip than a drag, which is why it wasn't batched — but the consequence is
+   identical.
+3. **Nothing surfaces which feed is the template (product call).** The flag is
+   set and read only by hand (`UPDATE feeds SET is_starter_template = …`); no UI
+   marks a template vessel, so it looks exactly like an ordinary feed right up
+   to the point of destroying it. The guard now catches the merge path, but a
+   badge on the vessel bar — or an operator row in the admin dashboard — is what
+   would have prevented the gesture. Decide scope.
+4. **The 10s timeout is a feed-size cliff, not a merge bug (MED, latent).** Any
+   feed accumulating enough sources hits it — `sourceFilteredItems`'s `matched`
+   CTE joins `feed_items × feed_sources` under a polymorphic `OR` with a
+   correlated `EXISTS` per pair for `tag` sources, and a `reach:explore` row
+   widens candidates platform-wide. A feed built up over months by ordinary
+   use reaches the same state with no merge involved, and the only symptom is
+   `COULDN'T LOAD FEED`. Wants either a source-count ceiling with a real error,
+   or the `matched` rewrite (per-type UNION branches instead of one OR chain)
+   — measure first. Related: §8's performance cluster.
+
+---
+
 ## 1. Money & payments (highest stakes)
 
 Waves 1–3 of the 2026-07-05 logic-economy audit all shipped (migrations 139–147): F9 paid voting removed (free, one-vote cap), F4 payout-completion-off-create + `transfer.reversed` (incl. partial reversals), F5 full publication-aware chargeback (per-split prorated reversals), F10 fixed share-of-revenue splits with cumulative clamp, F14 allowance split persisted, Wave-5 hardening (periodic `resumePendingSettlements`, calendar renewal in the expiry worker, pairing comment), plus the Wave-3 subscription collection gate. The F3 tribute chargeback residual also closed (claimed-but-unpaid accruals now reversed, `chargeback.ts:38-53`). What remains:

@@ -462,9 +462,11 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
           const { rows: feedRows } = await client.query<{
             id: string;
             owner_id: string;
-          }>(`SELECT id, owner_id FROM feeds WHERE id = ANY($1::uuid[])`, [
-            [targetId, sourceFeedId],
-          ]);
+            is_starter_template: boolean;
+          }>(
+            `SELECT id, owner_id, is_starter_template FROM feeds WHERE id = ANY($1::uuid[])`,
+            [[targetId, sourceFeedId]],
+          );
           const targetFeed = feedRows.find((r) => r.id === targetId);
           const sourceFeed = feedRows.find((r) => r.id === sourceFeedId);
 
@@ -479,6 +481,20 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
           }
           if (sourceFeed.owner_id !== ownerId) {
             throw tagged("FORBIDDEN_SOURCE");
+          }
+
+          // 1b. A starter template is not an ordinary feed. Step 5 below DELETEs
+          // the source feed, so merging a template away destroys the only row
+          // carrying is_starter_template — seedStarterFeeds then finds no
+          // template, and every subsequent signup silently falls through to the
+          // client's empty "Founder's feed" mint. The damage is global, delayed,
+          // and invisible from the merge itself (it lands on the NEXT new
+          // account), which is exactly why a drag gesture must not be able to do
+          // it. Refuse rather than carrying the flag to the target: which feed
+          // seeds every new account is an operator decision, not a side effect.
+          // Unflag it first if the merge is genuinely intended.
+          if (sourceFeed.is_starter_template) {
+            throw tagged("STARTER_TEMPLATE_SOURCE");
           }
 
           // 2. Move non-duplicate sources from source → target.
@@ -532,6 +548,13 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
         }
         if (code === "FORBIDDEN_TARGET" || code === "FORBIDDEN_SOURCE") {
           return reply.status(403).send({ error: "Feed not owned by you" });
+        }
+        if (code === "STARTER_TEMPLATE_SOURCE") {
+          return reply.status(409).send({
+            error: "starter_template_source",
+            message:
+              "This feed seeds every new account. Unflag it as the starter template before merging it away.",
+          });
         }
         logger.error({ err, targetId, sourceFeedId }, "Feed merge failed");
         return reply.status(500).send({ error: "Feed merge failed" });

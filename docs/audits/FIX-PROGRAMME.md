@@ -23,6 +23,56 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (prod incident — a starter template merged away; the merge guard)** —
+  the operator dragged the feed flagged `is_starter_template` onto another feed
+  on live. `POST /workspace/feeds/:id/merge` is asymmetric and destructive: it
+  moves the SOURCE feed's non-duplicate sources into the target, deletes the
+  duplicates, copies saves, then `DELETE FROM feeds` on the source
+  (`crud.ts` step 5). Nothing guarded the flag, so the only row carrying it was
+  destroyed.
+  **Two live symptoms, one cause.** (1) New signups landed on an empty
+  "Founder's feed". That name is `DEFAULT_FEED_NAME` (`WorkspaceView.tsx:94`) —
+  a *client-side* fallback minted with zero sources when `boot.feeds.length === 0`,
+  which for a fresh account happens only when `seedStarterFeeds` finds nothing
+  flagged. So they weren't getting a broken clone, they were getting no clone
+  and a 0-source feed named after the operator, whose contents fall to the
+  explore placeholder (48h of platform natives, minus their own) — empty on a
+  quiet day. The name is the diagnostic: it is unreachable while any template
+  is flagged. (2) The merge target on the operator's own account painted
+  `COULDN'T LOAD FEED` (`WorkspaceView.tsx:1286`, `status: "error"`, set only in
+  `loadVesselItems`'s catch): holding the union of both source sets, its
+  `sourceFilteredItems` query — `feed_items × feed_sources` under a polymorphic
+  `OR`, with a correlated `EXISTS` per pair for `tag` sources — exceeded the
+  pool's 10s `statement_timeout` (`shared/src/db/client.ts:24`).
+  **Unrecoverable tail:** migration 114's `cloned_from_feed_id … ON DELETE SET
+  NULL` nulled every clone's provenance pointer, so `fromStarter` is now false
+  for all existing users. Cosmetic — it forks only the Explain/first-run copy.
+  **The guard** (`crud.ts`, merge step 1b): a merge whose SOURCE feed carries
+  `is_starter_template` is refused with 409 `starter_template_source`, thrown
+  before any write. Merging INTO a template stays allowed — it survives and only
+  grows. Refusal was chosen over carrying the flag to the target: which feed
+  seeds every new account is an operator decision, not a side effect of a drag,
+  and the damage from getting it wrong is global, delayed, and invisible from
+  the gesture (it lands on the NEXT signup). `MergeFeedConfirm` rendered
+  `err.message` — the raw `API error 409: {…}` dump — so the refusal now goes
+  through `apiErrorMessage`; the error moved onto its own line (a full sentence
+  squeezed the actions out of the 420px panel) and the panel's hairline border
+  went with it (shadow-only lift, the Glasshouse grammar).
+  **Prod repair is operator work, queued at CONSOLIDATED-TODO §0l** — the
+  recovery levers are that `feed_sources.created_at` survives a merge (the merge
+  only UPDATEs `feed_id`, so the two original feeds are two distinct timestamp
+  clusters, which is how the target gets un-merged), and that any user who
+  signed up before the accident still owns a verbatim clone of the lost template
+  (findable by name now that provenance is gone). Order matters: trim the target
+  BEFORE flagging it, or every new signup clones a feed that times out.
+  **Validation:** `gateway/tests/feed-merge-starter-guard.test.ts`, 3 tests
+  (refusal writes nothing — no feed DELETE, no source move, no saves copy;
+  merge-into-a-template still runs; ordinary merge untouched), mutation-verified
+  (guard forced to `if (false)` → 1 red). Full gateway suite 384 passed; root
+  lint 0 errors; `next build` clean; hairline tripwire clean on the touched file.
+  **Residual, not fixed:** `DELETE /feeds/:id` has the same hole — it guards
+  "cannot delete your only feed" but not the template flag (§0l).
+
 - **2026-07-22 (columnar floor, post-ship audit fixes — WORKSPACE-COLUMN-LAYOUT-ADR
   §X addendum)** — a same-day code audit of Slices 0–5 found two behavioural
   bugs and a tail of smaller gaps; all fixed. The full record is the ADR's
