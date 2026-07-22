@@ -1,9 +1,10 @@
 # WORKSPACE-COLUMN-LAYOUT-ADR: The Columnar Floor — Derived Geometry, No Collision
 
 **all.haus Architectural Decision Record**
-**Status:** Proposed, 2026-07-22; codebase-review + decision pass folded in the same
+**Status:** Accepted, 2026-07-22; codebase-review + decision pass folded in the same
 day (drop-zone split, deferred column collapse, edge auto-pan, nav-row z-order,
 Explain adaptation, v1 appearance migration, virtualization-first sequencing).
+**Slice 0 (virtualization, §VII) SHIPPED 2026-07-22** — see §X; Slices 1–5 open.
 Supersedes the free-coordinate floor (signed store
 coordinates, mover-yields collision, bootstrap heal) shipped across the 2026-07-20/21
 resolver rework, and the difference-blend ∀ lens. Retains the vessel chassis, the
@@ -356,10 +357,38 @@ tsc/eslint), `scripts/check-hairlines.sh` over touched files, and a
 `docker compose build web && docker compose up -d web` pass at `localhost:3010`
 (the web image is a prod build — no hot reload).
 
-### Slice 0 — virtualization, first (§VII)
+### Slice 0 — virtualization, first (§VII) — **SHIPPED 2026-07-22**
 
 Ships against the **current** floor; touches `WorkspaceView.tsx` and `Vessel.tsx`
 only.
+
+**As built** (one deliberate deviation, two additions; FIX-PROGRAMME 2026-07-22):
+
+- **The band is measured in STORE space, not canvas space.** The sketch below
+  intersects canvas-x against `[scrollLeft − vw, scrollLeft + 2·vw]`, but
+  canvas-x and `scrollLeft` both move when the gesture slack shifts the origin,
+  and they move in *different renders* — the compensation is a layout effect,
+  so there is one commit carrying the new `originX` with the old `scrollLeft`.
+  Reading the band there would unmount most of the floor on every drag start.
+  The shipped form keys off `panOffset = scrollLeft + originX`, which is
+  **invariant** under that shift (`originX −d` cancels `scrollLeft +d`), and
+  intersects it against store-space rects. Same band, no race. The same
+  invariance is what lets the sync run on a dead band at all.
+- **Hysteresis is a 200px dead band on pan** (`VIRT_QUANT`), not a second margin
+  band: after a sync the stored `panOffset` equals the live one, so flipping a
+  boundary costs a real 200px scroll rather than a jitter. Well under the
+  one-viewport margin, so nothing on screen is ever parked.
+- **Cold start needs its own sync.** The dead band only fires on scroll events
+  and the first-paint scroll init assigns `scrollLeft` without dispatching one,
+  so a workspace whose feeds all sit far from store-x 0 would start with an
+  empty band. A layout effect covers it — declared *after* the origin
+  compensation so it always reads a corrected `scrollLeft`.
+- **Height pinning** rides a `ResizeObserver` rather than a render-path
+  `offsetHeight` read: the vessel re-renders on every drag frame and measuring
+  there would force layout each time. A vessel parked *before* it was ever
+  measured (intrinsic height, started outside the band) wears `MIN_H` until it
+  enters — bounded, rather than collapsing to its bar and under-reporting to
+  `readFloorRects`.
 
 - **Visibility set.** `WorkspaceView` already holds everything needed: `viewport`
   state, `floorScrollRef` (kept current by the scroll listener), and per-vessel

@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (workspace virtualization — WORKSPACE-COLUMN-LAYOUT-ADR Slice 0)**
+  — `docs/adr/WORKSPACE-COLUMN-LAYOUT-ADR.md` accepted the same day (the columnar
+  floor: geometry derived from a stored order, a finite taut floor, slot-resolved
+  drops, a fixed bottom nav row, and the death of the ∀ difference-blend lens).
+  **Slice 0 is virtualization and ships FIRST, against the current
+  free-coordinate floor** — it is the fix for the Firefox memory pressure
+  (nothing virtualized: n feeds cost n live hydrated feeds at all times,
+  regardless of visibility), it is deliberately independent, and nothing in it
+  is thrown away by the layout rewrite that follows.
+  - **Visibility set** (`WorkspaceView.tsx`): a vessel mounts its contents iff
+    its rect intersects the viewport ± one viewport width. The band is measured
+    in **store** space via `panOffset = scrollLeft + originX` — a sum that is
+    **invariant** under the gesture-slack origin shift (`originX −d` is cancelled
+    by the compensation layout effect's `scrollLeft +d`). This is a deliberate
+    deviation from the ADR's canvas-space sketch: the compensation is a *layout
+    effect*, so there is one commit carrying the new `originX` against the old
+    `scrollLeft`, and reading the band there would unmount most of the floor on
+    every drag start. Hysteresis is a 200px dead band on pan (`VIRT_QUANT`, well
+    under the one-viewport margin, so nothing on screen is ever parked), driven
+    by a rAF-throttled scroll listener plus a layout effect — the latter declared
+    *after* the origin compensation, and covering the cold start, since the
+    first-paint scroll init assigns `scrollLeft` without dispatching a scroll
+    event (a workspace whose feeds all sit far from store-x 0 would otherwise
+    boot with an empty band).
+  - **Parking** (`Vessel.tsx`, new `contentsMounted` prop): chassis, numeral and
+    bar stay mounted — the vessel remains a drag obstacle, a merge target and an
+    explainable root — while the card tree unmounts and the interior renders a
+    flat wash (no `PullToRefresh` listeners either). The instance surviving is
+    the point: it owns the scroll body's scroll position (recorded continuously
+    while mounted, restored pre-paint) and the intrinsic-height **pin**. The pin
+    matters because `readFloorRects` reads `offsetHeight` for collision and merge
+    hit-testing — a collapsed wash would lie to both. It rides a
+    `ResizeObserver`, *not* a render-path `offsetHeight` read: the vessel
+    re-renders on every drag frame and measuring there would force layout each
+    time. Parked before ever measured (intrinsic vessel that started outside the
+    band) it wears `MIN_H` — bounded, and self-correcting the moment it enters.
+  - `VesselState` (items, `nextCursor`, caught-up watermark) is untouched by
+    design — it lives in the host, not the unmounted tree — and the client holds
+    **no relay connections** (`web/src/lib/ndk.ts` is types-only; content arrives
+    over the gateway REST API), so a park tears down nothing and a remount
+    refetches nothing. CLAUDE.md's stale "Web reads via NDK" line corrected in
+    the same change (an ADR §IX doc obligation).
+  - **Validation:** `tsc --noEmit` clean; root `npm run lint` 0 errors;
+    `scripts/check-hairlines.sh` clean on both files; `next build` compiled;
+    image rebuilt and `/reader` 200 on `localhost:3010`. **Not verified here** —
+    the ADR's own verification bar: Firefox `about:memory` before/after on a
+    many-feed workspace, and a hands-on pass that drag/merge/resize behave
+    identically against washed vessels. Both need a logged-in session with
+    enough feeds to push some off-screen; they are the operator's to run.
+  - Commit `6301a46`. Queue: CONSOLIDATED-TODO §9.14 (Slices 1–5).
+
 - **2026-07-22 (owner dashboard — §3.1 shipped)** — the launch-blocking
   operator surface (`planning-archive/OWNER-DASHBOARD-SPEC.md`, adapted to the
   invariants that postdate the April draft), picked per the queue's attack
