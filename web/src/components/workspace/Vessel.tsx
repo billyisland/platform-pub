@@ -118,6 +118,11 @@ interface VesselProps {
   /** This vessel is the armed merge target: the dragged vessel is riding over
    *  its central region and releasing here will offer to combine them. */
   armed?: boolean;
+  /** A live resize proposal is reflowing the floor: settle to a changed rect
+   *  by direct set instead of a spring, so the columns to the right of the
+   *  handle track it exactly rather than chasing it with a spring restarted
+   *  every frame. */
+  snapSettle?: boolean;
   /**
    * The scroll viewport the floor lives in. Used for edge-proximity auto-pan
    * (§IV.1) — never as a framer `dragConstraints` box, which would box the
@@ -166,6 +171,7 @@ export function Vessel({
   onDragFrame,
   onDragEnd: onDragEndProp,
   armed,
+  snapSettle,
   floorRef,
   onCardDrop,
   onRefresh,
@@ -282,11 +288,13 @@ export function Vessel({
   // would sit wherever the gesture dropped it forever.
   const positionRef = useRef(position);
   positionRef.current = position;
+  const snapSettleRef = useRef(!!snapSettle);
+  snapSettleRef.current = !!snapSettle;
   const settleToPosition = useCallback(() => {
     const { x, y } = positionRef.current;
     const dx = Math.abs(mx.get() - x);
     const dy = Math.abs(my.get() - y);
-    if ((dx > 1 || dy > 1) && !prefersReducedMotion()) {
+    if ((dx > 1 || dy > 1) && !snapSettleRef.current && !prefersReducedMotion()) {
       const spring = {
         type: "spring" as const,
         stiffness: 600,
@@ -549,8 +557,8 @@ export function Vessel({
       dragListener={false}
       dragControls={dragControls}
       // No dragConstraints: framer would box the vessel into the scroll
-      // viewport, which is exactly the limit the infinite floor removes.
-      // clampPos owns the one axis that is still bounded.
+      // viewport, and a drag must be free to ride anywhere — the drop
+      // resolver maps every release point to a legal slot (§IV.2).
       dragMomentum={false}
       dragElastic={0}
       onPointerDown={startDrag}

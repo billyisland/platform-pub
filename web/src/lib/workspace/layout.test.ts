@@ -4,9 +4,12 @@ import {
   deriveGeometry,
   resolveDrop,
   applyDrop,
+  dropIsNoop,
   insertFeed,
   removeFeed,
   resizeSlot,
+  locateSlot,
+  restoreSlot,
   regimentedLayout,
   layoutFromFeeds,
   layoutFeedIds,
@@ -499,6 +502,252 @@ describe("resolveDrop", () => {
       resolveDrop({ columns: [] }, deriveGeometry({ columns: [] }, vp), { x: 5, y: 5 }, lifted),
     ).toEqual({ kind: "new-column", boundaryIndex: 0 });
   });
+
+  it("gates the vertical bands on stack capacity — a full column takes no new slot", () => {
+    // H = 700 − 16 = 684: three min-height slots (616) fit, a fourth (824)
+    // would overflow below the nav row, where the floor cannot scroll.
+    const short: Viewport = { w: 1440, h: 700, navRowH: 0 };
+    const full: WorkspaceLayout = {
+      columns: [
+        makeColumn([
+          { feedId: "s1", w: 400, h: null },
+          { feedId: "s2", w: 400, h: null },
+          { feedId: "s3", w: 400, h: null },
+        ]),
+        makeColumn([{ feedId: "x", w: 400, h: null }]),
+      ],
+    };
+    const g = deriveGeometry(full, short);
+    const top = g.rects.get("s1")!;
+    // Cross-column drop into the top band: must NOT resolve into-column.
+    const drop = resolveDrop(
+      full,
+      g,
+      { x: top.x + top.w / 2, y: top.y + 4 },
+      { feedId: "x", w: 400, h: null },
+    );
+    expect(drop.kind).not.toBe("into-column");
+    // …and applying whatever it resolved to keeps every column within
+    // capacity.
+    if (drop.kind !== "merge") {
+      const next = applyDrop(full, "x", drop);
+      const H = availableHeight(short);
+      for (const col of next.columns) {
+        const n = col.slots.length;
+        expect(n * SLOT_MIN_H + (n - 1) * GRID).toBeLessThanOrEqual(H);
+      }
+    }
+  });
+
+  it("still offers the band insertion when the stack has room", () => {
+    const tall: Viewport = { w: 1440, h: 900, navRowH: 0 }; // H = 884 ≥ 824
+    const stack: WorkspaceLayout = {
+      columns: [
+        makeColumn([
+          { feedId: "s1", w: 400, h: null },
+          { feedId: "s2", w: 400, h: null },
+          { feedId: "s3", w: 400, h: null },
+        ]),
+        makeColumn([{ feedId: "x", w: 400, h: null }]),
+      ],
+    };
+    const g = deriveGeometry(stack, tall);
+    const top = g.rects.get("s1")!;
+    expect(
+      resolveDrop(
+        stack,
+        g,
+        { x: top.x + top.w / 2, y: top.y + 4 },
+        { feedId: "x", w: 400, h: null },
+      ),
+    ).toMatchObject({ kind: "into-column", columnIndex: 0, slotIndex: 0 });
+  });
+
+  it("lets a full column reorder within itself — the count does not change", () => {
+    const short: Viewport = { w: 1440, h: 700, navRowH: 0 };
+    const full: WorkspaceLayout = {
+      columns: [
+        makeColumn([
+          { feedId: "s1", w: 400, h: null },
+          { feedId: "s2", w: 400, h: null },
+          { feedId: "s3", w: 400, h: null },
+        ]),
+      ],
+    };
+    const g = deriveGeometry(full, short);
+    const top = g.rects.get("s1")!;
+    // s3 dropped on s1's top band: a move within its own column, allowed even
+    // though the column is at capacity.
+    expect(
+      resolveDrop(
+        full,
+        g,
+        { x: top.x + top.w / 2, y: top.y + 4 },
+        { feedId: "s3", w: 400, h: null },
+      ),
+    ).toMatchObject({ kind: "into-column", columnIndex: 0, slotIndex: 0 });
+  });
+
+  it("does not arm a merge from the empty band beside a narrower slot", () => {
+    // Column width follows the widest slot (640); the narrow slot leaves a
+    // visually empty band to its right, which must not read as "over it".
+    const mixed: WorkspaceLayout = {
+      columns: [
+        makeColumn([
+          { feedId: "wide", w: 640, h: 300 },
+          { feedId: "narrow", w: SLOT_MIN_W, h: 300 },
+        ]),
+        makeColumn([{ feedId: "x", w: 400, h: null }]),
+      ],
+    };
+    const g = deriveGeometry(mixed, vp);
+    const narrow = g.rects.get("narrow")!;
+    const drop = resolveDrop(
+      mixed,
+      g,
+      // Right of the narrow slot's rect, inside the column's span, level with
+      // the slot's centre.
+      { x: narrow.x + narrow.w + 100, y: narrow.y + narrow.h / 2 },
+      { feedId: "x", w: 400, h: null },
+    );
+    expect(drop.kind).not.toBe("merge");
+    // Dead centre of the narrow slot itself still arms as before.
+    expect(
+      resolveDrop(
+        mixed,
+        g,
+        { x: narrow.x + narrow.w / 2, y: narrow.y + narrow.h / 2 },
+        { feedId: "x", w: 400, h: null },
+      ),
+    ).toEqual({ kind: "merge", targetFeedId: "narrow" });
+  });
+});
+
+// =============================================================================
+// dropIsNoop (§V's no-op guard)
+// =============================================================================
+
+describe("dropIsNoop", () => {
+  const vp: Viewport = { w: 900, h: 900, navRowH: 0 };
+
+  it("is true for a drop back into the held-open slot", () => {
+    const three = layoutFromFeeds(["a", "b", "c"]);
+    const geom = deriveGeometry(three, vp);
+    const r = geom.rects.get("a")!;
+    const drop = resolveDrop(
+      three,
+      geom,
+      { x: r.x + r.w / 2, y: r.y + r.h / 2 },
+      { feedId: "a", w: FACTORY_W, h: null },
+    );
+    expect(dropIsNoop(three, "a", drop)).toBe(true);
+  });
+
+  it("is true for a band insertion that lands identically beside the vacated slot", () => {
+    const stacked: WorkspaceLayout = {
+      columns: [
+        makeColumn([
+          { feedId: "a", w: 400, h: null },
+          { feedId: "b", w: 400, h: null },
+        ]),
+      ],
+    };
+    // "Above b" in the pre-removal layout is exactly where a already sits.
+    expect(
+      dropIsNoop(stacked, "a", {
+        kind: "into-column",
+        columnIndex: 0,
+        slotIndex: 1,
+        h: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("is true for a sole slot re-created as its own column at its own boundary", () => {
+    const two = layoutFromFeeds(["a", "b"]);
+    expect(
+      dropIsNoop(two, "a", { kind: "new-column", boundaryIndex: 0 }),
+    ).toBe(true);
+    // …but not at the FAR boundary, which reorders the columns.
+    expect(
+      dropIsNoop(two, "a", { kind: "new-column", boundaryIndex: 2 }),
+    ).toBe(false);
+  });
+
+  it("is false for a real move, a resize-by-drop, and a merge", () => {
+    const two = layoutFromFeeds(["a", "b"]);
+    expect(
+      dropIsNoop(two, "a", {
+        kind: "into-column",
+        columnIndex: 1,
+        slotIndex: 0,
+        h: null,
+      }),
+    ).toBe(false);
+    // Same position but a different committed height is a change.
+    const stacked: WorkspaceLayout = {
+      columns: [
+        makeColumn([
+          { feedId: "a", w: 400, h: 300 },
+          { feedId: "b", w: 400, h: null },
+        ]),
+      ],
+    };
+    expect(
+      dropIsNoop(stacked, "a", {
+        kind: "into-column",
+        columnIndex: 0,
+        slotIndex: 0,
+        h: 400,
+      }),
+    ).toBe(false);
+    expect(dropIsNoop(two, "a", { kind: "merge", targetFeedId: "b" })).toBe(
+      false,
+    );
+  });
+});
+
+// =============================================================================
+// locateSlot / restoreSlot (the hide-revert pair)
+// =============================================================================
+
+describe("locateSlot / restoreSlot", () => {
+  it("puts a removed slot back at its column and index", () => {
+    const stacked: WorkspaceLayout = {
+      columns: [
+        makeColumn([
+          { feedId: "a", w: 400, h: 300 },
+          { feedId: "b", w: 320, h: null },
+          { feedId: "c", w: 400, h: null },
+        ]),
+      ],
+    };
+    const at = locateSlot(stacked, "b")!;
+    const removed = removeFeed(stacked, "b");
+    expect(restoreSlot(removed, at)).toEqual(stacked);
+  });
+
+  it("re-creates a pruned column at its old position", () => {
+    const three = layoutFromFeeds(["a", "b", "c"]);
+    const at = locateSlot(three, "b")!;
+    const removed = removeFeed(three, "b");
+    expect(removed.columns).toHaveLength(2);
+    const restored = restoreSlot(removed, at);
+    expect(layoutFeedIds(restored)).toEqual(["a", "b", "c"]);
+    expect(restored.columns[1].id).toBe(at.columnId);
+    expect(restored.columns[1].slots[0]).toEqual(at.slot);
+  });
+
+  it("leaves the layout alone when the feed is already placed again", () => {
+    const three = layoutFromFeeds(["a", "b", "c"]);
+    const at = locateSlot(three, "b")!;
+    // The feed came back some other way (unhide) before the revert landed.
+    expect(restoreSlot(three, at)).toBe(three);
+  });
+
+  it("returns null for a feed with no slot", () => {
+    expect(locateSlot(layoutFromFeeds(["a"]), "zzz")).toBeNull();
+  });
 });
 
 // =============================================================================
@@ -811,6 +1060,17 @@ describe("layout properties", () => {
         const label = `trial ${trial} step ${step}`;
         expectLegalLayout(layout, label);
         expectTautGeometry(layout, vp, label);
+        // No gesture may stack a column past what the viewport can hold
+        // (2026-07-22 audit fix): starting from single-slot columns, band
+        // insertions are capacity-gated and gap insertions prove their run,
+        // so every column always fits its slots at minimum height.
+        for (const col of layout.columns) {
+          const n = col.slots.length;
+          expect(
+            n * SLOT_MIN_H + (n - 1) * GRID,
+            `${label}: column over capacity`,
+          ).toBeLessThanOrEqual(availableHeight(vp));
+        }
       }
     }
   });

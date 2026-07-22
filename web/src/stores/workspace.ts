@@ -4,12 +4,14 @@ import {
   insertFeed as insertFeedInto,
   removeFeed as removeFeedFrom,
   resizeSlot as resizeSlotIn,
+  restoreSlot as restoreSlotIn,
   regimentedLayout,
   layoutFeedIds,
   FACTORY_W,
   type Column,
   type Drop,
   type Slot,
+  type SlotLocation,
   type Viewport,
   type WorkspaceLayout,
 } from "../lib/workspace/layout";
@@ -69,6 +71,10 @@ interface WorkspaceState {
   applyDrop: (feedId: string, drop: Drop) => void;
   insertFeed: (feedId: string) => void;
   removeFeed: (feedId: string) => void;
+  /** Faithful revert for an optimistic `removeFeed` whose server call failed:
+   *  the slot returns to the column and index it was captured at
+   *  (`locateSlot`), not to a fresh right-most factory column. */
+  restoreSlot: (removed: SlotLocation) => void;
   resizeSlot: (
     feedId: string,
     size: { w: number; h: number },
@@ -99,8 +105,6 @@ interface WorkspaceState {
     feeds: { id: string; sortRank: number }[],
     vp: Viewport,
   ) => void;
-
-  reset: () => void;
 }
 
 const STORAGE_PREFIX = "workspace:layout:v2:";
@@ -333,6 +337,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     removeFeed: (feedId) => commitLayout(removeFeedFrom(get().layout, feedId)),
 
+    restoreSlot: (removed) => commitLayout(restoreSlotIn(get().layout, removed)),
+
     resizeSlot: (feedId, size, vp) =>
       commitLayout(resizeSlotIn(get().layout, feedId, size, vp)),
 
@@ -401,12 +407,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           }
         }
       }
-    },
-
-    reset: () => {
-      const userId = get().userId;
-      set({ layout: EMPTY_LAYOUT, appearance: {} });
-      if (userId) scheduleWrite(userId, EMPTY_LAYOUT, {});
     },
   };
 });

@@ -23,6 +23,54 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (columnar floor, post-ship audit fixes — WORKSPACE-COLUMN-LAYOUT-ADR
+  §X addendum)** — a same-day code audit of Slices 0–5 found two behavioural
+  bugs and a tail of smaller gaps; all fixed. The full record is the ADR's
+  "Post-ship audit fixes" §X note; headline items:
+  - **Capacity-gated vertical drop bands** (`layout.ts::resolveDrop`): rule 1's
+    top/bottom bands inserted into a column unconditionally while rule 2's gap
+    path proved its run, so repeated band drops could stack a column past the
+    viewport — and the overflow fell below the nav row, where the floor
+    (`overflowY: hidden`) has no vertical scroll: a feed could end up fully
+    off-screen with its bar and drag surface unreachable. Cross-column band
+    insertions now require `(n+1)·SLOT_MIN_H + n·GRID ≤ H`; within-column moves
+    always pass (the count doesn't change). The gesture-sequence property now
+    asserts no gesture produces an over-capacity column; viewport-shrink
+    degradation (which may still overflow) is unchanged by design.
+  - **`dropIsNoop` guards the drop commit** (`layout.ts` + `WorkspaceView.tsx::
+    handleVesselDragEnd`): a release back into the held-open slot (or a band
+    position landing identically) is structurally unchanged, but the host
+    treated it as a committed drop — which under regimented mode **materialised
+    the parade over the stored custom layout**, silently destroying the user's
+    arrangement on a "never mind" release. A no-op now commits nothing: no
+    materialise, no write, mode retained.
+  - **Slot-rect hit testing** in rule 1 (was column-span): the empty band
+    beside a slot narrower than its column no longer arms a merge from
+    visually empty ground; it falls through to rule 2 / nearest-boundary.
+  - **Faithful hide revert** (`locateSlot`/`restoreSlot` + store action): a
+    failed hide PATCH used to revert via `insertFeed` — right-most, factory
+    size — so a transient network failure rearranged the floor. The slot's
+    column id + index are captured before the optimistic removal and restored
+    on failure (re-creating a pruned column at its old position).
+  - Housekeeping: `SLOT_MIN_W` 220 → **224** (on the 8px lattice; one minimum
+    width, matching `snapAtLeast`'s resize floor, instead of two); neighbours
+    track a live resize by direct set rather than a spring restarted every
+    frame (`Vessel snapSettle`); the `\` guard covers the open ∀ menu
+    (`[role="menu"]`); the store's uncalled `reset()` deleted;
+    `handleMergeConfirm` no longer starts a refetch inside a `setVessels`
+    updater (the impure-updater class `adoptFeed`'s comment documents); stale
+    `clampPos` / "20px lattice" comments corrected.
+  - **Validation:** 13 new tests (capacity fixtures + within-column allowance,
+    narrow-slot band, `dropIsNoop` corpus, `locateSlot`/`restoreSlot`
+    round-trips, store revert) plus a capacity assertion folded into the
+    300 × 20-step gesture-sequence property; each fix mutation-tested (gate
+    removed → 2 red; span hit-test restored → 1 red; restore degraded to
+    append → 3 red; `dropIsNoop` forced false → 3 red). 76/76 in the two
+    suites; root lint 0 errors; `next build` clean; hairline tripwire clean on
+    touched files; image rebuilt and verified on `localhost:3010`.
+  - Docs: ADR §III.3 + §X amended; CLAUDE.md drops + regimented bullets carry
+    the two new invariants (capacity gate / no-op-is-not-a-mutation).
+
 - **2026-07-22 (columnar floor, the regimented hotkey — WORKSPACE-COLUMN-LAYOUT-ADR
   Slice 5, the last)** — plain `\` toggles the parade ground: every visible feed
   on screen at once, one column each, numeral order, factory width scaled down

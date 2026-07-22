@@ -20,6 +20,8 @@ import {
   clampSlotSize,
   withSlotSize,
   slotFor,
+  dropIsNoop,
+  locateSlot,
   type Drop,
   type Geometry,
   type WorkspaceLayout,
@@ -325,6 +327,7 @@ export function WorkspaceView() {
   const applyDropToLayout = useWorkspace((s) => s.applyDrop);
   const insertFeedLayout = useWorkspace((s) => s.insertFeed);
   const removeFeedLayout = useWorkspace((s) => s.removeFeed);
+  const restoreSlotLayout = useWorkspace((s) => s.restoreSlot);
   const resizeSlotLayout = useWorkspace((s) => s.resizeSlot);
   const setVesselBrightness = useWorkspace((s) => s.setVesselBrightness);
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity);
@@ -488,9 +491,12 @@ export function WorkspaceView() {
       if (e.key !== "\\") return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       const t = e.target as HTMLElement | null;
+      // [role="menu"] covers the open ∀ dropdown (focus sits on a menu row
+      // while it is up — it is neither a Glasshouse nor one of the local
+      // surfaces below, so nothing else guards it).
       if (
         t?.closest(
-          'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
+          'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="menu"]',
         )
       )
         return;
@@ -682,6 +688,15 @@ export function WorkspaceView() {
       return;
     }
 
+    // A "never mind" release — back into the held-open slot, or a band drop
+    // that lands identically — commits NOTHING. This matters under regimented
+    // mode: materialising on a no-op would silently overwrite the user's
+    // custom layout with the parade, the exact loss §V's no-snapshot design
+    // exists to rule out. (Checked against the same derivation the drop's
+    // indices address — the parade while regimented, the stored layout
+    // otherwise.)
+    if (dropIsNoop(geomLayoutRef.current, feedId, resolved)) return;
+
     materializeIfRegimented();
     applyDropToLayout(feedId, resolved);
   }
@@ -695,12 +710,13 @@ export function WorkspaceView() {
     // failed merge read as a silent close. Neither outcome needs placement
     // work: the source never left the layout (§IV.4).
     await workspaceFeedsApi.merge(target.id, source.id);
-    setVessels((prev) => {
-      const next = prev.filter((v) => v.feed.id !== source.id);
-      const targetVessel = next.find((v) => v.feed.id === target.id);
-      if (targetVessel) void loadVesselItems(targetVessel.feed);
-      return next;
-    });
+    setVessels((prev) => prev.filter((v) => v.feed.id !== source.id));
+    // Refetch the enlarged target OUTSIDE the updater — an updater must stay
+    // pure (see adoptFeed's note on deferred re-evaluation).
+    const targetVessel = vesselsRef.current.find(
+      (v) => v.feed.id === target.id,
+    );
+    if (targetVessel) void loadVesselItems(targetVessel.feed);
     removeFeedLayout(source.id);
     clearExpandedFor(source.id);
     setPendingMerge(null);
@@ -847,6 +863,13 @@ export function WorkspaceView() {
         v.feed.id === feedId ? { ...v, feed: { ...v.feed, hidden } } : v,
       ),
     );
+    // Capture the slot's home before the optimistic removal so a failed PATCH
+    // can put it BACK THERE — the plain insertFeed revert re-entered at a
+    // fresh right-most factory column, so a transient network failure
+    // rearranged the floor (2026-07-22 audit fix).
+    const removedFrom = hidden
+      ? locateSlot(useWorkspace.getState().layout, feedId)
+      : null;
     if (hidden) removeFeedLayout(feedId);
     else insertFeedLayout(feedId);
     try {
@@ -863,8 +886,12 @@ export function WorkspaceView() {
             : v,
         ),
       );
-      if (hidden) insertFeedLayout(feedId);
-      else removeFeedLayout(feedId);
+      if (hidden) {
+        if (removedFrom) restoreSlotLayout(removedFrom);
+        else insertFeedLayout(feedId);
+      } else {
+        removeFeedLayout(feedId);
+      }
     }
   }
 
@@ -1603,6 +1630,10 @@ export function WorkspaceView() {
                 // The derived rect, verbatim — no conversion at this seam.
                 position={{ x: rect.x, y: rect.y }}
                 size={{ w: rect.w, h: rect.h }}
+                // While a live resize proposal is in flight, neighbours track
+                // the handle exactly instead of chasing it with a spring
+                // restarted every frame.
+                snapSettle={!!resizePreview}
                 brightness={look.brightness}
                 orientation={look.orientation}
                 onHide={() => void handleSetFeedHidden(v.feed.id, true)}

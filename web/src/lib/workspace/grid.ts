@@ -22,7 +22,11 @@ export function snap(v: number): number {
 // one definition, so no module mirrors another's constant. There is no
 // intrinsic default width any more: a slot's width is stored, and a new one
 // takes FACTORY_W (layout.ts).
-export const VESSEL_MIN_W = 220;
+// 224, not the historical 220: the minimum must sit ON the 8px lattice, or the
+// regimented parade's minimum-width columns (and the Math.max(SLOT_MIN_W, …)
+// rect floor) land off-grid while the resize floor (snapAtLeast) rounds up to
+// 224 — two different minimums in practice. 2026-07-22 audit fix.
+export const VESSEL_MIN_W = 224;
 export const VESSEL_MIN_H = 200;
 export const VESSEL_MAX_W = 2000;
 export const VESSEL_MAX_H = 2000;

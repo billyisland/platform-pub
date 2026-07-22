@@ -56,7 +56,8 @@ import { isDragSurface } from "../../lib/dragSurface";
 import { MOBILE_BAR_H } from "./MobileWorkspace";
 import { NAV_ROW_H } from "./NavRow";
 
-// Gutter between the pane and the viewport edge, on the 20px lattice.
+// Gutter between the pane and the viewport edge. (Not a lattice value — the
+// shared drag/resize lattice is GRID = 8, grid.ts.)
 const MARGIN = 20;
 // Floors for a resizable pane (the writers). On the 20px lattice.
 const MIN_W = 320;

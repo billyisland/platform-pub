@@ -3,6 +3,7 @@ import { useWorkspace } from "./workspace";
 import {
   deriveGeometry,
   layoutFeedIds,
+  locateSlot,
   FACTORY_W,
   type Viewport,
 } from "../lib/workspace/layout";
@@ -272,6 +273,19 @@ describe("mutations delegate to the layout module", () => {
     const col = useWorkspace.getState().layout.columns[0];
     const total = col.slots.reduce((n, s) => n + (s.h ?? 0), 0);
     expect(total + 8).toBeLessThanOrEqual(VP.h - 16);
+  });
+
+  it("restoreSlot reverts a failed hide to the captured column and index", () => {
+    useWorkspace.getState().hydrate("u");
+    useWorkspace.getState().reconcileFeeds(["a", "b", "c"], ["a", "b", "c"]);
+    const before = useWorkspace.getState().layout;
+    const at = locateSlot(before, "b")!;
+    useWorkspace.getState().removeFeed("b");
+    expect(layoutFeedIds(useWorkspace.getState().layout)).toEqual(["a", "c"]);
+    useWorkspace.getState().restoreSlot(at);
+    expect(useWorkspace.getState().layout).toEqual(before);
+    flushWrites();
+    expect(layoutFeedIds(persisted("u"))).toEqual(["a", "b", "c"]);
   });
 
   it("regimented is a view: materialize stamps it and leaves the mode", () => {

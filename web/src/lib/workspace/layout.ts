@@ -357,18 +357,38 @@ export function resolveDrop(
       } => !!e.rect && e.slot.feedId !== lifted.feedId,
     );
 
+  // Hit-test against the SLOT'S OWN RECT, not the column span: a slot narrower
+  // than its column left-aligns, and the visually empty band beside it must not
+  // read as "over that feed" — a merge armed on empty ground is a false
+  // affordance (2026-07-22 audit fix). A pointer in that band falls through to
+  // rule 2 (a real y-gap) or the nearest-boundary fallback below.
   const hit = occupied.find(
-    (e) => py >= e.rect.y && py <= e.rect.y + e.rect.h,
+    (e) =>
+      pointer.x >= e.rect.x &&
+      pointer.x <= e.rect.x + e.rect.w &&
+      py >= e.rect.y &&
+      py <= e.rect.y + e.rect.h,
   );
 
   if (hit) {
     // §IV.2 rule 1 — over a feed, split by zone. Bands never eat more than a
     // third of the rect, so a central merge region always exists however small
     // the vessel is.
-    const bandX = Math.min(EDGE_BAND, Math.floor(span.w / 3));
+    //
+    // The vertical bands are CAPACITY-GATED (2026-07-22 audit fix): rule 2's
+    // gap insertion checks the run it lands in, but a band insertion used to
+    // check nothing — stacking a slot into a column that cannot hold another
+    // SLOT_MIN_H overflows the column below the nav row, where the floor
+    // (overflowY: hidden) has no vertical scroll to reach it. A move WITHIN
+    // the column never changes the slot count, so it always passes.
+    const H = geom.columnH;
+    const stackFits =
+      col.slots.some((s) => s.feedId === lifted.feedId) ||
+      (occupied.length + 1) * SLOT_MIN_H + occupied.length * GRID <= H;
+    const bandX = Math.min(EDGE_BAND, Math.floor(hit.rect.w / 3));
     const bandY = Math.min(EDGE_BAND, Math.floor(hit.rect.h / 3));
-    const dLeft = pointer.x - span.x;
-    const dRight = span.x + span.w - pointer.x;
+    const dLeft = pointer.x - hit.rect.x;
+    const dRight = hit.rect.x + hit.rect.w - pointer.x;
     const dTop = py - hit.rect.y;
     const dBottom = hit.rect.y + hit.rect.h - py;
 
@@ -383,7 +403,7 @@ export function resolveDrop(
         d: dRight,
         drop: { kind: "new-column", boundaryIndex: ci + 1 },
       });
-    if (dTop < bandY)
+    if (stackFits && dTop < bandY)
       candidates.push({
         d: dTop,
         drop: {
@@ -393,7 +413,7 @@ export function resolveDrop(
           h: lifted.h,
         },
       });
-    if (dBottom < bandY)
+    if (stackFits && dBottom < bandY)
       candidates.push({
         d: dBottom,
         drop: {
@@ -450,8 +470,9 @@ export function resolveDrop(
     }
   }
 
-  // A gutter too tight to take a slot: fall back to a new column at the
-  // nearer boundary of this column. Placement always succeeds.
+  // A gutter too tight to take a slot, or the empty band beside a slot
+  // narrower than its column: fall back to a new column at the nearer boundary
+  // of this column. Placement always succeeds.
   const boundaryIndex =
     pointer.x - span.x < span.x + span.w - pointer.x ? ci : ci + 1;
   return { kind: "new-column", boundaryIndex };
@@ -546,6 +567,41 @@ export function applyDrop(
   return { columns: columns.filter((c) => c.slots.length > 0) };
 }
 
+/**
+ * Whether committing `drop` would leave the layout structurally unchanged —
+ * same columns, same slot order, same sizes (column IDENTITY is ignored: a
+ * sole-slot column re-created at its own boundary is still a no-op). The
+ * canonical case is a drop back into the lifted feed's own held-open slot —
+ * the natural "never mind" release — but a band insertion immediately
+ * adjacent to the vacated slot lands identically and must read the same way.
+ *
+ * The host checks this BEFORE committing: under regimented mode a committed
+ * drop materialises the parade over the stored custom layout (§V), so a
+ * no-op release must commit NOTHING — materialising on a changed-my-mind drop
+ * would silently destroy the user's arrangement (2026-07-22 audit fix). In
+ * custom mode it merely spares a pointless persist.
+ */
+export function dropIsNoop(
+  layout: WorkspaceLayout,
+  feedId: string,
+  drop: Drop,
+): boolean {
+  if (drop.kind === "merge") return false;
+  const next = applyDrop(layout, feedId, drop);
+  if (next === layout) return true;
+  if (next.columns.length !== layout.columns.length) return false;
+  return next.columns.every((c, i) => {
+    const o = layout.columns[i];
+    return (
+      c.slots.length === o.slots.length &&
+      c.slots.every((s, j) => {
+        const t = o.slots[j];
+        return s.feedId === t.feedId && s.w === t.w && s.h === t.h;
+      })
+    );
+  });
+}
+
 /** A new feed appends a new right-most column at factory size (§III.5).
  *  Idempotent — the bootstrap reconcile calls it over the whole feed list. */
 export function insertFeed(
@@ -569,6 +625,61 @@ export function removeFeed(
 ): WorkspaceLayout {
   const { layout: next, removed } = extract(layout, feedId);
   return removed ? next : layout;
+}
+
+/** Where a feed's slot sits, captured BEFORE a removal so a failed server
+ *  call can put it back (`restoreSlot`). Column identity rides the id, so the
+ *  restore survives unrelated columns moving in between. */
+export interface SlotLocation {
+  slot: Slot;
+  columnId: string;
+  columnIndex: number;
+  slotIndex: number;
+}
+
+export function locateSlot(
+  layout: WorkspaceLayout,
+  feedId: string,
+): SlotLocation | null {
+  const at = findSlot(layout, feedId);
+  if (!at) return null;
+  return {
+    slot: at.slot,
+    columnId: layout.columns[at.columnIndex].id,
+    columnIndex: at.columnIndex,
+    slotIndex: at.slotIndex,
+  };
+}
+
+/**
+ * Put a removed slot back where it came from — the faithful revert for an
+ * optimistic removal whose server call failed (the hide PATCH). Without this,
+ * the revert was `insertFeed`, which re-enters at the right end at factory
+ * size: a transient network failure REARRANGED the floor (2026-07-22 audit
+ * fix). If the column still exists (by id) the slot splices back at its old
+ * index; if the removal emptied and pruned it, the column is re-created at its
+ * old position. A feed already placed again is left alone.
+ */
+export function restoreSlot(
+  layout: WorkspaceLayout,
+  removed: SlotLocation,
+): WorkspaceLayout {
+  if (findSlot(layout, removed.slot.feedId)) return layout;
+  const ci = layout.columns.findIndex((c) => c.id === removed.columnId);
+  if (ci !== -1) {
+    const col = layout.columns[ci];
+    const slots = [...col.slots];
+    slots.splice(Math.min(removed.slotIndex, slots.length), 0, removed.slot);
+    const columns = [...layout.columns];
+    columns[ci] = { ...col, slots };
+    return { columns };
+  }
+  const columns = [...layout.columns];
+  columns.splice(Math.min(removed.columnIndex, columns.length), 0, {
+    id: removed.columnId,
+    slots: [removed.slot],
+  });
+  return { columns };
 }
 
 /** The slot a feed occupies, or null. Exported so the floor can read the

@@ -131,7 +131,9 @@ One pure function, `deriveGeometry(layout, viewport): Map<feedId, Rect> & { floo
 
 `GRID = 8` (replacing 10, and equal to `WALL`). `SLOT_MIN_H` — the height at which a
 feed still renders as something useful: byline row + one card ≈ the current
-`VESSEL_MIN_H = 200`, to be tuned by eye. `SLOT_MIN_W = VESSEL_MIN_W = 220`.
+`VESSEL_MIN_H = 200`, to be tuned by eye. `SLOT_MIN_W = VESSEL_MIN_W = 224`
+(224, not the drafted 220, so the minimum sits ON the 8px lattice — 2026-07-22
+audit fix; see §X).
 `FACTORY_W` / `FACTORY_H` — the first-run Billy Island clone's dimensions: wide (on
 the order of 640px, tune by eye) and full available height. These are also the
 regimented-layout dimensions (§V).
@@ -445,7 +447,7 @@ only.
   silently re-homed a lone feed into its right-hand neighbour.
 - **The band clamp is defensive, not reachable.** Bands are capped at a third
   of the rect so a central merge region always exists; at the real envelope
-  (`SLOT_MIN_W = 220 > 2·EDGE_BAND = 96`) the cap never binds. Kept anyway —
+  (`SLOT_MIN_W = 224 > 2·EDGE_BAND = 96`) the cap never binds. Kept anyway —
   it costs nothing and the envelope is a constant someone may retune.
 
 `collision.test.ts` fixtures were re-based off the 10px lattice in the same
@@ -768,6 +770,50 @@ The guard list is §V's plus the lightbox, the editor overlay and a mid-drag
 check. The seven local non-Glasshouse surfaces ride a ref (`localSurfaceOpenRef`)
 rather than the effect's dep list, so opening any of them does not re-attach the
 listener.
+
+### Post-ship audit fixes (2026-07-22, same day)
+
+A code audit of Slices 0–5 found two behavioural bugs and three smaller gaps,
+all fixed the same day (FIX-PROGRAMME 2026-07-22):
+
+- **The vertical drop bands are capacity-gated.** §IV.2 rule 1's top/bottom
+  bands used to insert into a column unconditionally, while rule 2's gap path
+  proved its run — so repeated band drops could stack a column past what the
+  viewport holds, and the overflow fell below the nav row where the floor
+  (`overflowY: hidden`) has no vertical scroll to reach it: a feed could be
+  pushed fully off-screen with its bar and drag surface unreachable.
+  `resolveDrop` now offers an into-column band only when
+  `(n+1)·SLOT_MIN_H + n·GRID ≤ H` for a cross-column drop (a move *within* the
+  column never changes the count and always passes); a gated-out band falls
+  through to the surviving candidates or merge. The gesture-sequence property
+  test now asserts no gesture ever produces an over-capacity column. (A column
+  may still *degrade* into overflow when the viewport shrinks — that is
+  derivation's documented job, and gestures on it stay legal.)
+- **A no-op drop commits nothing — the regimented mode's custom layout can no
+  longer be destroyed by a "never mind" release.** Dropping a vessel back into
+  its own held-open slot (or a band position that lands identically) resolves
+  structurally unchanged; the host used to treat it as a committed drop, which
+  under §V **materialised the parade over the stored custom layout** — the
+  exact loss the no-snapshot design promises can't happen. `dropIsNoop`
+  (layout.ts, column-identity-blind structural compare) now guards the commit
+  in `handleVesselDragEnd`: a no-op release neither materialises nor writes.
+- **Rule 1 hit-tests the slot's own rect, not the column span.** A slot
+  narrower than its column left-aligns; the empty band beside it used to
+  count as "over the feed" and could arm a merge from visually empty ground.
+  The pointer there now falls through to rule 2 / the nearest-boundary
+  fallback. Band distances measure from the slot rect for the same reason.
+- **A failed hide PATCH restores the slot where it was.** The optimistic
+  removal's revert was `insertFeed` — right-most, factory size — so a
+  transient network failure rearranged the floor. `locateSlot` captures the
+  slot's column id + index before removal and `restoreSlot` puts it back
+  (re-creating the pruned column at its old position if need be).
+- **`SLOT_MIN_W` is 224, not 220** — on the 8px lattice, and equal to
+  `snapAtLeast`'s effective resize floor, so there is one minimum width, not
+  two. Plus housekeeping: neighbours track a live resize by direct set instead
+  of a per-frame restarted spring (`snapSettle`), the `\` guard also covers
+  the open ∀ menu (`[role="menu"]` — it is neither a Glasshouse nor a local
+  surface), the store's dead `reset()` is gone, and `handleMergeConfirm` no
+  longer kicks a refetch off inside a `setVessels` updater.
 
 ---
 
