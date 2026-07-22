@@ -23,6 +23,19 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (diagnosis-verification sweep — §0k)** — seven-agent verification
+  of the §0j bug catalog: each §0h/§0i fix diagnosis re-derived from pre-fix
+  source and checked at HEAD. 8 of 9 CONFIRMED; the `8423cd8` ctor-throw
+  consequence PARTIALLY CORRECT (real defect + right fix, but k-of-n could not
+  hang and the likelier pre-fix observable was a gateway crash via unhandled
+  rejection — correction recorded in §0k). Output is four same-class follow-ons
+  queued per §0j discipline, not fixed: account deletion leaving feed cards up
+  to 24h (fourth M6 sibling, → §0i.4 cluster); author-timeline hydration's
+  silent `!res.ok` return + never-cleared guard (the pre-`485493c` pattern);
+  five popovers still double-closing on Escape; two minors (deleted-account
+  "Account suspended" mislabel, unclamped cursor epoch → `to_timestamp` 500).
+  No code changed. Details: **CONSOLIDATED-TODO §0k**.
+
 - **2026-07-22 (process retrospective — the Jul 21 self-audit loop)** — a
   process review, not a fix batch, prompted by the owner's "going off the rails"
   read. Findings: the code is healthy (backends typecheck clean; the §0h/§0i
