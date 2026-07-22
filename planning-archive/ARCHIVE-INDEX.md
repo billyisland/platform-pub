@@ -66,7 +66,7 @@ recover from git history; superseded with no residual value).
 
 | Doc | Notes |
 | --- | --- |
-| `OWNER-DASHBOARD-SPEC.md` | admin ops dashboard; no implementation. Revive as a fresh ADR if built |
+| `OWNER-DASHBOARD-SPEC.md` | admin ops dashboard — **BUILT 2026-07-22** (adapted: ledger views for money, config-defaults.sql not a migration, sans headings, no hairlines; FIX-PROGRAMME 2026-07-22). Spec stays archived; code + FIX-PROGRAMME are the record |
 | `platform-bucket-system-design.md` | generalised entity-partition system; prior art for future DM/feed policy |
 | `platform-pub-currency-strategy.md` | multi-currency strategy; Option 2 for launch, Option 3 post-launch — decide before building |
 

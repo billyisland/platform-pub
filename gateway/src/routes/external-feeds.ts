@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
-import { requireAdmin } from "./moderation.js";
+import { requireAdmin } from "../middleware/admin.js";
 
 // =============================================================================
 // External feeds — admin diagnostics only.

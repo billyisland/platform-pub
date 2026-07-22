@@ -203,3 +203,19 @@ INSERT INTO platform_config (key, value, description) VALUES
   ('external_sources_gc_grace_days',           '7',    'Grace period before an unsubscribed external source is culled (external-sources-gc.ts)'),
   ('external_sources_gc_cull_days',            '90',   'Age at which an unsubscribed external source is culled (external-sources-gc.ts)')
 ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Owner dashboard — UK tax / regulatory awareness thresholds (2026-07-22).
+-- Read by GET /admin/dashboard/regulatory (gateway/src/routes/admin-dashboard.ts).
+-- Values are the thresholds as of April 2026; they are dials (not code
+-- constants) precisely so an accountant-verified correction is an UPDATE, not
+-- a deploy. The dashboard is an awareness tool, not a tax calculator.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('tax_trading_allowance_pence',   '100000',   'UK trading income allowance (£1,000/yr). Platform fee revenue below this needs no reporting; above it, a self-assessment return is required.'),
+  ('tax_vat_threshold_pence',       '9000000',  'UK VAT registration threshold (£90,000 rolling 12-month revenue). Compulsory registration above this.'),
+  ('tax_vat_warning_pct',           '80',       'Percentage of the VAT threshold at which the dashboard shows an approaching warning.'),
+  ('tax_corp_small_profits_pence',  '5000000',  'Corporation tax small profits threshold (£50,000 PROFIT — the dashboard compares revenue as a conservative proxy). 19% rate below.'),
+  ('tax_corp_main_rate_pence',      '25000000', 'Corporation tax main rate threshold (£250,000 PROFIT). 25% above; marginal relief between the two thresholds.'),
+  ('regulatory_holding_warning_days','14',      'Days of custodial holding (platform_settled reads not yet paid out) before the dashboard warns about PSR/EMR exposure.')
+ON CONFLICT (key) DO NOTHING;

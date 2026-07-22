@@ -13,7 +13,7 @@ export default function AdminPage() {
     if (!user || !user.isAdmin) {
       router.replace('/reader')
     } else {
-      router.replace('/admin/reports')
+      router.replace('/admin/overview')
     }
   }, [user, loading, router])
 

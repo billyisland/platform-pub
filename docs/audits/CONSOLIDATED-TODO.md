@@ -232,7 +232,7 @@ Waves 1–3 of the 2026-07-05 logic-economy audit all shipped (migrations 139–
 
 ## 3. Launch-blocking product gaps
 
-1. **Owner dashboard** — entirely unbuilt (`web/src/app/admin/page.tsx` redirects straight to `/admin/reports`, the only admin page; no gateway operator route). Operator money-pipeline visibility (revenue, payouts, subscribers, tab balances, config editor, regulatory panel) before taking real money. Cheap to back with the shipped ledger `SUM()` views. → `OWNER-DASHBOARD-SPEC.md`.
+1. ~~**Owner dashboard**~~ — **SHIPPED 2026-07-22** (all six panels: overview money pipeline off the ledger views, users + KYC-stuck list, content + system health, config editor with the platform_config guardrails, regulatory thresholds as config dials, trigger proxies; `gateway/src/routes/admin-dashboard.ts` + `web/src/app/admin/*`; FIX-PROGRAMME 2026-07-22 entry has the full validation record). **Residue**: (a) account search + suspend/unsuspend affordance on the Users tab (today suspension is only reachable via a report); (b) open-report badge on the Reports tab; (c) browser-tier look on next dev browse (§11); (d) prod deploy — standard shape, migrate seeds the 6 regulatory dials, no flag.
 2. **Landing page** — `web/src/app/page.tsx` is 55 lines (verified): one hero, no tab-model explainer, screenshots, social proof, or example articles. → frontend audit #3.
 3. **Writer onboarding flow** — no post-signup wizard (profile → first article → pricing). Related: the first-login ceremony is commented out behind `// TODO: re-enable / refine entrance animation` (`WorkspaceView.tsx:885-893`). → frontend audit #6.
 4. **Publication homepage templates** — wireframe-quality; the "publishing house" pitch needs a magazine layout that looks like one. → frontend audit #5.
@@ -381,7 +381,7 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 0d. ~~Finish the 0b sweep: M13 + M15~~ — **done 2026-07-17** (§11). Both driven before/after. **M13 was still live** (the fix's decoder truncated the fractional epoch back to whole seconds — 3 of 5 same-second rows unreachable on `/tags/:name/posts`; re-fixed, +2 untouched cursors) and **M15's three claims reproduced** (23503 wedge, guards, privacy inversion). Three mutation-verified tests; two SQL constants extracted to stop test/prod drift. **The 0b sweep is now complete — the next unblocked item is the Stripe session (1), which needs real keys.**
 1. **F4 live check + pub-split re-pay + card re-auth prompt** (§1.1/§1.2/§1.4 — one Stripe-correctness session with real keys; closes the last reader-facing money loop). **Bundle the §11 Stripe verifies into this same session** — they're blocked on the same thing (dev's key is the placeholder `sk_test_...`), so one key unblocks both.
 2. ~~Publication-subscription distribution~~ — **done 2026-07-10** (§1.3; runtime verify in §11).
-3. **Owner dashboard** (§3.1 — before real money; the ledger views make it cheap now).
+3. ~~**Owner dashboard**~~ — **done 2026-07-22** (§3.1; small residue queued there).
 4. **Small-money batch** (§1.5–§1.6 calendar + provisional-reads; §1.9 reconcile-ledger run; §1.10 grant-mode decision).
 5. ~~**Cleanup cluster** (§7) as a palate-cleanser batch~~ — **done 2026-07-20** (14 of 18 items in one pass; 2 dispositioned without code, 2 narrowed to design calls — see §7). **Slice-8 dedup design session** (§6) still outstanding, separately.
 6. **Landing page + onboarding + subscriptions Phase 2** (the launch-cohort conversion set).

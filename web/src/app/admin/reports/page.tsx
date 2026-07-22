@@ -1,28 +1,18 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { useAuth } from '../../../stores/auth'
-import { useRouter } from 'next/navigation'
 import { admin as adminApi, type Report } from '../../../lib/api'
 import { ReportCard } from '../../../components/admin/ReportCard'
-import { PageShell } from '../../../components/ui/PageShell'
+import { AdminShell } from '../../../components/admin/AdminShell'
 
 type ReportFilter = 'pending' | 'resolved' | 'all'
 
 export default function AdminReportsPage() {
-  const { user, loading } = useAuth()
-  const router = useRouter()
+  const { user } = useAuth()
   const [reports, setReports] = useState<Report[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [filter, setFilter] = useState<ReportFilter>('pending')
-
-  useEffect(() => {
-    if (loading) return
-    if (!user || !user.isAdmin) {
-      router.replace('/reader')
-    }
-  }, [user, loading, router])
 
   async function fetchReports() {
     setDataLoading(true)
@@ -36,26 +26,8 @@ export default function AdminReportsPage() {
 
   useEffect(() => { if (user?.isAdmin) void fetchReports() }, [user, filter])
 
-  if (loading || !user?.isAdmin) {
-    return (
-      <PageShell width="feed">
-        <div className="h-32 animate-pulse bg-white" />
-      </PageShell>
-    )
-  }
-
   return (
-    <PageShell
-      width="feed"
-      title="Reports"
-      action={
-        // The admin surface is chromeless (no black topbar), so it carries its
-        // own way back to the workspace.
-        <Link href="/reader" className="btn-text-muted">
-          ← Workspace
-        </Link>
-      }
-    >
+    <AdminShell title="Site owner" width="feed">
       {/* Filter tabs */}
       <div className="flex gap-2 mb-8">
         {(['pending', 'resolved', 'all'] as ReportFilter[]).map(f => (
@@ -82,6 +54,6 @@ export default function AdminReportsPage() {
           ))}
         </div>
       )}
-    </PageShell>
+    </AdminShell>
   )
 }

@@ -23,6 +23,66 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (owner dashboard — §3.1 shipped)** — the launch-blocking
+  operator surface (`planning-archive/OWNER-DASHBOARD-SPEC.md`, adapted to the
+  invariants that postdate the April draft), picked per the queue's attack
+  order (the Stripe session ahead of it is key-blocked) and §0j discipline #4
+  (product-surface work over another audit pass).
+  - **Backend** (`gateway/src/routes/admin-dashboard.ts`, registered at
+    `/api/v1`): `GET /admin/dashboard/{overview,users,content,config,regulatory}`
+    + `PATCH …/config` + the two trigger proxies
+    (`POST …/trigger-{settlements,payouts}` → payment-service
+    `settlement-check/monthly` / `payout-cycle` via the gate-pass
+    `x-internal-token` idiom — NOT `proxyToService`, which sends the wrong
+    header). All `{preHandler: requireAdmin}`; `requireAdmin`/`getAdminIds`
+    extracted to `gateway/src/middleware/admin.ts` (spec §10.1;
+    moderation.ts + external-feeds.ts re-pointed). Spec deviations, deliberate:
+    writer-ness derived from published articles (`is_writer` dropped in
+    migration 145); outstanding writer money = `ledger_writer_earned` −
+    `ledger_writer_earnings` per account (the shipped ledger views, not the
+    spec's hand-rolled fee arithmetic); revenue = `tab_settlements` completed
+    `platform_fee_pence`; overview also surfaces `payouts_halted` (reason +
+    since) and charged-back reads; content health = feed-scorer staleness,
+    `jetstream_healthy`, and relay_outbox backlog (no TCP probe).
+  - **Config editor rules**: PATCH updates existing keys only — unknown keys
+    are refused by name (new dials go via config-defaults.sql, the
+    platform_config invariant), `payouts_halted`/`jetstream_healthy` are
+    runtime state and refused, numeric keys must stay numeric, `*_bps` clamps
+    0..10000, `*_pct` 0..100; every change logged with adminId + old/new.
+  - **Regulatory dials** appended to `shared/src/db/config-defaults.sql`
+    (6 keys: `tax_trading_allowance_pence`, `tax_vat_threshold_pence`,
+    `tax_vat_warning_pct`, `tax_corp_small_profits_pence`,
+    `tax_corp_main_rate_pence`, `regulatory_holding_warning_days`) — **no
+    migration** (no DDL; a migration INSERT is the banned pattern). In-code
+    fallbacks exported as `REGULATORY_DIAL_DEFAULTS` and tripwired against the
+    SQL file by `gateway/tests/admin-dashboard.test.ts` (the §0h.7 parity
+    pattern; + 4 `ukFinancialYear` cases for the 6-April boundary).
+  - **Web**: shared `AdminShell` (auth guard + tab nav Overview · Reports ·
+    Users · Content · Config · Regulatory + `← Workspace`) and `Stat`
+    primitives (`bg-glasshouse-well` cards, `.label-ui text-grey-600` labels,
+    `tabular-nums`, crimson only on warning states); five new pages under
+    `web/src/app/admin/`; reports page folded into the shell; `/admin` now
+    redirects to `/admin/overview`; `formatPence` added to `lib/format.ts`
+    (locale grouping); typed client `web/src/lib/api/admin-dashboard.ts`.
+    Sans headings throughout (the spec's Literata call predates the
+    no-serif-for-admin rule); no hairlines (2px table rules, 8px ladder bars).
+  - **Validation**: gateway tsc clean; gateway suite 381 passed + 5 new;
+    schema drift guard all green (Check 4b now carries 66 dials incl. the 6
+    new); web `next build` clean (6 admin routes emitted); hairline tripwire
+    clean; root lint 0 errors. **Driven end-to-end on the rebuilt dev stack**:
+    migrate seeded exactly the 6 new dials; all five GETs return real seeded
+    data; 401 anon / 403 non-admin on read AND trigger; PATCH negative
+    controls (unknown key, state key, non-numeric, bps range) all 400 with the
+    right envelope; valid PATCH round-trips and was reverted; both trigger
+    proxies round-trip to payment-service ({processed:0} — dev's awaiting
+    writers are KYC-incomplete; {settlementTriggered:0} — no tabs past the
+    fallback window); moderation `GET /admin/reports` still 200 post-refactor;
+    all six web pages serve 200. Dev residue: `admin_account_ids` on dev now
+    holds the `kellenmoen` seed account (was empty) so the dashboard is
+    browsable there. Browser-tier look rides the §11 smoke list. Follow-ons
+    queued in §3.1: account search/suspend on the Users tab, Reports tab
+    badge, prod deploy (standard shape — migrate seeds the dials, no flag).
+
 - **2026-07-22 (§0k fix batch — the queued same-class follow-ons)** — all four
   §0k items, in phases: gateway (1, 2, 4a, 4b) then the web Escape sweep (3).
   All confirmed-live bugs; nothing dark-feature (per §0j discipline #1 these

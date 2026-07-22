@@ -88,3 +88,14 @@ export function stripMarkdown(md: string): string {
     .replace(/\n+/g, ' ')
     .trim()
 }
+
+/**
+ * Pence → pounds, with locale grouping over £1,000 (owner dashboard & money UI).
+ */
+export function formatPence(pence: number): string {
+  const pounds = pence / 100
+  return `£${pounds.toLocaleString('en-GB', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}

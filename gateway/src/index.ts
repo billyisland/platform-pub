@@ -18,6 +18,7 @@ import { articleRoutes } from "./routes/articles/index.js";
 import { noteRoutes } from "./routes/notes.js";
 import { followRoutes } from "./routes/follows.js";
 import { moderationRoutes } from "./routes/moderation.js";
+import { adminDashboardRoutes } from "./routes/admin-dashboard.js";
 import { rssRoutes } from "./routes/rss.js";
 import { inboundMailRoutes } from "./routes/inbound-mail.js";
 import { searchRoutes } from "./routes/search.js";
@@ -160,6 +161,7 @@ async function start() {
 
   // Moderation (reports, content removal, account suspension)
   await app.register(moderationRoutes, { prefix: "/api/v1" });
+  await app.register(adminDashboardRoutes, { prefix: "/api/v1" });
 
   // Search (articles + writers, trigram-powered)
   await app.register(searchRoutes, { prefix: "/api/v1" });
