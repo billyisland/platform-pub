@@ -4,7 +4,8 @@
 **Status:** Accepted, 2026-07-22; codebase-review + decision pass folded in the same
 day (drop-zone split, deferred column collapse, edge auto-pan, nav-row z-order,
 Explain adaptation, v1 appearance migration, virtualization-first sequencing).
-**Slice 0 (virtualization, §VII) SHIPPED 2026-07-22** — see §X; Slices 1–5 open.
+**Slice 0 (virtualization, §VII) and Slice 1 (the pure layout module, §X)
+SHIPPED 2026-07-22** — see §X; Slices 2–5 open.
 Supersedes the free-coordinate floor (signed store
 coordinates, mover-yields collision, bootstrap heal) shipped across the 2026-07-20/21
 resolver rework, and the difference-blend ∀ lens. Retains the vessel chassis, the
@@ -17,9 +18,10 @@ merge flow's intent, per-feed appearance, and the mobile pager untouched.
 > implementation spec. It fixes the _what_ and the _why_; you own the _how_. Where it
 > names a file, constant, or function, treat that as the intended shape unless you find
 > a concrete reason it cannot work — in which case stop and flag it rather than
-> improvising a divergent design. Phasing is in §X; Slice 0 (virtualization, against
-> the current floor) ships first, then Slice 1 (the pure layout module) precedes the
-> rest of the rework and must land with its tests.
+> improvising a divergent design. Phasing is in §X; Slices 0 (virtualization) and 1
+> (the pure layout module) have shipped — `web/src/lib/workspace/layout.ts` is the
+> _how_ for §III–§V, and where it deviates from the sketch below the deviation is
+> recorded under Slice 1 in §X. Read it before Slice 2/3.
 
 ---
 
@@ -416,7 +418,37 @@ only.
   many-feed workspace; drag/merge/resize behave identically for washed vessels
   (they are obstacles and merge targets exactly as before).
 
-### Slice 1 — the pure layout module
+### Slice 1 — the pure layout module — **SHIPPED 2026-07-22**
+
+**As built** (four deviations, all narrow; commit `567bd0d`, FIX-PROGRAMME
+2026-07-22):
+
+- **`Geometry` carries `columnH` and pre-applied `offsetX`.** The rects it
+  returns are FINAL canvas coordinates — centring already baked in — so there
+  is exactly one conversion seam and consumers convert nowhere else; `offsetX`
+  is reported for reference. `columnH` (the vertical run every column shares)
+  rides on the Geometry so `resolveDrop` needs no second viewport argument,
+  which keeps the ADR's four-parameter signature honest instead of recovering
+  the viewport by inference.
+- **Derived fill heights are plain integers, not lattice multiples.** Snapping
+  a `null` slot's share to GRID left orphan pixels at the bottom buffer for no
+  gain: nothing reads a derived height back, and the taut claim is about
+  gutters, which stay exact. STORED heights (`resizeSlot`) are still snapped.
+- **`applyDrop` leaves the emptied column standing while it resolves.** The
+  drop's indices address the pre-removal layout, so the slot is spliced out but
+  its column is kept in place, the insertion is applied, and empty columns are
+  pruned at the end — no index arithmetic, and the column object (hence its id)
+  survives, which is what makes a drop back into a one-slot column a genuine
+  no-op rather than a same-looking rebuild. An earlier extract-then-adjust form
+  silently re-homed a lone feed into its right-hand neighbour.
+- **The band clamp is defensive, not reachable.** Bands are capped at a third
+  of the rect so a central merge region always exists; at the real envelope
+  (`SLOT_MIN_W = 220 > 2·EDGE_BAND = 96`) the cap never binds. Kept anyway —
+  it costs nothing and the envelope is a constant someone may retune.
+
+`collision.test.ts` fixtures were re-based off the 10px lattice in the same
+change (it is deleted in Slice 3 regardless).
+
 
 New `web/src/lib/workspace/layout.ts` + `layout.test.ts`. Nothing renders yet;
 this is the half the property tests can hold to account.

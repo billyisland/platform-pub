@@ -23,6 +23,58 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (columnar floor, the pure layout module — WORKSPACE-COLUMN-LAYOUT-ADR
+  Slice 1)** — `web/src/lib/workspace/layout.ts` + `layout.test.ts`: the whole
+  columnar geometry, wired to nothing. Deliberately renders nowhere yet — this is
+  the half property tests can hold to account, and it lands before the store
+  (Slice 2) and the floor rewrite (Slice 3), which ship as one commit.
+  - **Geometry is derived, never stored.** What persists is an ORDER — columns
+    left→right, slots top→bottom, plus per-slot sizes — and `deriveGeometry`
+    computes positions, gutters and the scroll extent from it. That is what makes
+    the module have no detect/resolve/heal counterpart: `collision.ts` and
+    `canvas.ts` exist to escape states this model cannot enter.
+  - **Degradation is derivation's job, not the store's.** A shrunken viewport
+    (window resize, or Slice 4 subtracting the nav row) compresses `null` slots
+    toward `SLOT_MIN_H` first, then squeezes fixed heights proportionally — and
+    the STORED layout is never rewritten, so growing the window restores exactly
+    what shrinking it hid. A column that cannot fit even at minimums overflows
+    rather than silently dropping feeds.
+  - **`applyDrop` leaves the emptied column standing while it resolves.** The
+    drop's indices address the pre-removal layout (§IV.1 holds the lifted slot
+    open for the whole gesture), so the slot is spliced out, its column kept in
+    place, the insertion applied, and empty columns pruned at the end — no index
+    arithmetic, and the column object (hence its id) survives, which is what
+    makes a drop back into a one-slot column a genuine no-op rather than a
+    same-looking rebuild. An earlier extract-then-adjust form silently re-homed a
+    lone feed into its right-hand neighbour; the property corpus caught it.
+  - Three smaller deviations from the ADR sketch, all recorded in its §X: the
+    `Geometry` carries `columnH` (so `resolveDrop` needs no second viewport
+    argument) and pre-applies `offsetX` (rects are final canvas coordinates —
+    one conversion seam, not two); derived fill heights are plain integers, since
+    snapping them left orphan pixels at the bottom buffer for no gain while the
+    taut claim is about gutters, which stay exact (STORED heights are still
+    snapped); and the third-of-a-rect band clamp is defensive rather than
+    reachable at the real envelope (`SLOT_MIN_W = 220 > 2·EDGE_BAND = 96`).
+  - **`grid.ts` flips to `GRID = 8`**, equal to the vessel `WALL`, restoring the
+    phase with the 4px design rhythm that 10 broke — the exact repair its own
+    comment anticipated. This retunes the LIVE free-coordinate floor and the
+    Glasshouse pane lattice immediately (positions persisted on the 10px lattice
+    re-snap on the next gesture, invisible in practice), which is the point:
+    it saves a two-lattice interregnum. `collision.test.ts` fixtures re-based off
+    the old lattice in the same change; it is deleted in Slice 3 regardless.
+  - **Tests:** 47 cases — fixtures pinning each rule, plus four property corpora
+    (taut/non-overlapping derivation over random layouts × viewports; every rect
+    within the available height where the stack can fit; every pointer position
+    resolving to a drop whose application is legal *and* taut; 300 × 20-step
+    random gesture sequences staying legal). Widths run to resize scale, per
+    `collision.test.ts`'s own lesson that a corpus stopping where legal gestures
+    keep going proves nothing about them.
+  - **Validation:** 203 web tests pass; `tsc --noEmit` clean; root `npm run lint`
+    0 errors; hairline tripwire clean; `next build` compiled; image rebuilt and
+    `/reader` 200 on `localhost:3010`. The GRID flip is the only user-visible
+    effect of this slice and wants an eye on the live floor.
+  - Commit `567bd0d`. Queue: CONSOLIDATED-TODO §9.14 (Slices 2–5).
+
 - **2026-07-22 (workspace virtualization — WORKSPACE-COLUMN-LAYOUT-ADR Slice 0)**
   — `docs/adr/WORKSPACE-COLUMN-LAYOUT-ADR.md` accepted the same day (the columnar
   floor: geometry derived from a stored order, a finite taut floor, slot-resolved
