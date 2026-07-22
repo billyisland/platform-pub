@@ -4,8 +4,10 @@
 **Status:** Accepted, 2026-07-22; codebase-review + decision pass folded in the same
 day (drop-zone split, deferred column collapse, edge auto-pan, nav-row z-order,
 Explain adaptation, v1 appearance migration, virtualization-first sequencing).
-**Slice 0 (virtualization, §VII) and Slice 1 (the pure layout module, §X)
-SHIPPED 2026-07-22** — see §X; Slices 2–5 open.
+**Slices 0–3 SHIPPED 2026-07-22** (virtualization §VII · the pure layout
+module · the store · the floor) — see §X; Slices 4 (nav row + lens removal +
+Explain re-anchor, §VI) and 5 (the regimented `\` hotkey, §V) are open, so
+those two sections are spec, not code.
 Supersedes the free-coordinate floor (signed store
 coordinates, mover-yields collision, bootstrap heal) shipped across the 2026-07-20/21
 resolver rework, and the difference-blend ∀ lens. Retains the vessel chassis, the
@@ -18,10 +20,11 @@ merge flow's intent, per-feed appearance, and the mobile pager untouched.
 > implementation spec. It fixes the _what_ and the _why_; you own the _how_. Where it
 > names a file, constant, or function, treat that as the intended shape unless you find
 > a concrete reason it cannot work — in which case stop and flag it rather than
-> improvising a divergent design. Phasing is in §X; Slices 0 (virtualization) and 1
-> (the pure layout module) have shipped — `web/src/lib/workspace/layout.ts` is the
-> _how_ for §III–§V, and where it deviates from the sketch below the deviation is
-> recorded under Slice 1 in §X. Read it before Slice 2/3.
+> improvising a divergent design. Phasing is in §X; Slices 0–3 have shipped —
+> `web/src/lib/workspace/layout.ts` is the _how_ for §III–§V, `stores/workspace.ts`
+> and `WorkspaceView.tsx`/`Vessel.tsx` are the _how_ for the floor, and where any
+> of them deviates from the sketch below the deviation is recorded in §X. Read
+> those notes before Slice 4/5.
 
 ---
 
@@ -493,7 +496,59 @@ this is the half the property tests can hold to account.
   fits n feeds or admits scroll only below `SLOT_MIN_W`; derivation under any
   `vp.h` keeps every rect within `H`.
 
-### Slice 2 — the store
+### Slices 2 + 3 — the store and the floor — **SHIPPED 2026-07-22** (commit `7a17150`)
+
+Landed in one commit as planned. Net −341 lines. **As built** (five deviations,
+all narrow; FIX-PROGRAMME 2026-07-22):
+
+- **Auto-pan compensates against framer's drag origin, in `Vessel`.** The
+  sketch put the rAF loop in `WorkspaceView`, but panning the floor moves the
+  canvas under an absolutely-positioned vessel, so without compensation the
+  lifted vessel slides out from under the cursor — and framer owns `mx` during
+  a drag, rewriting it as `dragOrigin + offset` on every pointermove, so the
+  accumulated pan cannot live in the motion value alone. The shipped form
+  tracks framer's own last write (`framerBaseRef`) and re-applies the
+  accumulated pan on top of it, both in the rAF loop (pointer held still — no
+  framer write) and in `onDrag` (pointer moving — framer just overwrote). It
+  compensates by the **applied** scroll delta, not the requested one, so
+  clamping at either end of the floor doesn't walk the vessel off the cursor.
+  This has to live in the Vessel because that is where the motion value is.
+- **The Vessel commits no coordinates at all.** `onPositionCommit` is gone
+  rather than re-typed: a drag now reports only the pointer (`onDragFrame`) and
+  its release (`onDragEnd`), and the host resolves both. The vessel therefore
+  *cannot* place itself anywhere the model forbids. Its one remaining
+  obligation is to spring back to its derived rect on release —
+  unconditionally, because a drop that resolves to a no-op leaves `position`
+  untouched and the prop-driven settle effect would never fire.
+- **Three small additions to `layout.ts`**, all pure: `slotFor` (the floor
+  needs the lifted slot's own `w`/`h` — `h` in particular, because `null` must
+  survive a drag rather than being frozen into a number by the DOM),
+  `clampSlotSize` (§IV.3's clamps without the commit, so the live gesture and
+  `resizeSlot` share one definition of the envelope), and `withSlotSize` (the
+  unclamped stamp the resize *preview* feeds through derivation, which is what
+  makes the columns to the right slide with the handle).
+- **`resolveDrop` is compared by value between frames.** It mints a fresh
+  object per call, so a per-frame `setState` with an identical payload would
+  re-render the whole floor on every pointermove.
+- **The Vessel's parked height-pin is dormant, not deleted.** Every slot now
+  has a derived height, so `heightSet` is always true and both pin effects
+  return immediately. Kept (with the comment corrected) because the height prop
+  is still optional; nothing reads the DOM for geometry any more, so the
+  `readFloorRects` justification it shipped with in Slice 0 is void.
+
+Also taken here: the pre-migration-113 local-hide push-up
+(`clearLegacyHidden` + its bootstrap sweep) retired with the v1 key, and
+`VESSEL_DEFAULT_W` died with the default-slot logic. **Not** taken (per the
+ordering note): the lens, `isolation: isolate`, and `LIGHT_ISLAND_STYLE`, all
+of which survive to Slice 4.
+
+The store's 16 unit tests (`stores/workspace.test.ts`) cover the v1 fixtures at
+5a/5b/5c shapes, the round-trip, and `reconcileFeeds`; four mutations
+(migration lifts nothing · reconcile prunes by live not visible · appearance
+pruned by visible not live · v1 key not deleted) were each confirmed to fail
+them before the tests were trusted.
+
+---
 
 `stores/workspace.ts` rewritten around `{layout: WorkspaceLayout, appearance:
 Record<feedId, VesselAppearance>, regimented: boolean}`. Written and unit-tested
@@ -525,7 +580,7 @@ would be wasted work.
   site in `WorkspaceView` (the pre-migration-113 hide push-up), `removeVessel`
   (subsumed by `removeFeed`), `healRestingOverlaps`.
 
-### Slice 3 — the floor
+### Slice 3 — the floor — **SHIPPED 2026-07-22** (see the Slices 2 + 3 note above)
 
 `WorkspaceView.tsx` + `Vessel.tsx` rewired to derived geometry; the §IX deletions
 land here except the lens (see ordering note).

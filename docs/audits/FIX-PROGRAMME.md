@@ -23,6 +23,51 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (columnar floor, the store + the floor — WORKSPACE-COLUMN-LAYOUT-ADR
+  Slices 2 + 3)** — the rewrite lands. `stores/workspace.ts` rebuilt around
+  `{layout, appearance, regimented}` (two disjoint records; new key
+  `workspace:layout:v2:{userId}`; the v1 key read once at hydrate for its
+  appearance fields — `textSize`/`orientation` are local-only, so a wholesale
+  wipe would lose real settings — coordinates discarded, key deleted), and
+  `WorkspaceView`/`Vessel` rewired to render from `deriveGeometry`. **Net −341
+  lines**, which is the point: `lib/workspace/collision.ts` (+ its test) and
+  `canvas.ts` are gone, along with the origin-compensation choreography in both
+  components, `defaultGridSlot`/`DEFAULT_GRID`, `VESSEL_DEFAULT_W`,
+  `clearLegacyHidden` and the pre-migration-113 hide push-up, `removeVessel`,
+  `healRestingOverlaps`, and `settleAfterAbandonedMerge` — every one of them
+  machinery for escaping states the new model cannot enter.
+  - **The vessel commits no coordinates at all.** A drag reports only the
+    pointer; `resolveDrop` answers merge-vs-insert per frame against a layout
+    held stable for the whole gesture (the lifted slot stays in place — see the
+    ADR's index contract), and the release commits it. So the vessel *cannot*
+    place itself anywhere the model forbids, and a declined merge needs no
+    repair: the source never left the layout, so it springs back to its
+    held-open slot and the target never moves.
+  - **Auto-pan had to live in the Vessel.** Panning moves the canvas under an
+    absolutely-positioned vessel, and framer owns `mx` during a drag (rewriting
+    it as `dragOrigin + offset` on every pointermove), so the accumulated pan
+    can't live in the motion value alone — it rides on top of framer's own last
+    write, re-applied both in the rAF loop and in `onDrag`, and by the
+    **applied** scroll delta so clamping at the floor's end doesn't walk the
+    vessel off the cursor.
+  - Three pure additions to `layout.ts` (`slotFor`, `clampSlotSize`,
+    `withSlotSize`) so the live gesture and the commit share one definition of
+    the envelope, and so a resize preview can feed through derivation and make
+    the columns to the right slide *with* the handle.
+  - 16 store unit tests (v1 fixtures at 5a/5b/5c shapes, round-trip,
+    `reconcileFeeds`). Four mutations — migration lifts nothing · reconcile
+    prunes by live not visible · appearance pruned by visible not live · v1 key
+    not deleted — were each confirmed to fail them before the tests were
+    trusted.
+  - Per the ordering note the lens survives: the canvas keeps `isolation:
+    isolate` and vessels keep `LIGHT_ISLAND_STYLE` until Slice 4. Ctrl+←/→
+    unchanged; Slice 0's virtualization now reads the derived rects (one
+    coordinate space, so the pan offset is plain `scrollLeft`).
+  - Docs folded the same day: CLAUDE.md's floor section rewritten as the
+    columnar rule (the old "infinite sideways" rules are retired, not
+    footnoted), the WORKSPACE-DESIGN-SPEC mover-yields addendum marked
+    SUPERSEDED, ADR §X carrying the five as-built deviations.
+
 - **2026-07-22 (columnar floor, the pure layout module — WORKSPACE-COLUMN-LAYOUT-ADR
   Slice 1)** — `web/src/lib/workspace/layout.ts` + `layout.test.ts`: the whole
   columnar geometry, wired to nothing. Deliberately renders nowhere yet — this is
