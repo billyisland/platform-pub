@@ -24,6 +24,12 @@ vi.mock("../src/lib/nostr-relay.js", () => ({
   fetchNostrWriteRelays: vi.fn(async () => []),
   NOSTR_FALLBACK_RELAYS: ["wss://fallback.example"],
 }));
+vi.mock("@platform-pub/shared/lib/http-client.js", () => ({
+  safeFetch: vi.fn(async () => ({ ok: false, status: 404, text: "" })),
+}));
+
+const { safeFetch } = await import("@platform-pub/shared/lib/http-client.js");
+const { fetchNostrEvents } = await import("../src/lib/nostr-relay.js");
 
 const {
   authorTimelineHydrationEnabled,
@@ -95,5 +101,48 @@ describe("author timeline hydration gates", () => {
     });
     delete process.env.AUTHOR_TIMELINE_HYDRATION_ENABLED;
     expect(willHydrateAuthorTimeline(AUTHOR, "nostr_external")).toBe(true);
+  });
+
+  // §0k.2 — a FAILED run must not consume the 10-minute TTL. Before the fix a
+  // transient error left the guard stamped, freezing that author's timeline
+  // hydration for the full window; and the atproto/AP fetchers silently
+  // returned on 429/5xx (safeFetch returns, not throws, on those), so the
+  // freeze never even logged as a failure.
+  it("a thrown failure clears the guard so the next view retries (nostr)", async () => {
+    vi.mocked(fetchNostrEvents).mockRejectedValueOnce(new Error("relay down"));
+    await hydrateAuthorTimeline({
+      authorId: AUTHOR,
+      protocol: "nostr_external",
+      followUri: PUBKEY,
+      stableHandle: PUBKEY,
+    });
+    expect(willHydrateAuthorTimeline(AUTHOR, "nostr_external")).toBe(true);
+  });
+
+  it("a transient 5xx on the atproto timeline fetch clears the guard", async () => {
+    vi.mocked(safeFetch).mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      text: "",
+    } as never);
+    await hydrateAuthorTimeline({
+      authorId: AUTHOR,
+      protocol: "atproto",
+      followUri: "did:plc:abc123",
+      stableHandle: "author.example",
+    });
+    expect(willHydrateAuthorTimeline(AUTHOR, "atproto")).toBe(true);
+  });
+
+  it("a definitive 4xx is a clean settle — the guard stays stamped", async () => {
+    // The default safeFetch mock answers 404 (deleted/blocked account):
+    // nothing to hydrate, and re-fetching per view would buy nothing.
+    await hydrateAuthorTimeline({
+      authorId: AUTHOR,
+      protocol: "atproto",
+      followUri: "did:plc:abc123",
+      stableHandle: "author.example",
+    });
+    expect(willHydrateAuthorTimeline(AUTHOR, "atproto")).toBe(false);
   });
 });

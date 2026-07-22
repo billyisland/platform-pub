@@ -10,6 +10,7 @@ import {
   type FeedImportBinding,
 } from "../../lib/api";
 import { apiErrorMessage } from "../../lib/api/client";
+import { useEscapeShield } from "../../hooks/useEscapeShield";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
 import { getNetworkCapabilities } from "../../lib/api/linked-accounts";
@@ -1051,23 +1052,15 @@ function SchemeMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const current = normalizeBrightness(scheme);
 
+  // Escape via the shared shield (§0k.3, the pattern's one home): closes the
+  // colour menu WITHOUT dismissing the whole FeedComposer (§0i.7).
+  useEscapeShield(open, () => setOpen(false));
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        // Claim the Escape: Glasshouse's close listener is on `window`, which
-        // fires after this `document` listener in the bubble phase — stopping
-        // propagation closes the colour menu WITHOUT dismissing the whole
-        // FeedComposer (the M22 lightbox precedent; §0i.7).
-        e.stopPropagation();
-        setOpen(false);
-      }
-    };
     document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
     // Menus receive focus on open (§0f-18): land on the checked swatch so
     // arrow keys work immediately.
     (
@@ -1076,7 +1069,6 @@ function SchemeMenu({
     )?.focus();
     return () => {
       document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 

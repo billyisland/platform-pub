@@ -175,7 +175,12 @@ export async function authRoutes(app: FastifyInstance) {
       // and deleted (terminal, migration 159) must be refused even holding a
       // valid pre-issued link — mirrors the Google OAuth branch.
       if (account.status !== "active" && account.status !== "deactivated") {
-        return reply.status(403).send({ error: "Account suspended" });
+        return reply.status(403).send({
+          error:
+            account.status === "deleted"
+              ? "Account deleted"
+              : "Account suspended",
+        });
       }
 
       // Reactivate on login — logging back in is the promised reactivation path
@@ -679,6 +684,19 @@ export async function authRoutes(app: FastifyInstance) {
           `UPDATE articles SET deleted_at = now()
          WHERE writer_id = $1 AND deleted_at IS NULL
          RETURNING id, nostr_event_id, nostr_d_tag`,
+          [accountId],
+        );
+
+        // Clear the articles' feed cards in the same transaction. Feed reads
+        // filter fi.deleted_at only (no account-status predicate), so without
+        // this the deleted account's cards linger in every feed until the
+        // daily reconcile (§0k.1). Soft-stamp, matching the article
+        // soft-delete idiom (DELETE /articles/:id in manage.ts); the notes'
+        // feed_items go with the notes hard-DELETE below via FK cascade.
+        await client.query(
+          `UPDATE feed_items SET deleted_at = now()
+           WHERE article_id IN (SELECT id FROM articles WHERE writer_id = $1)
+             AND deleted_at IS NULL`,
           [accountId],
         );
 

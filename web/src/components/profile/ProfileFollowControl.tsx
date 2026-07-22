@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { workspaceFeeds, type WorkspaceFeed } from "../../lib/api";
 import { invalidateAuthorCardCache } from "../../hooks/useAuthorCard";
+import { useEscapeShield } from "../../hooks/useEscapeShield";
 import { useAuth } from "../../stores/auth";
 import { useFollows, useFollowState } from "../../stores/follows";
 import type { AuthorProfile } from "../../lib/api/post";
@@ -152,20 +153,17 @@ function SourceFollowPicker({ target }: { target: FollowTarget }) {
     };
   }, [open, feeds, target.sourceId]);
 
-  // Outside-click / Escape dismissal for the menu.
+  // Outside-click dismissal for the menu; Escape via the shared shield so it
+  // closes only this menu, not the host Glasshouse under it (§0k.3).
+  useEscapeShield(open, () => setOpen(false));
   useEffect(() => {
     if (!open) return;
     function onPointerDown(e: PointerEvent) {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 

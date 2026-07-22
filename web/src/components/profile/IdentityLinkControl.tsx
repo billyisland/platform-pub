@@ -7,6 +7,7 @@ import {
   type LinkedSource,
 } from "../../lib/api/post";
 import { invalidateAuthorCardCache } from "../../hooks/useAuthorCard";
+import { useEscapeShield } from "../../hooks/useEscapeShield";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import {
   partitionMatchOptions,
@@ -64,21 +65,19 @@ export function IdentityLinkControl({
     setLinks(initial ?? []);
   }, [initial]);
 
+  // Escape via the shared shield so it closes only this popover, not the host
+  // Glasshouse under it (§0k.3).
+  useEscapeShield(open, () => setOpen(false));
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => inputRef.current?.focus(), 0);
     function onPointerDown(e: PointerEvent) {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
     return () => {
       clearTimeout(t);
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 

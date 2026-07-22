@@ -38,11 +38,20 @@
  * caller restarts from page 1, the documented degradation) rather than being
  * salvaged into a wrong position. Empty string is rejected explicitly, because
  * `Number("")` is 0 — which would silently mean "the epoch", i.e. 1970.
+ *
+ * Range-clamped (§0k.4b): "finite" alone still admits a crafted value like
+ * `1e300`, which reaches `to_timestamp()` and 500s the request (Postgres
+ * timestamps top out around year 294276 ≈ 9.2e12 epoch seconds). Real cursors
+ * carry published_at/created_at/asOf epochs, so anything outside [0, 1e11]
+ * (~year 5138) is garbage, not a position — reject to NaN like any other
+ * malformed component.
  */
+const MAX_CURSOR_EPOCH = 1e11;
+
 export function parseCursorEpoch(raw: string): number {
   if (raw.trim() === "") return NaN;
   const n = Number(raw);
-  return Number.isFinite(n) ? n : NaN;
+  return Number.isFinite(n) && n >= 0 && n <= MAX_CURSOR_EPOCH ? n : NaN;
 }
 
 /**

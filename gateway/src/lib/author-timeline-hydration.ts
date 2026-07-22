@@ -306,6 +306,13 @@ async function hydrateAtprotoTimeline(
     headers: { Accept: "application/json" },
     timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
   });
+  // Transient trouble (rate limit / server error) must THROW so the catch in
+  // hydrateAuthorTimeline clears the TTL guard — a silent return here read as
+  // settled and froze this author's timeline hydration for the full 10-minute
+  // TTL (§0k.2, the thread-hydration §0f-5 pattern). A definitive 4xx
+  // (deleted/blocked account) has nothing to hydrate and stays a clean settle.
+  if (res.status === 429 || res.status >= 500)
+    throw new Error(`appview author feed fetch failed: ${res.status}`);
   if (!res.ok) return;
   const data = JSON.parse(res.text) as { feed?: AtprotoFeedViewPost[] };
 
@@ -411,6 +418,9 @@ async function hydrateActivityPubTimeline(
     `https://${host}/api/v1/accounts/lookup?acct=${encodeURIComponent(handle)}`,
     { headers: { Accept: "application/json" }, timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS },
   );
+  // Same transient/definitive split as the atproto fetch above (§0k.2).
+  if (lookup.status === 429 || lookup.status >= 500)
+    throw new Error(`mastodon account lookup failed: ${lookup.status}`);
   if (!lookup.ok) return;
   const account = JSON.parse(lookup.text) as { id?: string };
   if (!account.id || !/^[A-Za-z0-9_-]+$/.test(account.id)) return;
@@ -419,6 +429,8 @@ async function hydrateActivityPubTimeline(
     `https://${host}/api/v1/accounts/${account.id}/statuses?limit=${TIMELINE_AP_LIMIT}&exclude_replies=true&exclude_reblogs=true`,
     { headers: { Accept: "application/json" }, timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS },
   );
+  if (res.status === 429 || res.status >= 500)
+    throw new Error(`mastodon statuses fetch failed: ${res.status}`);
   if (!res.ok) return;
   const statuses = JSON.parse(res.text) as MastodonTimelineStatus[];
   if (!Array.isArray(statuses)) return;
@@ -450,6 +462,11 @@ export async function hydrateAuthorTimeline(
       await hydrateActivityPubTimeline(target);
     }
   } catch (err) {
+    // A failed run must not consume the TTL: clear the guard so the next
+    // profile view retries, instead of one transient error freezing this
+    // author's timeline hydration for the full 10 minutes (§0k.2 — the D1
+    // guard-clear semantics from external-hydration.ts).
+    timelineGuard.delete(target.authorId);
     logger.debug(
       {
         err: err instanceof Error ? err.message : String(err),

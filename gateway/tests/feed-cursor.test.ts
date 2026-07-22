@@ -191,6 +191,21 @@ describe("shared cursor codec — parseCursorEpoch", () => {
     expect(parseCursorEpoch("abc")).toBeNaN();
     expect(parseCursorEpoch("Infinity")).toBeNaN();
   });
+
+  // §0k.4b — "finite" alone is not enough: a crafted finite epoch like 1e300
+  // sails through to `to_timestamp()` and 500s the request (Postgres
+  // timestamps overflow around 9.2e12 epoch seconds). Out-of-range is garbage,
+  // not a position → NaN → page-1 restart, same as any malformed component.
+  it("rejects a finite but out-of-range epoch (the to_timestamp overflow 500)", () => {
+    expect(parseCursorEpoch("1e300")).toBeNaN();
+    expect(parseCursorEpoch("9300000000000")).toBeNaN(); // past timestamp max
+    expect(parseCursorEpoch("-1")).toBeNaN(); // pre-1970 is never a real cursor
+  });
+
+  it("accepts the full plausible range unchanged", () => {
+    expect(parseCursorEpoch("0")).toBe(0);
+    expect(parseCursorEpoch("99999999999.5")).toBe(99999999999.5); // ~year 5138
+  });
 });
 
 describe("shared cursor codec — encodeTsIdCursor round trip", () => {

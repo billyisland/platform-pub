@@ -11,6 +11,7 @@ import {
 } from "../../hooks/useAuthorCard";
 import { workspaceFeeds } from "../../lib/api";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
+import { useEscapeShield } from "../../hooks/useEscapeShield";
 import { useLightbox } from "../../stores/lightbox";
 import { useFollows } from "../../stores/follows";
 import { useExplain } from "../../stores/explain";
@@ -85,18 +86,17 @@ export function AuthorModal({
     });
   }, [anchorRef]);
 
-  // Escape + outside-pointerdown dismissal (the anchor is excluded so a click
-  // on the trigger toggles rather than close-then-reopen).
+  // Escape via the shared shield: stops propagation so a host Glasshouse
+  // BELOW doesn't close with the modal (§0k.3 — the old bare handler shielded
+  // the lightbox above but double-closed the pane below), and yields to the
+  // lightbox ABOVE at z-[70] — its listener shares this `document` node where
+  // registration order wins, so stopPropagation can't arbitrate that pair
+  // (§0f-15); the yield does.
+  useEscapeShield(true, onClose, () => useLightbox.getState().isOpen);
+
+  // Outside-pointerdown dismissal (the anchor is excluded so a click on the
+  // trigger toggles rather than close-then-reopen).
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // The lightbox (opened off this modal's avatar) floats above at z-[70];
-      // while it's up, Escape/clicks belong to IT alone. Its own listener
-      // stopPropagation can't shield us — both listeners sit on `document`
-      // (same node, registration order wins), so the M22 fix left this pair
-      // still double-closing (§0f-15). Yield explicitly.
-      if (useLightbox.getState().isOpen) return;
-      if (e.key === "Escape") onClose();
-    }
     function onPointerDown(e: PointerEvent) {
       if (useLightbox.getState().isOpen) return; // lightbox scrim click is not "outside"
       const target = e.target as Node;
@@ -117,10 +117,8 @@ export function AuthorModal({
       }, 0);
       onClose();
     }
-    document.addEventListener("keydown", onKeyDown);
     document.addEventListener("pointerdown", onPointerDown);
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown);
     };
   }, [onClose, anchorRef]);

@@ -23,6 +23,51 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (§0k fix batch — the queued same-class follow-ons)** — all four
+  §0k items, in phases: gateway (1, 2, 4a, 4b) then the web Escape sweep (3).
+  All confirmed-live bugs; nothing dark-feature (per §0j discipline #1 these
+  had been queued, and the owner called the batch).
+  - **§0k.1 — account deletion now clears the writer's feed cards in the same
+    transaction** (`gateway/src/routes/auth.ts`): a `feed_items.deleted_at`
+    soft-stamp over the account's articles, alongside the article soft-delete —
+    the idiom chosen to match the sibling pairing in `manage.ts` (soft-deleted
+    article → soft-stamped card; the notes' cards go with the notes hard-DELETE
+    via FK cascade, and cms.ts's hard-DELETE pairing with its own hard-delete
+    stands). **Driven end-to-end against the rebuilt dev stack**: fixture
+    account + published article + feed_items row → dev-login → `POST
+    /auth/delete-account` → 200, account `deleted`, article stamped, **feed
+    card stamped in the same txn** (pre-fix it lingered until reconcile pass 4,
+    up to 24h). No negative control run (would need the pre-fix image); the
+    pre-fix behaviour is the §0k sweep's source-verified diagnosis.
+  - **§0k.2 — author-timeline hydration no longer silent-fails transient
+    errors** (`gateway/src/lib/author-timeline-hydration.ts`): the three
+    `safeFetch` sites (atproto feed, AP lookup, AP statuses) now throw on
+    429/5xx (definitive 4xx stays a clean settle), and the entrypoint's catch
+    clears the TTL guard — porting exactly the `485493c`/D1 treatment, so one
+    transient error no longer freezes an author's profile-timeline hydration
+    for the full 10-minute TTL. 3 new tests in `author-timeline-guard.test.ts`
+    (thrown-failure clears guard; 5xx clears; 4xx keeps the stamp),
+    **mutation-verified** (guard-clear reverted → 2 fail).
+  - **§0k.3 — Escape double-close swept via one shared hook**:
+    `web/src/hooks/useEscapeShield.ts` (stopPropagation-claim + optional
+    `yieldTo` for a modal above) applied to all five §0k sites —
+    `ProfileFollowControl`, `IdentityLinkControl`, `FollowingTab`'s
+    UnsubscribeModal, `VouchModal`, and `AuthorModal` (which keeps its
+    lightbox-above yield, §0f-15, while gaining the Glasshouse-below shield) —
+    and the SchemeMenu original ported onto the hook so the pattern has ONE
+    home. Focus traps / outside-click / focus-on-open behaviour untouched.
+  - **§0k.4a** — the deleted-account magic-link refusal now reads "Account
+    deleted", not "Account suspended" (`auth.ts` verify branch). **§0k.4b** —
+    `parseCursorEpoch` range-clamps to `[0, 1e11]` (~year 5138): a crafted
+    finite epoch (`1e300`) previously reached `to_timestamp()` and 500'd;
+    out-of-range now degrades to the documented page-1 restart. 2 new tests in
+    `feed-cursor.test.ts`, **mutation-verified** (clamp reverted → 1 fails).
+  - Validation: gateway `tsc` clean; gateway suite 376 passed (36 in the two
+    touched test files, 3 mutations verified across the batch); web `next
+    build` clean; hairline tripwire clean on all touched web files; root lint
+    0 errors. Browser-tier residue: the five popovers' Escape behaviour is
+    jsdom-untestable here and rides the standing §11 consolidated smoke list.
+
 - **2026-07-22 (diagnosis-verification sweep — §0k)** — seven-agent verification
   of the §0j bug catalog: each §0h/§0i fix diagnosis re-derived from pre-fix
   source and checked at HEAD. 8 of 9 CONFIRMED; the `8423cd8` ctor-throw

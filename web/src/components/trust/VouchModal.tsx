@@ -6,6 +6,7 @@ import {
   type VouchDimension,
   type VouchVisibility,
 } from "../../lib/api";
+import { useEscapeShield } from "../../hooks/useEscapeShield";
 
 // =============================================================================
 // VouchModal — dimension selector + visibility + submit
@@ -71,9 +72,11 @@ export function VouchModal({
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Escape via the shared shield so it closes only this dialog, not the host
+  // Glasshouse under it (§0k.3); Tab keeps the focus trap below.
+  useEscapeShield(true, onClose);
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
       if (e.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -90,7 +93,7 @@ export function VouchModal({
         }
       }
     },
-    [onClose],
+    [],
   );
 
   useEffect(() => {
