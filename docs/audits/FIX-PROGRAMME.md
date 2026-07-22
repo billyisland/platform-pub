@@ -102,7 +102,8 @@ starts.
   tripwire clean over every touched file, the 63 workspace unit/property tests
   unchanged and passing, `docker compose build web && up -d web` serving 200 at
   `localhost:3010`. Standing docs folded the same day. **Slice 5 (the
-  regimented `\` hotkey, §V) is the only one left open.**
+  regimented `\` hotkey, §V) was the only one left open at the time of
+  writing — it shipped later the same day; see the entry above.**
 
 - **2026-07-22 (columnar floor, the store + the floor — WORKSPACE-COLUMN-LAYOUT-ADR
   Slices 2 + 3)** — the rewrite lands. `stores/workspace.ts` rebuilt around
