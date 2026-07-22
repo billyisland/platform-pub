@@ -23,6 +23,52 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (columnar floor, the nav row — WORKSPACE-COLUMN-LAYOUT-ADR
+  Slice 4)** — the ∀ leaves its floating position and the difference lens is
+  deleted. New `components/workspace/NavRow.tsx` (`NAV_ROW_H = 56`) is chrome
+  only: full-width `position: fixed` at the bottom, neutral bone ground that
+  inverts with `html.dark` (global chrome, never a feed island), a 4px slab on
+  its top edge as the one divider. The **lockup stays intact** — wordmark and
+  ∀ disc adjacent in one fixed container docked at the row's right end via a
+  new `ForallMenu anchor="row"` (menu/search open upward), decided against
+  §VI's literal split-to-opposite-ends reading because FORALL-CUT §V tunes
+  disc-to-cap-height precisely so the two read as kin, and the wordmark is
+  part of the trigger, not a label. What §VI was actually after is still
+  taken: the wordmark's **separate fixed layer** dies (it existed only so the
+  lens could blend without an intervening stacking context) and it becomes a
+  plain child of the lockup, collapsing the outside-click handler's two
+  `contains` checks to one.
+  **Deleted with the lens:** `lensMode` and its painted/punched swap, the
+  punched-lens SVG branch, the hoisted un-blended badge twin,
+  `stores/lensSuppress.ts` + the `useLensSuppressor` calls in `NewFeedPrompt`
+  and `LightboxOverlay`, the `body { isolation }` scope in `globals.css`, the
+  canvas `isolation` in `WorkspaceView` (verified safe, not assumed: the
+  Vessel's drag/armed raise tops out at z-6, far under the row at 58 and the ∀
+  at 60), the `"floating"` anchor, and the dead `wordmarkRef`.
+  **Wired:** `deriveGeometry`'s `navRowH` goes live, so the floor ends one GRID
+  above the row and no vessel can extend behind it; `usePanePlacement` gains a
+  `usableH(vh)` that subtracts `NAV_ROW_H` from the desktop `maxYFor`, resize
+  cap and `maxHeight` (the mirror of its mobile `MOBILE_BAR_H` branch),
+  unconditional because a member always lands in the workspace so a pane over a
+  rowless standalone page is only ever a pre-redirect frame; Explain's
+  **pane-mode** cursor bubble 58 → 59 (the row tied it), while floor-mode
+  bubbles (50/51/52/53) stay deliberately below the Glasshouse band — raising
+  them would also raise them above the About pane, which is meant to frost the
+  tour over (the arrow-stepping guard depends on it).
+  Two by-eye tunings: the row-anchored disc is **40**, not the floating 46, so
+  40 + 2·GRID lands exactly on `NAV_ROW_H` and the lockup is GRID-centred by
+  construction (§V's ratio preserved by scaling the wordmark 28 → 24); and the
+  wordmark picks its mode explicitly (`chromeFg = discBg` — ink on the light
+  row, bone on the inverted one) because moving inside the lockup put it inside
+  `LIGHT_ISLAND_STYLE`, where `var(--ah-ink)` resolves canonical-dark in *both*
+  modes — the same trap the 2026-06-21 dark-disc-glyph fix documented, arriving
+  by a new route.
+  Green: root lint 0 errors, `tsc --noEmit` clean, `next build` clean, hairline
+  tripwire clean over every touched file, the 63 workspace unit/property tests
+  unchanged and passing, `docker compose build web && up -d web` serving 200 at
+  `localhost:3010`. Standing docs folded the same day. **Slice 5 (the
+  regimented `\` hotkey, §V) is the only one left open.**
+
 - **2026-07-22 (columnar floor, the store + the floor — WORKSPACE-COLUMN-LAYOUT-ADR
   Slices 2 + 3)** — the rewrite lands. `stores/workspace.ts` rebuilt around
   `{layout, appearance, regimented}` (two disjoint records; new key

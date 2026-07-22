@@ -4,10 +4,9 @@
 **Status:** Accepted, 2026-07-22; codebase-review + decision pass folded in the same
 day (drop-zone split, deferred column collapse, edge auto-pan, nav-row z-order,
 Explain adaptation, v1 appearance migration, virtualization-first sequencing).
-**Slices 0–3 SHIPPED 2026-07-22** (virtualization §VII · the pure layout
-module · the store · the floor) — see §X; Slices 4 (nav row + lens removal +
-Explain re-anchor, §VI) and 5 (the regimented `\` hotkey, §V) are open, so
-those two sections are spec, not code.
+**Slices 0–4 SHIPPED 2026-07-22** (virtualization §VII · the pure layout
+module · the store · the floor · the nav row §VI) — see §X; Slice 5 (the
+regimented `\` hotkey, §V) is open, so that section alone is spec, not code.
 Supersedes the free-coordinate floor (signed store
 coordinates, mover-yields collision, bootstrap heal) shipped across the 2026-07-20/21
 resolver rework, and the difference-blend ∀ lens. Retains the vessel chassis, the
@@ -20,11 +19,11 @@ merge flow's intent, per-feed appearance, and the mobile pager untouched.
 > implementation spec. It fixes the _what_ and the _why_; you own the _how_. Where it
 > names a file, constant, or function, treat that as the intended shape unless you find
 > a concrete reason it cannot work — in which case stop and flag it rather than
-> improvising a divergent design. Phasing is in §X; Slices 0–3 have shipped —
+> improvising a divergent design. Phasing is in §X; Slices 0–4 have shipped —
 > `web/src/lib/workspace/layout.ts` is the _how_ for §III–§V, `stores/workspace.ts`
 > and `WorkspaceView.tsx`/`Vessel.tsx` are the _how_ for the floor, and where any
 > of them deviates from the sketch below the deviation is recorded in §X. Read
-> those notes before Slice 4/5.
+> those notes before Slice 5.
 
 ---
 
@@ -635,7 +634,61 @@ land here except the lens (see ordering note).
   size constants still referenced (`VESSEL_DEFAULT_W` dies with the default-slot
   logic).
 
-### Slice 4 — nav row + lens removal + Explain re-anchor (§VI)
+### Slice 4 — nav row + lens removal + Explain re-anchor (§VI) — **SHIPPED 2026-07-22**
+
+**As built** (one decision taken against the literal text, three narrow
+deviations; FIX-PROGRAMME 2026-07-22):
+
+- **The LOCKUP stays intact at the row's right end; `NavRow` is chrome only.**
+  §VI reads "the row renders the wordmark … and docks the ∀", which taken
+  literally splits the pair to opposite ends (the mobile-bar shape). Decided
+  otherwise (2026-07-22, with the author): the wordmark and disc stay
+  adjacent in **one** fixed container docked at the right end, because
+  FORALL-CUT-AND-LOCKUP-ADR §V tunes disc-to-cap-height precisely so the two
+  "read as kin on one row", and the wordmark is part of the trigger (click
+  toggles the menu, hover spins the glyph) — splitting it would silently
+  demote it to a label. The clause §VI was actually reaching for is satisfied
+  either way: the wordmark's **separate fixed layer** dies, because it existed
+  only so the lens could blend without a stacking context between it and the
+  canvas. It is now a plain child of the lockup container, which also collapses
+  the outside-click handler's two `contains` checks to one. `NavRow.tsx`
+  exports `NAV_ROW_H` and renders the bar + its 4px slab, nothing else.
+- **The row-anchored disc is 40, not the floating 46.** 40 + 2·GRID lands
+  exactly on `NAV_ROW_H = 56`, so the lockup is GRID-centred in the row by
+  construction rather than by a tuned magic number. §V's ratio is preserved by
+  scaling the wordmark with it (28 → 24).
+- **The wordmark picks its mode explicitly, like the disc.** Moving inside the
+  container put it inside `LIGHT_ISLAND_STYLE`, where `var(--ah-ink)` resolves
+  canonical-dark in *both* modes — dark-on-dark against the inverted row. It
+  now takes the disc's GROUND token (`chromeFg = discBg`): ink on the light
+  bone row, bone on the inverted dark one. This is the same trap the
+  2026-06-21 dark-disc-glyph fix documented, arriving by a new route.
+- **Only Explain's PANE-mode bubble was bumped; floor mode stays put.** The
+  sketch says "bump the bubble to 59 so it never renders under the opaque
+  row", which is right for pane mode (57/58 → the row ties 58). Floor-mode
+  bubbles (scrim 50 / leader 51 / bubble 52 / cursor 53) were deliberately
+  left below the Glasshouse band: raising them above the row would also raise
+  them above the About pane, and the tour is *meant* to be frosted over while
+  that pane is open (the arrow-stepping guard in `ExplainOverlay` depends on
+  it). A floor-mode bubble anchored on the disc places itself left/above —
+  there is no room below it — so the row occludes nothing but the first pixels
+  of its leader.
+- **The canvas `isolation: isolate` went with the lens as planned.** Verified
+  safe rather than assumed: the Vessel's drag/armed raise tops out at z-6, far
+  under the row (58) and the ∀ (60), so plain document order suffices.
+- **Glasshouse's desktop inset is unconditional** (a `usableH(vh)` helper
+  applied to `maxYFor`, the resize cap and `maxHeight`). A desktop pane over a
+  *rowless* standalone page would lose 56px of gutter for nothing — accepted,
+  because a member always lands in the workspace (`HomeRedirect` /
+  `WorkspacePaneRedirect`), so that case is only ever a transient
+  pre-redirect frame.
+
+Also taken here: `ForallMenu`'s `"floating"` anchor is deleted rather than
+kept beside `"row"` (nothing else rendered it), as is the punched-lens SVG
+branch, the hoisted un-blended badge twin, and the now-dead `wordmarkRef`.
+
+---
+
 
 - **The row.** New `components/workspace/NavRow.tsx` exporting `NAV_ROW_H`:
   `position: fixed`, bottom, full width, `zIndex: 58`, mode-aware neutral chrome
