@@ -23,6 +23,18 @@ starts.
 
 ## Progress
 
+- **2026-07-22 (process retrospective — the Jul 21 self-audit loop)** — a
+  process review, not a fix batch, prompted by the owner's "going off the rails"
+  read. Findings: the code is healthy (backends typecheck clean; the §0h/§0i
+  batch fixes 7 live user-reachable bugs, not make-work; the collision arc
+  converged with a real property-test corpus) but the *cadence* shows a
+  self-reinforcing audit loop — §0i auditing its own prior window, ~520 log
+  lines/day, a same-day design discard (the collision push-wave built + hardened
+  over two commits, deleted in the third). No code changed. The forward
+  discipline (dark-feature findings to the queue not same-day fixes; one audit
+  pass per window; validate a mechanism before hardening it; rebalance toward the
+  §3 launch-blocking product gaps) is recorded as **CONSOLIDATED-TODO §0j**.
+
 - **2026-07-21 (drift-guard batch — §0h.6/.7/.8)** — three duplications that
   each had a bug class attached, closed with a guard rather than a promise.
   - **Cursor codec (§0h.8).** The M13 rule (`Number`, never `parseInt`; reject
