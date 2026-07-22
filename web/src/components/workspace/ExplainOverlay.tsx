@@ -57,10 +57,11 @@ import { useGlasshousePresence } from "../../stores/glasshouse";
 //
 // PANE mode (D10 reversal, 2026-07-15 second session): when the program's
 // surface is "pane", the open Glasshouse is the annotated subject — the scrim
-// rises to z-57 and the cursor bubble to z-58 (above the pane's z-55/56 bands,
-// under the ForallMenu's z-60), hit-testing resolves only `[data-explain]`
-// tags inside the pane root, focus/ARIA freezing targets the pane instead of
-// the vessels, and the pane closing (Esc, popstate) closes Explain with it.
+// rises to z-57 and the cursor bubble to z-59 (above the pane's z-55/56 bands
+// and the nav row's 58, under the ForallMenu's z-60), hit-testing resolves only
+// `[data-explain]` tags inside the pane root, focus/ARIA freezing targets the
+// pane instead of the vessels, and the pane closing (Esc, popstate) closes
+// Explain with it.
 // =============================================================================
 
 // Marks the overlay's own DOM so hit-testing looks straight through it.
@@ -93,9 +94,9 @@ export function ExplainOverlay() {
 
   const isFirstRun = programKind === "firstrun";
   // PANE mode (D10 reversal, 2026-07-15 second session): the program annotates
-  // the open Glasshouse, so the scrim/bubble bands rise above the pane
-  // (z-57/58, still under the ForallMenu at z-60) and hit-testing resolves
-  // only tags inside the pane. First-run is always floor-surfaced.
+  // the open Glasshouse, so the scrim/bubble bands rise above the pane and the
+  // nav row (z-57/59, still under the ForallMenu at z-60) and hit-testing
+  // resolves only tags inside the pane. First-run is always floor-surfaced.
   const paneMode = programSurface === "pane";
   const reduced = prefersReducedMotion();
 
@@ -489,7 +490,7 @@ export function ExplainOverlay() {
           forwarded to the scrollable under the cursor (D1 amendment,
           2026-07-16). Floor mode sits at z-50 (under any Glasshouse); pane
           mode rises to z-57 — above the pane (z-56) it annotates, still under
-          the ForallMenu (z-60). Pointer leaving the viewport clears the hover
+          the nav row (z-58) and the ForallMenu (z-60). Pointer leaving the viewport clears the hover
           so no stale bubble lingers. */}
       <div
         {...{ [CHROME_ATTR]: "" }}
@@ -533,7 +534,16 @@ export function ExplainOverlay() {
           x={cursor.x}
           y={cursor.y}
           reduced={reduced}
-          zIndex={paneMode ? 58 : 53}
+          // Pane mode rises to 59 — above the pane it annotates (56), its own
+          // raised scrim (57) and the nav row (58, WORKSPACE-COLUMN-LAYOUT-ADR
+          // §VI), still under the ForallMenu at 60. It was 58 until the row
+          // arrived and tied it. Floor mode stays at 53, deliberately BELOW the
+          // Glasshouse band: the About pane opened from Explain is meant to
+          // frost the tour over (see the arrow-stepping guard above), which a
+          // bump above the row would break. A floor-mode bubble anchored on the
+          // disc places itself left/above — there is no room below it — so the
+          // row occludes nothing but the first pixels of its leader.
+          zIndex={paneMode ? 59 : 53}
         />
       )}
     </>
@@ -895,8 +905,8 @@ function CursorBubble({
   x: number;
   y: number;
   reduced: boolean;
-  // z-53 over the floor; z-58 in pane mode (above the pane's z-56 + the raised
-  // z-57 scrim, under the ForallMenu at z-60).
+  // z-53 over the floor; z-59 in pane mode (above the pane's z-56, the raised
+  // z-57 scrim and the nav row's z-58, under the ForallMenu at z-60).
   zIndex: number;
 }) {
   const bubbleRef = useRef<HTMLDivElement>(null);

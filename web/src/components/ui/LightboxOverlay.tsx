@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useLightbox } from "../../stores/lightbox";
-import { useLensSuppressor } from "../../stores/lensSuppress";
 
 // =============================================================================
 // LightboxOverlay — the single mounted image-enlarge surface (LayoutShell).
@@ -18,10 +17,6 @@ import { useLensSuppressor } from "../../stores/lensSuppress";
 
 export function LightboxOverlay() {
   const { isOpen, src, alt, close } = useLightbox();
-
-  // Not a Glasshouse, so the presence registry can't flip the ∀ disc off its
-  // difference-lens state — self-declare while open (§0i.5, lensSuppress.ts).
-  useLensSuppressor(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;

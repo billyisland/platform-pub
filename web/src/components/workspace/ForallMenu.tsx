@@ -11,7 +11,6 @@ import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay } from "../../stores/libraryOverlay";
 import { useNetworkOverlay } from "../../stores/networkOverlay";
 import { useGlasshousePresence } from "../../stores/glasshouse";
-import { useLensSuppress } from "../../stores/lensSuppress";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useColorScheme } from "../../stores/colorScheme";
 import { useExplain } from "../../stores/explain";
@@ -19,6 +18,7 @@ import { useAboutOverlay } from "../../stores/aboutOverlay";
 import { useOpenExplain, useExplainable } from "./ExplainProvider";
 import { SearchPanel } from "./SearchPanel";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
+import { NAV_ROW_H } from "./NavRow";
 
 const TOKENS = {
   buttonBg: "var(--ah-ink-925)",
@@ -50,13 +50,14 @@ interface ForallMenuProps {
   currentFeed?: { id: string; name: string } | null;
   /** Open the FeedComposer for the feed-scoped row's target. */
   onFeedSettings?: (feedId: string) => void;
-  /** Placement of the ∀ trigger. "floating" is the desktop disc at the
-   *  bottom-right of the canvas; "bar" docks a smaller disc into the mobile
-   *  bar's right end, with the menu dropping DOWN below the bar
-   *  (MOBILE-LAYOUT-ADR §III — the bar's burger is the ∀, the existing
-   *  command surface, not a second menu system). Same rows, same z-60
-   *  crisp-above-the-frost invariant. */
-  anchor?: "floating" | "bar";
+  /** Placement of the ∀ trigger. "row" docks the whole lockup (wordmark + disc,
+   *  adjacent) into the right end of the desktop nav row, menu opening UPWARD
+   *  (WORKSPACE-COLUMN-LAYOUT-ADR §VI — it replaced the floating disc and its
+   *  difference lens). "bar" docks a smaller disc into the mobile bar's right
+   *  end, with the menu dropping DOWN below the bar (MOBILE-LAYOUT-ADR §III —
+   *  the bar's burger is the ∀, the existing command surface, not a second menu
+   *  system). Same rows, same z-60 crisp-above-the-frost invariant. */
+  anchor?: "row" | "bar";
 }
 
 type View = "closed" | "menu" | "search";
@@ -90,13 +91,17 @@ export function ForallMenu({
   onRestore,
   currentFeed = null,
   onFeedSettings,
-  anchor = "floating",
+  anchor = "row",
 }: ForallMenuProps) {
   const inBar = anchor === "bar";
-  // Floating disc 46 / wordmark 28 (§V lockup rebalance,
+  // Disc 40 / wordmark 24 in the nav row (§V lockup rebalance,
   // FORALL-CUT-AND-LOCKUP-ADR): disc/cap-height ≈ 2.3, so the two read as kin
-  // on one row rather than a disc looming over a label.
-  const discSize = inBar ? 36 : 46;
+  // on one row rather than a disc looming over a label. The row-anchored disc
+  // is a touch smaller than the old floating 46 so that 40 + 2·GRID lands
+  // exactly on NAV_ROW_H (56); the ratio is preserved by scaling the wordmark
+  // with it (28 → 24).
+  const discSize = inBar ? 36 : 40;
+  const wordmarkSize = 24;
   // The disc inverts under global dark mode — a light bone disc with a dark ink
   // glyph, the photo-negative of the light-mode dark disc. The disc stays
   // islanded (its tokens resolve to canonical light in both modes), so we pick
@@ -105,6 +110,13 @@ export function ForallMenu({
   const dark = useColorScheme((s) => s.dark);
   const discBg = dark ? "var(--ah-bone)" : TOKENS.buttonBg;
   const discGlyph = dark ? "var(--ah-ink-925)" : TOKENS.glyphFg;
+  // The wordmark now lives INSIDE the islanded lockup container (it was its own
+  // fixed layer only because the lens needed an un-nested blend group). Inside
+  // the island `var(--ah-ink)` resolves canonical-dark in both modes, which
+  // would read dark-on-dark against the inverted nav row — so, like the disc,
+  // it picks its mode explicitly. It matches the disc's GROUND, not its glyph:
+  // ink on the light bone row, bone on the inverted dark row.
+  const chromeFg = discBg;
   const router = useRouter();
   const logout = useAuth((s) => s.logout);
   const dmCount = useUnreadCounts((s) => s.dmCount);
@@ -159,32 +171,16 @@ export function ForallMenu({
   // must look like the menu.
   const showClose =
     mobileSheetOpen || mobileMenuOpen || (explainActive && aboutOpen);
-  // FORALL-CUT-AND-LOCKUP-ADR §IV: the RESTING desktop disc is a lens — a
-  // white disc with the ∀ punched clean through (a real hole), set to
-  // mix-blend-mode: difference against the workspace. The body renders as the
-  // live photo-negative of whatever passes beneath (over the bone floor that
-  // resolves to ~ink, so the resting brand look is preserved), and the
-  // letterform shows the TRUE feed through the hole. The blend only reaches
-  // the canvas when no ancestor stacking context sits between disc and feed
-  // (§IV.5 — a z-index here was the prototype bug that rendered the disc
-  // solid white), so lens mode requires z-index:auto and can only hold while
-  // nothing needs the disc ABOVE it at z-60: menu/search closed, no
-  // Glasshouse pane (crisp-above-the-frost invariant), no Explain program.
-  // Every one of those states swaps to the painted glyph on the z-60 island;
-  // the swap lands where hole and paint coincide, so it reads as no change
-  // (§IV.2.2). The blend group is scoped by `body { isolation: isolate }`
-  // (globals.css) and the canvas confines vessel z-order with its own
-  // isolation — see WorkspaceView.
-  // Non-Glasshouse covering surfaces (NewFeedPrompt, LightboxOverlay) aren't
-  // in the presence registry — they self-declare via useLensSuppressor, else
-  // the disc stays difference-blended UNDER their scrims (§0i.5).
-  const lensSuppressed = useLensSuppress((s) => s.count > 0);
-  const lensMode =
-    !inBar &&
-    view === "closed" &&
-    !glasshouseOpen &&
-    !explainActive &&
-    !lensSuppressed;
+  // The difference lens is GONE (WORKSPACE-COLUMN-LAYOUT-ADR §VI). The disc no
+  // longer floats over the canvas compositing `mix-blend-mode: difference`
+  // against it: it is docked in an opaque nav row, so there is nothing left for
+  // it to float over, and the viewport-sized blend surface it re-rendered on
+  // every scroll frame is no longer paid for. What that deleted with it: the
+  // `lensMode` derivation and its painted/punched swap, the `body { isolation }`
+  // scope and the canvas isolation, the z-index:auto stacking-context
+  // choreography, and `stores/lensSuppress.ts` with the self-declaring
+  // suppressors in NewFeedPrompt / LightboxOverlay. The ∀ mark, the menu and
+  // the ceremony are untouched — only the blend and the float go.
   const [activeIndex, setActiveIndex] = useState(0);
   // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
   // leaving completes the turn to 360° (back to ∀), then snaps to 0 for next
@@ -194,7 +190,6 @@ export function ForallMenu({
   const [spinTransition, setSpinTransition] = useState(true);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const wordmarkRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // The `disc` explainable root is the REAL ∀ disc (2026-07-15 rework: the
@@ -398,11 +393,10 @@ export function ForallMenu({
   useEffect(() => {
     if (view === "closed") return;
     const onDocClick = (e: MouseEvent) => {
+      // One check covers the whole lockup: the wordmark is now a CHILD of this
+      // container (it needed its own fixed layer only for the lens), so a click
+      // on it — which toggles the menu — is never an outside click.
       if (containerRef.current?.contains(e.target as Node)) return;
-      // The wordmark is a separate stacking-layer sibling (it sits BELOW the
-      // scrim so a glasshouse hides it), but it's part of the trigger — a click
-      // on it toggles the menu, so it must not count as an outside click.
-      if (wordmarkRef.current?.contains(e.target as Node)) return;
       setView("closed");
     };
     const onKey = (e: KeyboardEvent) => {
@@ -444,9 +438,8 @@ export function ForallMenu({
     }
   }
 
-  // Spin transform shared by the painted glyph and the lens circle — the hole
-  // spins with the disc (§IV.1), and the 360°→0° snap must fire on whichever
-  // svg is mounted, so both branches carry the same style + reset handler.
+  // Spin transform for the ∀/X glyph group (§IV.1). Carries the 360°→0° snap
+  // reset handler; the punched lens variant that shared it is gone.
   const spinStyle: React.CSSProperties = {
     position: "absolute",
     inset: 0,
@@ -473,11 +466,9 @@ export function ForallMenu({
     }
   };
 
-  // The unread badge must never iridesce (§VI non-goal: badge unchanged), so
-  // in lens mode it renders OUTSIDE the difference-blended container — hoisted
-  // to a later fixed sibling that paints above the blend, unblended;
-  // pointer-events:none lets clicks on it fall through to the button beneath.
-  // In painted mode it stays inside the button (part of the click target).
+  // The unread badge rides the button (part of the click target). It used to
+  // need a hoisted un-blended twin in lens mode; with the lens gone there is
+  // one badge, in one place.
   const unreadBadge =
     totalUnread > 0 ? (
       <span
@@ -498,7 +489,6 @@ export function ForallMenu({
           lineHeight: "20px",
           textAlign: "center",
           border: `2px solid ${discBg}`,
-          ...(lensMode ? { pointerEvents: "none" as const } : null),
         }}
       >
         {totalUnread > 99 ? "99+" : totalUnread}
@@ -507,74 +497,94 @@ export function ForallMenu({
 
   return (
     <>
-      {/* D3 chrome swap (2026-07-15 form): while an Explain program is active
-          only the WORDMARK gives way to an "About all.haus" button in the same
-          spot — the disc stays, gets annotated as itself, and its click exits
-          Explain (onTriggerClick above). The button is islanded like the disc
-          so its tokens resolve canonical-light, then takes the same dark-mode
-          photo-negative (bone pill + ink label). Suppressed while the About
-          pane is open (the pane owns its own dismiss); restored on close.
-          Also suppressed for the whole of a PANE-mode program (see paneExplain
-          above) — opening About would supersede the explained pane. */}
+      <div
+        ref={containerRef}
+        style={
+          // Light island: the dropdown is LOCKED chrome — it stays light in both
+          // modes (its tokens resolve to canonical light here). The disc lives in
+          // the same island so its tokens also resolve light, but it explicitly
+          // INVERTS its fill/glyph under dark mode (discBg/discGlyph above): a
+          // light bone disc + dark ink glyph, the photo-negative of light mode.
+          // The wordmark, now a child of this same container, picks its mode the
+          // same explicit way (chromeFg).
+          inBar
+            ? { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 8, top: 6, zIndex: 60 }
+            : {
+                // The LOCKUP, in one fixed container docked at the nav row's
+                // right end (§VI): wordmark and disc adjacent, reading as one
+                // mark (FORALL-CUT-AND-LOCKUP-ADR §V). The wordmark's own fixed
+                // layer is gone — it existed only so the lens could blend
+                // without a stacking context between it and the canvas, and
+                // there is no lens. Vertically centred in the row: with
+                // discSize 40 and NAV_ROW_H 56 that is exactly one GRID.
+                ...LIGHT_ISLAND_STYLE,
+                position: "fixed",
+                right: 24,
+                bottom: (NAV_ROW_H - discSize) / 2,
+                zIndex: 60,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+              }
+        }
+      >
+      {/* D3 chrome swap (2026-07-15 form, re-anchored into the row): while an
+          Explain program is active only the WORDMARK slot gives way to an
+          "About all.haus" button — the disc stays, gets annotated as itself,
+          and its click exits Explain (onTriggerClick above). It inherits the
+          container's island, then takes the same dark-mode photo-negative (bone
+          pill + ink label). Suppressed while the About pane is open (the pane
+          owns its own dismiss); restored on close. Also suppressed for the whole
+          of a PANE-mode program (see paneExplain above) — opening About would
+          supersede the explained pane. */}
       {!inBar && explainActive && !paneExplain && !aboutOpen && (
-        <div
+        <button
+          type="button"
+          className="forall-trigger font-sans font-medium"
+          aria-label="About all.haus"
+          onClick={() => {
+            // Clear the hover before the pane mounts: opening About unmounts
+            // this button without a mouseleave, and a stale `about` bubble
+            // would linger faintly under the Glasshouse frost.
+            useExplain.getState().setHover(null);
+            useAboutOverlay.getState().open();
+          }}
+          // The button sits above the Explain scrim, so the scrim's
+          // pointermove hit-test never reaches it — it reports its own hover
+          // (the `about` label) to honour Explain's "hover anything, read its
+          // label" contract. Click opens About; hover teaches.
+          onMouseEnter={() =>
+            useExplain.getState().setHover({ kind: "about" })
+          }
+          onMouseLeave={() => useExplain.getState().setHover(null)}
           style={{
-            ...LIGHT_ISLAND_STYLE,
-            position: "fixed",
-            right: 24 + discSize + 14,
-            bottom: 24,
-            zIndex: 60,
+            height: discSize,
+            display: "flex",
+            alignItems: "center",
+            padding: "0 22px",
+            borderRadius: discSize / 2,
+            background: discBg,
+            color: discGlyph,
+            border: "none",
+            cursor: "pointer",
+            fontSize: 16,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
           }}
         >
-          <button
-            type="button"
-            className="forall-trigger font-sans font-medium"
-            aria-label="About all.haus"
-            onClick={() => {
-              // Clear the hover before the pane mounts: opening About unmounts
-              // this button without a mouseleave, and a stale `about` bubble
-              // would linger faintly under the Glasshouse frost.
-              useExplain.getState().setHover(null);
-              useAboutOverlay.getState().open();
-            }}
-            // The button sits above the Explain scrim, so the scrim's
-            // pointermove hit-test never reaches it — it reports its own hover
-            // (the `about` label) to honour Explain's "hover anything, read its
-            // label" contract. Click opens About; hover teaches.
-            onMouseEnter={() =>
-              useExplain.getState().setHover({ kind: "about" })
-            }
-            onMouseLeave={() => useExplain.getState().setHover(null)}
-            style={{
-              height: discSize,
-              display: "flex",
-              alignItems: "center",
-              padding: "0 22px",
-              borderRadius: discSize / 2,
-              background: discBg,
-              color: discGlyph,
-              border: "none",
-              cursor: "pointer",
-              fontSize: 16,
-              lineHeight: 1,
-              whiteSpace: "nowrap",
-            }}
-          >
-            About all.haus
-          </button>
-        </div>
+          About all.haus
+        </button>
       )}
-      {/* Wordmark lockup — "all.haus" set to the LEFT of the ∀ disc so the two
-          read as one mark (text · glyph). It's part of the trigger's click
-          target (same toggle + glyph-spin as the disc) and, like the disc,
-          stays CRISP above the frost: it sits at z-60 (the ForallMenu layer),
-          above the Glasshouse scrim (z-[55]), so an open overlay never blurs or
-          dims it. Floating only — the mobile bar already carries its own
-          wordmark. Gives way to the About button while a FLOOR-mode Explain
-          program is active; stays put through a pane-mode one. */}
+      {/* Wordmark — "all.haus" set to the LEFT of the ∀ disc so the two read as
+          one mark (text · glyph). It is part of the trigger's click target (same
+          toggle + glyph-spin as the disc) and, like the disc, stays CRISP above
+          the frost: the container sits at z-60, above the Glasshouse scrim
+          (z-[55]), so an open overlay never blurs or dims it. Row anchor only —
+          the mobile bar carries its own wordmark. Gives way to the About button
+          while a FLOOR-mode Explain program is active; stays put through a
+          pane-mode one. */}
       {!inBar && (!explainActive || paneExplain) && (
         <button
-          ref={wordmarkRef}
           type="button"
           aria-hidden="true"
           tabIndex={-1}
@@ -588,21 +598,9 @@ export function ForallMenu({
             setGlyphRot(360);
           }}
           style={{
-            position: "fixed",
-            right: 24 + discSize + 14,
-            bottom: 24,
             height: discSize,
             display: "flex",
             alignItems: "center",
-            // Lens mode (§IV.5): the wordmark takes the same difference blend
-            // as the disc, so a light/dark feed edge passing behind runs its
-            // seam straight through the type. That requires z-index:auto (any
-            // z-index forms a stacking context that breaks the blend) and the
-            // island (so var(--ah-white) below is TRUE white in both modes).
-            // Painted states restore the crisp z-60 layer above the scrim.
-            ...(lensMode
-              ? { ...LIGHT_ISLAND_STYLE, mixBlendMode: "difference" as const }
-              : { zIndex: 60 }),
             background: "transparent",
             border: "none",
             padding: 0,
@@ -612,15 +610,13 @@ export function ForallMenu({
           <span
             className="font-sans font-medium leading-none"
             style={{
-              // 28 (was 24) — §V lockup rebalance: with the 46px disc,
-              // disc/cap-height ≈ 2.3, so the pair reads as kin on one row.
-              fontSize: 28,
-              // Lens: true white, so difference renders the full negative
-              // (over the bone floor that resolves to ≈ ink — the resting
-              // brand look). Painted: var(--ah-ink) (not the locked ink-925)
-              // so the wordmark flips to light on the dark workspace floor
-              // under the global dark mode.
-              color: lensMode ? "var(--ah-white)" : "var(--ah-ink)",
+              // 24 with the 40px row disc — §V's disc/cap-height ≈ 2.3 carried
+              // over from the 46/28 floating pair, so the two still read as kin.
+              fontSize: wordmarkSize,
+              // Explicit, not var(--ah-ink): inside the island that would
+              // resolve canonical-dark in both modes and read dark-on-dark
+              // against the inverted nav row.
+              color: chromeFg,
               letterSpacing: "-0.01em",
             }}
           >
@@ -629,39 +625,6 @@ export function ForallMenu({
         </button>
       )}
 
-      <div
-        ref={containerRef}
-        style={
-          // Light island: the dropdown is LOCKED chrome — it stays light in both
-          // modes (its tokens resolve to canonical light here). The disc lives in
-          // the same island so its tokens also resolve light, but it explicitly
-          // INVERTS its fill/glyph under dark mode (discBg/discGlyph above): a
-          // light bone disc + dark ink glyph, the photo-negative of light mode.
-          // The wordmark is a sibling outside this island, so it flips to light
-          // on the dark floor.
-          inBar
-            ? { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 8, top: 6, zIndex: 60 }
-            : {
-                ...LIGHT_ISLAND_STYLE,
-                position: "fixed",
-                right: 24,
-                bottom: 24,
-                // Lens mode: the difference blend lives HERE, on the outermost
-                // fixed element — position:fixed itself forms a stacking
-                // context (an isolated group) even at z-index:auto, so a blend
-                // on any DESCENDANT composites against nothing and renders the
-                // disc solid white (§IV.5 — the z-index was one instance of
-                // the same rule; the fixed container was another). The whole
-                // lockup flattens into this group and blends once against the
-                // body group beneath (floor + isolated canvas, by DOM order).
-                // Every painted state (menu open, pane up, Explain) restores
-                // the z-60 crisp-above-the-frost island instead.
-                ...(lensMode
-                  ? { mixBlendMode: "difference" as const }
-                  : { zIndex: 60 }),
-              }
-        }
-      >
       {view === "menu" && (
         <div
           role="menu"
@@ -672,8 +635,9 @@ export function ForallMenu({
             position: "absolute",
             right: 0,
             // Track discSize (§V follow-through) rather than a fixed 64, so a
-            // disc resize can't silently widen the disc↔menu gap. 46 + 18
-            // preserves the tuned gap at the rebalanced size.
+            // disc resize can't silently widen the disc↔menu gap. In the row
+            // anchor the menu opens UPWARD (§VI); discSize + 18 clears both the
+            // disc and the row's top slab.
             ...(inBar ? { top: discSize + 8 } : { bottom: discSize + 18 }),
             minWidth: 240,
             padding: 6,
@@ -750,23 +714,16 @@ export function ForallMenu({
           position: "relative",
           // Block, not the button-default inline-block: an inline-block child
           // sits on its container's text BASELINE, so the line box reserves
-          // strut-descent space (~8px) below the disc — and with the container
-          // anchored bottom:24 that descent pushed the disc up off its anchor,
-          // visibly above the About pill / wordmark sharing the same bottom
-          // rule. Block-level kills the line box; the disc sits exactly at the
-          // anchor, flush with its siblings ("disc + elongated disc").
+          // strut-descent space (~8px) below the disc — which pushed the disc
+          // up off the container's bottom anchor, visibly above the About pill
+          // / wordmark sharing it. Block-level kills the line box; the disc
+          // sits flush with its siblings ("disc + elongated disc"), which is
+          // also what keeps the lockup centred in the nav row.
           display: "block",
           width: discSize,
           height: discSize,
           borderRadius: "50%",
-          // Lens mode (§IV): the button paints nothing itself — the masked
-          // white circle inside is the disc body, and the ∀ is a REAL hole
-          // showing the true feed. The difference blend sits on the FIXED
-          // CONTAINER above, not here: the container is a stacking context
-          // (position:fixed), so a blend on the button would be isolated from
-          // the canvas and render solid white. The button's own transform
-          // merely flattens into the container group the blend applies to.
-          background: lensMode ? "transparent" : discBg,
+          background: discBg,
           color: discGlyph,
           border: "none",
           padding: 0,
@@ -804,56 +761,11 @@ export function ForallMenu({
             Wrapper + inner SVG so the unread badge stays an UN-clipped sibling on
             the button.
 
-            LENS branch (FORALL-CUT-AND-LOCKUP-ADR §IV): when the disc rests
-            idle on the desktop floor it is instead a white disc with the ∀
-            punched clean through — the mask's own circle is the containment
-            (no wrapper clip needed), and the whole svg spins so the hole turns
-            with the disc (§IV.1). Glyph geometry is identical to the painted
-            group, so the lens→paint swap on open lands where the two coincide
-            and reads as no change (§IV.2.2). showClose is never true in lens
-            mode (lensMode excludes every X state), so the lens carries no
-            morph groups. */}
-        {lensMode ? (
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 56 56"
-            onTransitionEnd={onSpinTransitionEnd}
-            style={spinStyle}
-          >
-            <defs>
-              {/* Mask luminance, not rendered colour (same register as
-                  #forall-clip): white keeps the disc body, black cuts the
-                  letterform clean out. */}
-              <mask id="forall-lens">
-                <circle cx="28" cy="28" r="28" fill="#fff" />
-                <g
-                  stroke="#000"
-                  strokeWidth={5}
-                  strokeLinecap="butt"
-                  fill="none"
-                >
-                  <path
-                    d="M10.6 -1.7 L28 45 L45.4 -1.7"
-                    strokeLinejoin="miter"
-                    strokeMiterlimit={6}
-                  />
-                  <line x1="18" y1="22" x2="38" y2="22" strokeWidth={4.2} />
-                </g>
-              </mask>
-            </defs>
-            {/* fill via style — SVG presentation attributes can't resolve
-                var(). Inside the island var(--ah-white) is TRUE white in both
-                modes; the difference source must be full-range white for the
-                negative to invert cleanly (§IV.5). */}
-            <circle
-              cx="28"
-              cy="28"
-              r="28"
-              mask="url(#forall-lens)"
-              style={{ fill: "var(--ah-white)" }}
-            />
-          </svg>
-        ) : (
+            The painted glyph is now the ONLY construction: the punched lens
+            variant (a masked white disc composited with mix-blend-mode:
+            difference) went with the floating disc — WORKSPACE-COLUMN-LAYOUT-ADR
+            §VI. The cut/punched realisation survives in the brand exports
+            (web/public/brand/), where the ground is ours to show. */}
         <span
           aria-hidden="true"
           style={{
@@ -932,31 +844,9 @@ export function ForallMenu({
           </g>
         </svg>
         </span>
-        )}
-        {!lensMode && unreadBadge}
+        {unreadBadge}
       </button>
       </div>
-      {/* Lens mode: the badge must never iridesce (§VI), so it hoists OUT of
-          the blended container entirely — a later fixed sibling mirroring the
-          lockup's geometry paints above the blend, unblended; its own
-          pointer-events:none (set on the badge in lens mode) lets clicks fall
-          through to the disc beneath. */}
-      {lensMode && unreadBadge && (
-        <div
-          aria-hidden="true"
-          style={{
-            ...LIGHT_ISLAND_STYLE,
-            position: "fixed",
-            right: 24,
-            bottom: 24,
-            width: discSize,
-            height: discSize,
-            pointerEvents: "none",
-          }}
-        >
-          {unreadBadge}
-        </div>
-      )}
     </>
   );
 }

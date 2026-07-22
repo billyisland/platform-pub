@@ -14,7 +14,9 @@ interface ForAllMarkProps {
  * The DISC form additionally has a canonical CUT realisation — the ∀ punched
  * clean through an opaque disc, apex kissing the bottom rim, feet running out
  * flush through the top (docs/adr/FORALL-CUT-AND-LOCKUP-ADR §III; exported
- * assets in web/public/brand/, live as the idle workspace lens in ForallMenu).
+ * assets in web/public/brand/ — the one ground that is ours to show. The
+ * workspace disc paints rather than punches: its idle difference lens went
+ * with the floating position, WORKSPACE-COLUMN-LAYOUT-ADR §VI).
  * That geometry is the cut form's only — this bare glyph has no rim to kiss
  * and is unchanged by it.
  */

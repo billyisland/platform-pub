@@ -51,6 +51,7 @@ import {
 } from "./tokens";
 import { useColorScheme } from "../../stores/colorScheme";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
+import { NavRow, NAV_ROW_H } from "./NavRow";
 import { useMobileActiveFeed } from "../../stores/mobileActiveFeed";
 import { useFeedArrivals } from "../../stores/feedArrivals";
 import { Composer, type ReplyTarget } from "./Composer";
@@ -344,10 +345,13 @@ export function WorkspaceView() {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  // navRowH is 0 until Slice 4 wires the fixed bottom nav row (§VI).
+  // The fixed bottom nav row (§VI) eats the bottom of the floor: derivation
+  // ends the available height one GRID above it, so a vessel can never extend
+  // behind or below the row. Mobile has no such row (its bar is top-anchored
+  // and the pager, not the canvas, owns the layout there).
   const vp = useMemo(
-    () => ({ w: viewport.w, h: viewport.h, navRowH: 0 }),
-    [viewport.w, viewport.h],
+    () => ({ w: viewport.w, h: viewport.h, navRowH: isMobile ? 0 : NAV_ROW_H }),
+    [viewport.w, viewport.h, isMobile],
   );
 
   // A live resize proposal, merged into the derivation input so the columns to
@@ -1455,14 +1459,12 @@ export function WorkspaceView() {
             position: "relative",
             width: geom.floorWidth,
             height: "100%",
-            // Confine vessel z-order (the drag/armed raise in Vessel.tsx) to
-            // the canvas. The idle ∀ disc runs at z-index:auto in lens mode
-            // (FORALL-CUT-AND-LOCKUP-ADR §IV.5 — any z-index between disc and
-            // feed breaks the difference blend), so without this a raised
-            // vessel would paint OVER the disc; isolated, the canvas flattens
-            // into one unit the later-in-DOM ForallMenu paints above, and one
-            // backdrop the lens inverts.
-            isolation: "isolate",
+            // No `isolation: isolate` here any more: it existed to give the
+            // difference lens a single flattened backdrop and to stop a raised
+            // vessel painting over a disc that had to run at z-index:auto
+            // (WORKSPACE-COLUMN-LAYOUT-ADR §VI killed both). The Vessel's
+            // drag/armed raise tops out at z-6, far under the nav row (58) and
+            // the ∀ (60), so plain document order is enough.
           }}
         >
           <DropStripe drop={drop} layout={geomLayout} geom={geom} />
@@ -1539,6 +1541,10 @@ export function WorkspaceView() {
             })}
         </div>
       )}
+      {/* The nav row (§VI) — chrome only; the lockup docks into it via
+          ForallMenu anchor="row" below. Desktop only: the mobile bar is
+          top-anchored and carries its own wordmark. */}
+      {!isMobile && <NavRow />}
       <ForallMenu
         onAction={handleForallAction}
         hiddenFeeds={hiddenFeeds}
@@ -1550,7 +1556,7 @@ export function WorkspaceView() {
           const v = vessels.find((x) => x.feed.id === feedId);
           if (v) setFeedComposerFor(v.feed);
         }}
-        anchor={isMobile ? "bar" : "floating"}
+        anchor={isMobile ? "bar" : "row"}
       />
       <Composer
         open={!!composerOpen}

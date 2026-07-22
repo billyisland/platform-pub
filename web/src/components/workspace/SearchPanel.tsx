@@ -40,8 +40,8 @@ export function SearchPanel({
   placement = "above",
 }: {
   onClose: () => void;
-  /** "above" hangs the panel over the desktop ∀ disc (anchored to its
-   *  bottom-right container); "below" drops it under the mobile bar's docked
+  /** "above" hangs the panel over the desktop ∀ lockup (anchored to its
+   *  container at the nav row's right end); "below" drops it under the mobile bar's docked
    *  trigger (MOBILE-LAYOUT-ADR §III), clamped to the viewport width. */
   placement?: "above" | "below";
 }) {

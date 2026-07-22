@@ -54,6 +54,7 @@ import { useExplain } from "../../stores/explain";
 import { useBackGuard } from "../../lib/backGuard";
 import { isDragSurface } from "../../lib/dragSurface";
 import { MOBILE_BAR_H } from "./MobileWorkspace";
+import { NAV_ROW_H } from "./NavRow";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
@@ -151,8 +152,16 @@ const widthFor = (maxWidth: number, vw: number) =>
   Math.min(maxWidth, vw - MARGIN * 2);
 const maxXFor = (maxWidth: number, vw: number) =>
   Math.max(0, vw - widthFor(maxWidth, vw));
+// Usable vertical room: the viewport less the fixed desktop nav row at its
+// bottom (WORKSPACE-COLUMN-LAYOUT-ADR §VI) — the mirror of the fullScreen
+// branch's MOBILE_BAR_H inset. The row is z-58, above the pane (z-56), so a
+// pane that ignored it would slide underneath opaque chrome. Applied
+// unconditionally on the desktop path: a member always lands in the workspace
+// (HomeRedirect / WorkspacePaneRedirect), so a desktop pane over a rowless
+// standalone page is only ever a transient pre-redirect frame.
+const usableH = (vh: number) => Math.max(0, vh - NAV_ROW_H);
 // Keep at least 120px of the pane (its draggable top + chrome) on-screen.
-const maxYFor = (vh: number) => Math.max(0, vh - 120);
+const maxYFor = (vh: number) => Math.max(0, usableH(vh) - 120);
 const centreX = (maxWidth: number, vw: number) =>
   clampN(snap((vw - widthFor(maxWidth, vw)) / 2), 0, maxXFor(maxWidth, vw));
 
@@ -271,9 +280,10 @@ function usePanePlacement(
     const startW = paneRef.current?.offsetWidth ?? widthFor(maxWidth, vw);
     const startH = paneRef.current?.offsetHeight ?? MIN_H;
     const { clientX: startX, clientY: startY } = e;
-    // Cap so the stretched pane keeps a gutter to the right / bottom edge.
+    // Cap so the stretched pane keeps a gutter to the right / bottom edge —
+    // "bottom" being the top of the nav row, not the viewport floor.
     const maxW = Math.max(MIN_W, vw - pos.x - MARGIN);
-    const maxH = Math.max(MIN_H, vh - pos.y - MARGIN);
+    const maxH = Math.max(MIN_H, usableH(vh) - pos.y - MARGIN);
     const resolve = (ev: PointerEvent) => ({
       w: snap(clampN(startW + (ev.clientX - startX), MIN_W, maxW)),
       h: snap(clampN(startH + (ev.clientY - startY), MIN_H, maxH)),
@@ -301,8 +311,8 @@ function usePanePlacement(
   };
 
   // Available on-screen height below the drop position; `--gh-h` and the pane's
-  // own clamp both derive from it.
-  const maxHeight = vp.vh - pos.y - MARGIN;
+  // own clamp both derive from it. Bounded above the nav row (usableH).
+  const maxHeight = usableH(vp.vh) - pos.y - MARGIN;
   const effW = resizable
     ? clampN(size?.w ?? widthFor(maxWidth, vp.vw), MIN_W, Math.max(MIN_W, vp.vw - pos.x - MARGIN))
     : widthFor(maxWidth, vp.vw);

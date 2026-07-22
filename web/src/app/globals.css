@@ -265,11 +265,6 @@ html.ah-session main {
     font-size: 1.0625rem;
     line-height: 1.6;
     padding-top: 0;
-    /* Scope for the ∀ lens (FORALL-CUT-AND-LOCKUP-ADR §IV.5): the idle
-       workspace disc composites with mix-blend-mode: difference against the
-       canvas behind it; isolating at body makes this the blend group's
-       ceiling, so the lens can never invert anything outside the page root. */
-    isolation: isolate;
   }
 
   ::selection {
