@@ -374,7 +374,13 @@ the islanded span's pinned `--ah-ink` would otherwise vanish on the inverting
 menu ground), trigger + swatches carry `.focus-ring`, and the menu's Escape
 handler stops propagation so it closes the menu without dismissing the whole
 FeedComposer (Glasshouse listens on `window`, the menu on `document` — the M22
-lightbox precedent).
+lightbox precedent). That Escape-claim pattern was centralised 2026-07-22
+(§0k.3) into the shared `web/src/hooks/useEscapeShield.ts` — SchemeMenu now
+rides it, along with the five other popovers that had the bare-`document`
+double-close (ProfileFollowControl, IdentityLinkControl, FollowingTab's
+unsubscribe dialog, VouchModal, AuthorModal) — see the CLAUDE.md "Overlay
+close affordance" rule; new popovers over a pane use the hook, never an
+inline copy.
 
 ### 4a — Density is a two-state toggle (2026-07-19)
 

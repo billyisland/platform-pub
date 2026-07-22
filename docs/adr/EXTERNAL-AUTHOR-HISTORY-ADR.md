@@ -277,6 +277,16 @@ Trigger on *empty or not*: hydrate whenever the guard is clear, not only when
 the log is empty — a stale cache (last hydrated a month ago, since GC'd or
 gone quiet) should refresh on view. The TTL guard is what bounds cost.
 
+**Failure semantics (amended 2026-07-22, §0k.2):** a FAILED run does not
+consume the TTL — `hydrateAuthorTimeline`'s catch clears the guard so the next
+profile view retries (the D1 guard-clear rule from thread hydration). To make
+that reachable, the atproto/AP fetchers THROW on transient trouble (429/5xx —
+`safeFetch` returns rather than throws on those) instead of silently
+returning; a definitive 4xx (deleted/blocked account) stays a clean settle and
+keeps the stamp. Pre-amendment, one transient error froze the author's
+timeline hydration for the full 10 minutes, invisibly. Guarded by
+`gateway/tests/author-timeline-guard.test.ts` (mutation-verified).
+
 ### 3.2 Persistence — where unsubscribed authors' rows live
 
 `external_items.source_id` is NOT NULL, and an unsubscribed author often has no
