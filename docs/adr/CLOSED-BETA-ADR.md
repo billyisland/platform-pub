@@ -1,0 +1,269 @@
+# CLOSED-BETA-ADR: Closed Beta Gating & Waiting List
+
+**all.haus Architectural Decision Record**
+**Status:** Accepted — 2026-07-22. **Phase 1 built 2026-07-23** (local; not yet
+deployed). Phases 2–3 outstanding. As-built notes: §VIII.
+**Author:** Ed Lake / Claude (design partner)
+**Depends on:** existing magic-link + Google OAuth auth flow (`gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`)
+**Affects:** `gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`, `gateway/src/routes/` (new `waitlist.ts`), `web/src/app/auth/page.tsx`, `web/src/app/page.tsx`, `web/src/app/` (new waitlist surface), `schema.sql`, `migrations/`
+
+> **Note to Claude Code.** This is a design-decisions document, not a line-level
+> implementation spec. It fixes the _what_ and the _why_; you own the _how_.
+> Where it names a file, endpoint, column, or constant, treat that as the
+> intended shape unless you find a concrete reason it cannot work — in which
+> case stop and flag it rather than improvising a divergent design. Phasing is
+> in §VI; Phase 1 (the server gate) is the only part that actually _closes_ the
+> beta and must land first and independently.
+
+---
+
+## I. Problem statement
+
+all.haus is going into **closed beta**. The intent:
+
+1. **Existing members keep full access.** Anyone who already holds an account
+   can still log in fresh — enter email, receive magic link, sign in — not
+   merely ride an existing session.
+2. **No new accounts.** Account creation is closed to the public.
+3. **Prospective users can register interest** via a waiting list, so they can
+   be admitted in cohorts as the beta opens up.
+4. **The public face repositions readers-first** (see §IV) — a shift away from
+   the current author-centric landing copy.
+
+The naive implementation — a splash page, or hiding the "Sign up" button — does
+not close the beta. With passwordless auth, "log in" and "sign up" are adjacent
+actions, and OAuth auto-provisions. The gate must sit at **account creation, on
+the server**, or anyone with the right URL walks in.
+
+---
+
+## II. Entry-path audit
+
+There are three ways into the app. Each was traced before deciding.
+
+1. **Email magic link** — `POST /auth/login` → `requestMagicLink(email)`.
+   `requestMagicLink` issues a token only if an account already exists
+   (`SELECT id FROM accounts WHERE email = $1 AND status IN ('active',
+   'deactivated')`); an unknown email returns `null` silently, and no account is
+   created. **This path is already closed to newcomers and already open to
+   members.** It needs no change. Deactivated accounts still reactivate on login
+   via `/auth/verify`, as promised by the deactivate flow — unaffected.
+
+2. **Email signup** — `POST /auth/signup`. The one email path that creates an
+   account (generates a keypair, inserts the row). **This must be blocked.**
+
+3. **Google OAuth** — `GET /api/v1/auth/google` → callback. Finds-or-creates:
+   an existing email returns its account; an unknown email calls
+   `createGoogleAccount(...)`. **This is the leak** — "Continue with Google"
+   silently provisions. New emails must be refused; existing ones pass through.
+
+---
+
+## III. Decisions
+
+### D1 — Gate at account creation, server-side, authoritative
+
+The server refuses to _create_ accounts; it does not merely hide the means to
+ask. Frontend changes (§IV) are presentation only.
+
+- **`/auth/signup`** returns `403 { error: "closed_beta" }`. No keypair, no
+  insert. Rate-limit config unchanged.
+- **Google OAuth**: in the callback, when the lookup finds no existing account
+  (`existing.rows.length === 0`), do **not** call `createGoogleAccount`.
+  Redirect to the waitlist surface with a closed-beta marker instead. When an
+  account exists, proceed exactly as today.
+- **Magic-link login**: unchanged — already members-only by construction.
+
+This means the guarantee ("no new accounts") holds even if a stale frontend, a
+bookmarked `/auth?mode=signup`, or a hand-crafted request reaches the gateway.
+
+### D2 — Waiting list is capture, not a mailto
+
+A stored list — not an inbox to trawl — because the README lists launch-cohort
+recruitment (20–30 users) as launch-blocking, and a captured list _is_ that
+pipeline: it lets prospects be admitted in cohorts and demand to be measured.
+
+- New `waitlist` table. Minimal shape: email (unique, lower-cased), an optional
+  publish-interest flag (see D3), `created_at`. No more PII than necessary.
+- New enumeration-safe endpoint (e.g. `POST /waitlist`) returning a generic
+  acknowledgement regardless of whether the email is new or already present —
+  mirroring the existing "if an account exists…" posture on `/auth/login`.
+  Rate-limited like the other unauthenticated auth routes.
+- `mailto:info@all.haus` is retained as a human fallback / contact line, not as
+  the primary mechanism.
+
+### D3 — Reader is the default identity; publishing is a soft opt-in
+
+Consistent with the readers-first repositioning (§IV), the waitlist does not
+present a "writer / reader" fork. Everyone joining is a reader/user by default;
+intent to publish is a single, unticked opt-in ("I'd also like to publish" or
+similar). This preserves the cohort-recruitment signal — you can still pull the
+would-be publishers out first — without contradicting the readers-first message
+on the page.
+
+> **Open.** The exact control and wording of the publish opt-in is not yet
+> fixed. The decision here is the _shape_ (reader default, publishing opt-in),
+> not the final copy. Alternative on the table: capture email only and drop the
+> flag. Resolve before Phase 2 build.
+
+### D4 — Frontend presentation
+
+- **Landing `/`** keeps its structure and SSR first-paint. Changes: hero and
+  body copy reframed readers-first (§IV); primary CTA changes from "Get started
+  — free £5 credit" (→ `/auth?mode=signup`, now a dead end) to **"Join the
+  waiting list"**; a secondary **"Log in"** for members; a quiet "Closed beta"
+  line. `HomeRedirect` (logged-in → `/reader`) is untouched.
+- **`/auth`** defaults to `login` mode. The signup form and the
+  signup/login toggle are removed. The Google button stays (it now works only
+  for existing accounts, per D1). Two edge cases route to the waitlist surface
+  with an explanatory line rather than a raw error: (a) a visitor arriving at
+  `/auth?mode=signup` directly, and (b) a new email rejected by the Google
+  branch.
+- **Waitlist surface** — a page or section carrying the join form (D2) and the
+  copy in §V.
+
+### D5 — Privacy / legal posture
+
+Storing prospective-user emails is new personal-data processing. Required
+before or alongside Phase 2:
+
+- A lawful-basis and purpose line for the waitlist (what is stored, why, for how
+  long, how it's used to invite people), to sit beside the existing DPIA for
+  Harper James to review.
+- The enumeration-safe response (D2) also avoids leaking, via the waitlist, who
+  is already a member.
+
+---
+
+## IV. Repositioning: readers-first
+
+The current landing centres authors ("Free authors. Writing that's worth
+something." — own your identity, find an audience that pays). The beta launch
+repositions all.haus as **readers-first**. Landing copy refers to **"users"**
+rather than "writers" / "authors"; the reader — one place to read everything,
+paying only for what's worth it — is the protagonist. Publishing is present but
+no longer the headline.
+
+This is a copy-and-emphasis change, not a product change: the underlying
+economic model (readers paying for what they read) is unchanged.
+
+---
+
+## V. Copy (drafts — to redline)
+
+Not finished lines; the house voice (terse, literary, unhurried) wants the
+author's own ear.
+
+**Landing — closed-beta line**
+> all.haus is in closed beta — invited users for now.
+
+**Landing — hero (readers-first)**
+> **Read everything in one place.**
+> Articles, notes, feeds from across the web — one reader. Pay only for what's
+> worth it.
+
+**Waitlist surface**
+> **Not open yet.**
+> all.haus is in closed beta. Join the list and we'll write when there's room.
+> [ email · (opt-in: I'd also like to publish) · Join ]
+> _Already have an account? Log in._
+
+**Google-rejection / stray-signup landing**
+> You're not in the beta yet. Join the waiting list and we'll be in touch.
+
+---
+
+## VI. Phasing
+
+**Phase 1 — the gate (ships first, alone).** `/auth/signup` → 403; Google branch
+refuses unknown emails. This is the only change that _closes_ the beta; it is
+correct and shippable without any of the below. Frontend can still show the old
+signup UI at this point without weakening the guarantee — the server refuses.
+
+**Phase 2 — waiting list.** `waitlist` table + migration; enumeration-safe
+`POST /waitlist`; the join form. Legal line (D5) in parallel.
+
+**Phase 3 — presentation.** Landing readers-first copy + CTA swap; `/auth`
+default-to-login and signup removal; edge-case routing to the waitlist surface.
+
+Ordering rationale: Phase 1 delivers the actual guarantee immediately and
+independently of any UI work. Phases 2–3 are the experience around it.
+
+---
+
+## VII. Consequences & non-goals
+
+- **Not** invite-code gating — admission is manual/cohort-based off the stored
+  list. Invite-code or self-serve cohort tooling is a possible later phase, out
+  of scope here.
+- **No automated cohort-invite tooling** is built by this ADR. The waitlist
+  _stores_ the list; converting a waitlister to a member is a manual/next-phase
+  action.
+- Landing SEO and positioning are preserved (the page is edited, not replaced).
+- Existing members — including those who previously deactivated — retain access
+  through the untouched magic-link path.
+
+---
+
+## VIII. As-built — Phase 1 (2026-07-23)
+
+The §II entry-path audit was checked against the code and holds exactly: the
+only two production `INSERT INTO accounts` sites are `shared/src/auth/
+accounts.ts::signup` (sole caller `POST /auth/signup`) and
+`google-auth.ts::createGoogleAccount` (sole caller the unknown-email branch).
+
+**The gate has one home.** `gateway/src/lib/closed-beta.ts` exports
+`CLOSED_BETA`; both creation paths read it, so they cannot drift into a
+half-open state. Deliberately a **code constant, not an env brake** — reopening
+ships with copy and UI changes anyway, so it should be a reviewed deploy, and
+the guarantee can never be lost to a missing environment variable. This is why
+it carries no `DEPLOYMENT.md` row or compose default (contrast the dark-ship
+brake convention, which governs env flags). Reopening = flip to `false`; both
+original create paths are intact behind it.
+
+**Two divergences from D1, both forced by the code:**
+
+1. **The Google branch returns JSON, it does not redirect.**
+   `/auth/google/exchange` is a POST whose response carries `Set-Cookie`,
+   precisely because Next.js rewrite proxies drop `Set-Cookie` on redirects
+   (the reason recorded at the top of `google-auth.ts`). So the gateway sends
+   `403 {error:'closed_beta'}` and the **frontend callback page** owns the
+   routing. D1's "redirect to the waitlist surface" is not available here.
+
+2. **A sliver of frontend was pulled into Phase 1.** §VI says the old signup UI
+   can stay, which is true of the *guarantee* but shipped a silent failure:
+   `auth/page.tsx` mapped unknown errors to "Something went wrong", and the
+   callback page collapsed every non-ok into `?error=google_failed` — a param
+   `/auth` then ignored entirely. Both now switch on `closed_beta` and show a
+   closed-beta explanation with the `mailto:` fallback (D2). Pointing at the
+   real waitlist surface is Phase 2/3's job. This also fixed the pre-existing
+   drop of `google_denied`/`google_failed`.
+
+**Verified:** `/auth/signup` → 403 with no account created, including on a
+malformed body (it refuses before parsing); magic-link login still mints a
+token for an existing member and still creates nothing for an unknown email.
+The Google branch cannot be exercised without a Google-signed `id_token`, so it
+is covered by `gateway/tests/closed-beta-gate.test.ts` (5 cases: unknown email
+creates *nothing* — no keypair, no insert, no session; active and deactivated
+members pass through; suspended still refused; and provisioning resumes when
+the constant is flipped). The test was mutation-checked — neutering the guard
+fails it.
+
+**Not verified:** the rendered appearance of the closed-beta notice (no browser
+tooling in the build session). The branches are present in the shipped client
+bundles; the copy itself wants the author's ear regardless (§V).
+
+**Carried into Phase 3 — surfaces §IV does not name**, all of which advertise
+signup to logged-out visitors: `Nav.tsx` ("Sign up", both desktop bar and
+mobile sheet), `about/AboutContent.tsx` (CTA + "£5 credit" prose),
+`PaywallGate.tsx` ("Sign up to read" on any shared paywalled article),
+`invite/[token]` and `tribute/claim`. The landing **metadata** (title/OG/
+Twitter, `app/page.tsx`) also still carries the author-centric line, which §VII
+should reconcile. `subscribe/[code]` is already members-only and needs nothing.
+
+**Open, and blocking nothing in Phase 1:** publication invites
+(`/invite/[token]`) are a shipped path for recruiting *outside* writers onto a
+masthead; Phase 1 dead-ends it. Either it gets a token-scoped exemption (a real
+design decision — it is the one hole worth probing) or publications recruit
+only existing members during the beta. Note `redirect=` is already inert:
+`auth/page.tsx` reads only `mode` and always pushes `/reader`.

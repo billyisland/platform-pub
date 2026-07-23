@@ -23,6 +23,7 @@ import {
   sendEmail,
 } from "@platform-pub/shared/lib/email.js";
 import { requireAuth, invalidateAuthCache } from "../middleware/auth.js";
+import { CLOSED_BETA, CLOSED_BETA_ERROR } from "../lib/closed-beta.js";
 import { generateKeypair, signEvent } from "../lib/key-custody-client.js";
 import { republishProfile } from "../lib/discovery-publish.js";
 import {
@@ -37,7 +38,7 @@ import crypto from "crypto";
 // =============================================================================
 // Auth Routes — mounted on the gateway
 //
-// POST /auth/signup              — create account (email, username, displayName)
+// POST /auth/signup              — create account — CLOSED (403 closed_beta)
 // POST /auth/login               — magic link login (sends email)
 // POST /auth/verify              — verify magic link token → set session
 // POST /auth/logout              — clear session
@@ -66,6 +67,13 @@ export async function authRoutes(app: FastifyInstance) {
     "/auth/signup",
     { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
     async (req, reply) => {
+      // CLOSED BETA (CLOSED-BETA-ADR D1) — refuse before parsing, before the
+      // keypair, before any insert. The guarantee must hold for a stale
+      // frontend or a hand-crafted request, not just for the UI we ship.
+      if (CLOSED_BETA) {
+        return reply.status(403).send({ error: CLOSED_BETA_ERROR });
+      }
+
       const parsed = SignupSchema.safeParse(req.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() });

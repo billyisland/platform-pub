@@ -14,7 +14,23 @@ export default function AuthPage() {
   const initialMode = searchParams.get('mode') === 'login' ? 'login' : 'signup'
   const [mode, setMode] = useState<'signup' | 'login'>(initialMode)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+
+  // The Google callback page routes failures back here as ?error=<code>. That
+  // param used to be dropped on the floor, so a refused Google sign-in landed
+  // on a login form explaining nothing.
+  const initialError = searchParams.get('error')
+  const [error, setError] = useState<string | null>(
+    initialError === 'google_denied'
+      ? 'Google sign-in was cancelled.'
+      : initialError === 'google_failed'
+        ? 'Google sign-in didn\'t complete. Please try again.'
+        : null,
+  )
+  // Closed beta (CLOSED-BETA-ADR D1) — reached either by arriving from a
+  // refused Google sign-in, or by submitting the signup form, which the
+  // gateway now refuses with 403 closed_beta. Distinct from `error`: nothing
+  // has gone wrong, so it must not read as a fault.
+  const [closedBeta, setClosedBeta] = useState(initialError === 'closed_beta')
   const [magicLinkSent, setMagicLinkSent] = useState(false)
 
   const [email, setEmail] = useState('')
@@ -32,7 +48,9 @@ export default function AuthPage() {
       setUser(me)
       router.push('/reader')
     } catch (err: any) {
-      if (err.body?.error === 'username_taken') {
+      if (err.body?.error === 'closed_beta') {
+        setClosedBeta(true)
+      } else if (err.body?.error === 'username_taken') {
         setError('That username is already taken.')
       } else if (err.body?.error === 'email_taken') {
         setError('An account with that email already exists. Try logging in instead.')
@@ -109,6 +127,25 @@ export default function AuthPage() {
           ? 'Your first £5 of reading is free. No card required.'
           : 'We\'ll send a login link to your email.'}
       </p>
+
+      {closedBeta && (
+        <div className="mb-6 bg-white px-4 py-4">
+          <p className="text-mono-xs text-black">
+            all.haus is in closed beta — new accounts aren&apos;t open yet.
+          </p>
+          <p className="mt-2 text-mono-xs text-grey-600 leading-relaxed">
+            Existing members can still log in. If you&apos;d like an invitation,
+            write to{' '}
+            <a
+              href="mailto:info@all.haus"
+              className="text-black underline underline-offset-4 hover:text-grey-600"
+            >
+              info@all.haus
+            </a>
+            .
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 bg-white px-4 py-3 text-mono-xs text-black">

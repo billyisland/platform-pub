@@ -4,6 +4,7 @@ import { generateKeypair } from "../lib/key-custody-client.js";
 import { createSession } from "@platform-pub/shared/auth/session.js";
 import { getAccount } from "@platform-pub/shared/auth/accounts.js";
 import { invalidateAuthCache } from "../middleware/auth.js";
+import { CLOSED_BETA, CLOSED_BETA_ERROR } from "../lib/closed-beta.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -14,7 +15,9 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 // GET  /auth/google          — redirect to Google's consent screen
 // POST /auth/google/exchange — called by the frontend callback page after
 //                              Google redirects back; validates state, exchanges
-//                              code, creates or finds account, sets session cookie
+//                              code, finds the account, sets session cookie.
+//                              Closed beta: an unknown email is refused with
+//                              403 closed_beta, never provisioned (D1).
 //
 // Flow:
 //   1. Browser clicks "Continue with Google" → GET /api/v1/auth/google
@@ -183,6 +186,20 @@ export async function googleAuthRoutes(app: FastifyInstance) {
           { accountId, email: email.slice(0, 3) + "***" },
           "Google login — existing account",
         );
+      } else if (CLOSED_BETA) {
+        // CLOSED BETA (CLOSED-BETA-ADR D1) — "Continue with Google" silently
+        // provisioned an account for any unknown email; that was the leak.
+        // Existing accounts pass through the branch above untouched.
+        //
+        // This is a JSON 403, not a redirect: the exchange is a POST whose
+        // response carries Set-Cookie (see the flow note at the top of this
+        // file), so the frontend callback page owns the routing. It sends the
+        // visitor to the closed-beta explanation rather than a raw error.
+        logger.info(
+          { email: email.slice(0, 3) + "***" },
+          "Google login refused — closed beta, no account for this email",
+        );
+        return reply.status(403).send({ error: CLOSED_BETA_ERROR });
       } else {
         accountId = await createGoogleAccount(email, name);
         logger.info(
