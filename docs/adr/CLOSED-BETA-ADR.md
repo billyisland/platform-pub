@@ -330,7 +330,12 @@ only for what's worth it." (§V). CTA swap: primary **"Join the waiting list"** 
 `/waitlist`, secondary **"Log in"** → `/auth?mode=login`, "About all.haus" text
 link, and the quiet "all.haus is in closed beta — invited users for now." line.
 Metadata (title/OG/Twitter) reconciled to the readers-first line, killing the
-author-centric copy §VII flagged. `HomeRedirect` untouched.
+author-centric copy §VII flagged. `HomeRedirect` untouched. **Restyled (same day)
+into the logged-out register's idiom** — the giant Swiss-sans `hero-headline` and
+the 6px `slab-rule` beam (used nowhere else in that register) dropped for the
+centred crimson `∀` + serif head + mono copy grammar shared by `/auth`,
+`/waitlist`, `/about`; the redundant body "Log in" / "About" links removed (both
+in the topbar), leaving one CTA + the closed-beta line.
 
 **`/auth` (`app/auth/page.tsx`).** Rewritten **login-only**: the signup form,
 the display-name/username fields, `handleSignup`, and the login/signup toggle are

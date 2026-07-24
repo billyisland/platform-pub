@@ -47,6 +47,12 @@ starts.
   signup exemption for outside writers stays a deferred design decision), and
   tribute claim (dark feature) anonymous CTA → `/waitlist`. `next build` clean;
   hairline tripwire clean on all touched files. As-built: ADR §X.
+  **Landing restyled into the logged-out register's own idiom (same day):** the
+  Swiss-sans `hero-headline` and the 6px `slab-rule` beam — neither used
+  elsewhere in that register — dropped for the centred crimson `∀` + serif head
+  + mono copy grammar shared by `/auth`, `/waitlist`, `/about`; body "Log in" /
+  "About" links removed (both already in the topbar), leaving one CTA + the
+  closed-beta line.
 
 - **2026-07-24 (closed beta — Phase 2, the waiting list)** — CLOSED-BETA-ADR
   Phase 2 built. Migration 162 adds the minimal `waitlist(email UNIQUE,

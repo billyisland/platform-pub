@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import HomeRedirect from '../components/layout/HomeRedirect'
+import { ForAllMark } from '../components/icons/ForAllMark'
 
 const TITLE = 'all.haus — Read everything in one place.'
 const DESCRIPTION =
@@ -24,45 +25,36 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div className="mx-auto max-w-article-frame px-4 sm:px-6 py-24">
+    // Readers-first, in the logged-out register's own idiom (matches
+    // /auth, /waitlist, /about): centred ∀, serif head, mono copy, .btn.
+    // CLOSED-BETA-ADR §IV. About / Log in live in the topbar — not repeated.
+    <div className="mx-auto max-w-sm px-4 sm:px-6 py-28 text-center">
       <HomeRedirect />
 
-      {/* ── Section 1: Hero (readers-first — CLOSED-BETA-ADR §IV) ── */}
-      <section>
-        <h1 className="hero-headline font-sans font-semibold text-black">
-          Read everything
-        </h1>
-        <p className="hero-headline font-sans font-semibold text-grey-600 mt-1">
-          in one place.
-        </p>
+      <div className="flex justify-center mb-8">
+        <ForAllMark size={36} className="text-crimson" />
+      </div>
 
-        {/* 6px slab rule */}
-        <div className="slab-rule mt-12" />
+      <h1
+        className="font-serif font-medium text-black tracking-tight"
+        style={{ fontSize: '30px' }}
+      >
+        Read everything in one place.
+      </h1>
+      <p className="mt-4 text-mono-sm text-grey-600 leading-relaxed">
+        Articles, notes, and feeds from across the web — one reader.
+        Pay only for what&apos;s worth it.
+      </p>
 
-        <p className="mt-8 font-sans text-[18px] text-black leading-relaxed max-w-[440px]">
-          Articles, notes, and feeds from across the web — one reader.
-          Pay only for what&apos;s worth it.
-        </p>
+      <div className="mt-10">
+        <Link href="/waitlist" className="btn-accent inline-block">
+          Join the waiting list
+        </Link>
+      </div>
 
-        <div className="mt-10 flex flex-col gap-3 items-start">
-          <Link href="/waitlist" className="btn-accent inline-block">
-            Join the waiting list
-          </Link>
-          <Link href="/auth?mode=login" className="btn inline-block">
-            Log in
-          </Link>
-        </div>
-
-        <div className="mt-6">
-          <Link href="/about" className="btn-text-muted">
-            About all.haus
-          </Link>
-        </div>
-
-        <p className="mt-10 text-mono-xs text-grey-400">
-          all.haus is in closed beta — invited users for now.
-        </p>
-      </section>
+      <p className="mt-10 text-mono-xs text-grey-400">
+        all.haus is in closed beta — invited users for now.
+      </p>
     </div>
   )
 }
