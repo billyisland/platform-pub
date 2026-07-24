@@ -47,15 +47,18 @@ function ClaimInner() {
     return <Card title="Claiming your tribute…">Taking you to the piece you inspired.</Card>
   }
 
-  // Anonymous external invitee — the common case. Create an account to claim.
+  // Anonymous external invitee. Account creation is closed during the beta
+  // (CLOSED-BETA-ADR §IV) — this feature is itself dark, but keep the CTA
+  // honest: join the waiting list rather than a signup form that no longer
+  // exists. Existing members can still log in and bind the offer.
   return (
     <Card title="Someone wants to share their earnings with you">
       <p className="mb-6">
         A writer on all.haus has credited you as an inspiration for a piece and offered you a share
-        of what it earns. Create a free account to read the piece and decide — there’s nothing to buy.
+        of what it earns. all.haus is in closed beta — join the waiting list and we’ll be in touch.
       </p>
-      <button className="btn w-full" onClick={() => router.push('/auth?mode=signup')}>
-        Create a free account
+      <button className="btn w-full" onClick={() => router.push('/waitlist')}>
+        Join the waiting list
       </button>
       <p className="mt-4 text-mono-xs text-grey-600">
         Already on all.haus?{' '}

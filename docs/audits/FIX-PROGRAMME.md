@@ -23,6 +23,31 @@ starts.
 
 ## Progress
 
+- **2026-07-24 (closed beta — Phase 3, the presentation)** — CLOSED-BETA-ADR
+  Phase 3 built; all three phases now complete. Frontend-only (no gateway/schema
+  change). **Every public signup CTA sitewide routes to `/waitlist`**; the only
+  `mode=signup` left in the code is a comment. Landing (`app/page.tsx`)
+  readers-first per §IV (hero "Read everything / in one place.", body + metadata
+  reconciled off the author-centric line §VII flagged); CTAs "Join the waiting
+  list" → `/waitlist`, "Log in" → `/auth?mode=login`, closed-beta line. `/auth`
+  (`app/auth/page.tsx`) rewritten **login-only** — signup form/fields/toggle
+  deleted; the two D4 edge cases (`?mode=signup` direct, `?error=closed_beta`)
+  `router.replace` to `/waitlist?from=beta` and render `null` while redirecting
+  so the form never flashes; the Phase-1 inline notice + `mailto` fallback
+  retired. Google callback's `closed_beta` branch now routes straight to
+  `/waitlist?from=beta` (D4). Waitlist surface gains the §V "you're not in the
+  beta yet" line on `?from=beta` (read from `window.location.search`, not
+  `useSearchParams`, to stay out of a Suspense boundary). §VIII carried surfaces
+  swept: `Nav.tsx` (desktop + mobile sheet), `about/AboutContent.tsx` (CTA +
+  softened "Sign up…" prose; £5-credit fact kept), `article/PaywallGate.tsx`
+  (logged-out branch → `/waitlist` link, not the account-assuming unlock button)
+  + `ArticleReader.handleUnlock` fallback. **Two §VIII open items ruled
+  conservatively (recruit only existing members), not built as exemptions:**
+  publication invites (`invite/[token]`) → "Log in to accept" (token-scoped
+  signup exemption for outside writers stays a deferred design decision), and
+  tribute claim (dark feature) anonymous CTA → `/waitlist`. `next build` clean;
+  hairline tripwire clean on all touched files. As-built: ADR §X.
+
 - **2026-07-24 (closed beta — Phase 2, the waiting list)** — CLOSED-BETA-ADR
   Phase 2 built. Migration 162 adds the minimal `waitlist(email UNIQUE,
   publish_interest, created_at)` table; `POST /waitlist`
@@ -34,9 +59,8 @@ starts.
   publish" opt-in (D3, resolved: keep the flag). D5 lawful-basis/purpose note
   drafted at `docs/adr/WAITLIST-PRIVACY-NOTE.md`. Tests
   `gateway/tests/waitlist.test.ts` (6, mutation-checked); drift guard green;
-  `next build` clean. **Phase 3 (presentation) still outstanding** — nothing
-  links to `/waitlist` yet (landing CTA, `/auth` default-to-login, edge-case
-  routing). As-built: ADR §IX.
+  `next build` clean. **Phase 3 (presentation) shipped same day — see the entry
+  above.** As-built: ADR §IX.
 
 - **2026-07-22 (brand — the nav row loses its slab; the disc adopts the cut mark's
   dimensions)** — two review notes on the shipped columnar workspace, both design

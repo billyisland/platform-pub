@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { waitlist } from '../../lib/api'
 import { ForAllMark } from '../../components/icons/ForAllMark'
@@ -15,6 +15,15 @@ export default function WaitlistPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [joined, setJoined] = useState(false)
+  // Arrived here from a rejected signup / Google sign-in (D4 edge cases) — show
+  // the §V "you're not in the beta yet" line. Read from location rather than
+  // useSearchParams so the page needn't be wrapped in a Suspense boundary.
+  const [fromBeta, setFromBeta] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('from') === 'beta') setFromBeta(true)
+  }, [])
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault()
@@ -66,8 +75,9 @@ export default function WaitlistPage() {
         Not open yet.
       </h1>
       <p className="text-mono-xs text-grey-600 mb-10 leading-relaxed">
-        all.haus is in closed beta. Join the list and we&apos;ll write when
-        there&apos;s room.
+        {fromBeta
+          ? 'You’re not in the beta yet. Join the waiting list and we’ll be in touch when there’s room.'
+          : 'all.haus is in closed beta. Join the list and we’ll write when there’s room.'}
       </p>
 
       {error && (

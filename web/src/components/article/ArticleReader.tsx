@@ -139,7 +139,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
   }
 
   async function handleUnlock() {
-    if (!user) { window.location.href = '/auth?mode=signup'; return }
+    if (!user) { window.location.href = '/waitlist'; return }
     setUnlocking(true); setUnlockError(null); setUnlockNeedsCard(false)
     try {
       let gatePassResult

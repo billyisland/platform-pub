@@ -1,24 +1,34 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { auth } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
 import { ForAllMark } from '../../components/icons/ForAllMark'
 
+// Closed beta (CLOSED-BETA-ADR Phase 3, D4). `/auth` is now login-only: the
+// signup form and the login/signup toggle are gone (account creation is closed
+// server-side — D1). Two edge cases route to the waitlist surface instead of
+// showing a raw error here:
+//   (a) a visitor arriving directly at `/auth?mode=signup`, and
+//   (b) a new Google email the gateway refused (the callback lands us with
+//       `?error=closed_beta`).
+// Both mean "no account, and none can be made" — the waitlist is the answer.
 export default function AuthPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const setUser = useAuth((s) => s.setUser)
 
-  const initialMode = searchParams.get('mode') === 'login' ? 'login' : 'signup'
-  const [mode, setMode] = useState<'signup' | 'login'>(initialMode)
-  const [loading, setLoading] = useState(false)
-
-  // The Google callback page routes failures back here as ?error=<code>. That
-  // param used to be dropped on the floor, so a refused Google sign-in landed
-  // on a login form explaining nothing.
+  const wantsSignup = searchParams.get('mode') === 'signup'
   const initialError = searchParams.get('error')
+  const redirectingToWaitlist = wantsSignup || initialError === 'closed_beta'
+
+  useEffect(() => {
+    if (redirectingToWaitlist) router.replace('/waitlist?from=beta')
+  }, [redirectingToWaitlist, router])
+
+  // The Google callback page routes failures back here as ?error=<code>.
   const [error, setError] = useState<string | null>(
     initialError === 'google_denied'
       ? 'Google sign-in was cancelled.'
@@ -26,41 +36,9 @@ export default function AuthPage() {
         ? 'Google sign-in didn\'t complete. Please try again.'
         : null,
   )
-  // Closed beta (CLOSED-BETA-ADR D1) — reached either by arriving from a
-  // refused Google sign-in, or by submitting the signup form, which the
-  // gateway now refuses with 403 closed_beta. Distinct from `error`: nothing
-  // has gone wrong, so it must not read as a fault.
-  const [closedBeta, setClosedBeta] = useState(initialError === 'closed_beta')
+  const [loading, setLoading] = useState(false)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
-
   const [email, setEmail] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [username, setUsername] = useState('')
-
-  async function handleSignup(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
-    try {
-      await auth.signup({ email, displayName, username })
-      const me = await auth.me()
-      setUser(me)
-      router.push('/reader')
-    } catch (err: any) {
-      if (err.body?.error === 'closed_beta') {
-        setClosedBeta(true)
-      } else if (err.body?.error === 'username_taken') {
-        setError('That username is already taken.')
-      } else if (err.body?.error === 'email_taken') {
-        setError('An account with that email already exists. Try logging in instead.')
-      } else {
-        setError('Something went wrong. Please try again.')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -94,6 +72,9 @@ export default function AuthPage() {
     }
   }
 
+  // Redirecting to the waitlist — render nothing so the login form never flashes.
+  if (redirectingToWaitlist) return null
+
   if (magicLinkSent) {
     return (
       <div className="mx-auto max-w-sm px-4 sm:px-6 py-28 text-center">
@@ -120,32 +101,11 @@ export default function AuthPage() {
   return (
     <div className="mx-auto max-w-sm px-4 sm:px-6 py-28">
       <h1 className="font-serif font-medium text-black mb-2 tracking-tight" style={{ fontSize: '28px' }}>
-        {mode === 'signup' ? 'Create your account' : 'Welcome back'}
+        Welcome back
       </h1>
       <p className="text-mono-xs text-grey-600 mb-10">
-        {mode === 'signup'
-          ? 'Your first £5 of reading is free. No card required.'
-          : 'We\'ll send a login link to your email.'}
+        We&apos;ll send a login link to your email.
       </p>
-
-      {closedBeta && (
-        <div className="mb-6 bg-white px-4 py-4">
-          <p className="text-mono-xs text-black">
-            all.haus is in closed beta — new accounts aren&apos;t open yet.
-          </p>
-          <p className="mt-2 text-mono-xs text-grey-600 leading-relaxed">
-            Existing members can still log in. If you&apos;d like an invitation,
-            write to{' '}
-            <a
-              href="mailto:info@all.haus"
-              className="text-black underline underline-offset-4 hover:text-grey-600"
-            >
-              info@all.haus
-            </a>
-            .
-          </p>
-        </div>
-      )}
 
       {error && (
         <div className="mb-6 bg-white px-4 py-3 text-mono-xs text-black">
@@ -176,37 +136,22 @@ export default function AuthPage() {
         </div>
       </div>
 
-      <form onSubmit={mode === 'signup' ? handleSignup : handleLogin} className="space-y-5">
+      <form onSubmit={handleLogin} className="space-y-5">
         <div>
           <label htmlFor="email" className="label-ui text-grey-400 block mb-2">Email</label>
           <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white px-4 py-[14px] text-black focus:outline-none" style={{ fontSize: '16px', border: '1.5px solid var(--ah-grey-200)' }} placeholder="you@example.com" />
         </div>
 
-        {mode === 'signup' && (
-          <>
-            <div>
-              <label htmlFor="displayName" className="label-ui text-grey-400 block mb-2">Display name</label>
-              <input id="displayName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full bg-white px-4 py-[14px] text-black focus:outline-none" style={{ fontSize: '16px', border: '1.5px solid var(--ah-grey-200)' }} placeholder="Your Name" />
-            </div>
-            <div>
-              <label htmlFor="username" className="label-ui text-grey-400 block mb-2">Username</label>
-              <input id="username" type="text" required pattern="^[a-z0-9_-]+$" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} className="w-full bg-white px-4 py-[14px] text-black focus:outline-none" style={{ fontSize: '16px', border: '1.5px solid var(--ah-grey-200)' }} placeholder="yourname" />
-              <p className="mt-2 text-mono-xs text-grey-400">yourname.all.haus</p>
-            </div>
-          </>
-        )}
-
         <button type="submit" disabled={loading} className="w-full btn disabled:opacity-50 transition-colors">
-          {loading ? 'Working...' : mode === 'signup' ? 'Create account' : 'Send login link'}
+          {loading ? 'Working...' : 'Send login link'}
         </button>
       </form>
 
       <p className="mt-8 text-center text-mono-xs text-grey-600">
-        {mode === 'signup' ? (
-          <>Already have an account?{' '}<button onClick={() => setMode('login')} className="text-black underline underline-offset-4 hover:text-grey-600">Log in</button></>
-        ) : (
-          <>New here?{' '}<button onClick={() => setMode('signup')} className="text-black underline underline-offset-4 hover:text-grey-600">Create an account</button></>
-        )}
+        New here?{' '}
+        <Link href="/waitlist" className="text-black underline underline-offset-4 hover:text-grey-600">
+          Join the waiting list
+        </Link>
       </p>
 
       {process.env.NODE_ENV === 'development' && (

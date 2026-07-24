@@ -102,14 +102,18 @@ export default function InviteAcceptPage() {
           </div>
         ) : (
           <div className="mt-8">
+            {/* Closed beta (CLOSED-BETA-ADR §IV, §VIII open item): account
+                creation is closed, so during the beta a masthead recruits only
+                existing members — an invitee logs in to accept. A token-scoped
+                signup exemption for outside writers is a deferred design call. */}
             <p className="text-sm text-grey-600 mb-4">
-              Sign up or log in to accept this invitation.
+              Log in to accept this invitation.
             </p>
             <Link
-              href={`/auth?mode=signup&redirect=/invite/${token}`}
+              href={`/auth?mode=login&redirect=/invite/${token}`}
               className="btn"
             >
-              Sign up to accept
+              Log in to accept
             </Link>
           </div>
         )}

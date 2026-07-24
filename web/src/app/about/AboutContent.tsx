@@ -42,7 +42,7 @@ export function AboutContent() {
           You don&rsquo;t need to think about any of that
         </h2>
         <p>
-          Sign up, log in with Google if you like, and use what looks and feels like a straightforward web app. Your account comes with &pound;5 of credit to get started. When it runs out, connect a payment method and carry on &mdash; safe in the knowledge that your all.haus account is genuinely yours.
+          Log in with Google if you like, and use what looks and feels like a straightforward web app. Your account comes with &pound;5 of credit to get started. When it runs out, connect a payment method and carry on &mdash; safe in the knowledge that your all.haus account is genuinely yours.
         </p>
       </div>
 
@@ -52,8 +52,8 @@ export function AboutContent() {
 
       {!loading && !user && (
         <div className="text-center">
-          <Link href="/auth?mode=signup" className="btn-accent text-base px-10 py-4">
-            Get started: free &pound;5 credit
+          <Link href="/waitlist" className="btn-accent text-base px-10 py-4">
+            Join the waiting list
           </Link>
         </div>
       )}

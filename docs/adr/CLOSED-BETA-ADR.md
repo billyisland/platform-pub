@@ -2,8 +2,8 @@
 
 **all.haus Architectural Decision Record**
 **Status:** Accepted — 2026-07-22. **Phase 1 built 2026-07-23**, **Phase 2 built
-2026-07-24** (local; not yet deployed). Phase 3 outstanding. As-built notes:
-§VIII (Phase 1), §IX (Phase 2).
+2026-07-24**, **Phase 3 built 2026-07-24** (local; not yet deployed). All three
+phases complete. As-built notes: §VIII (Phase 1), §IX (Phase 2), §X (Phase 3).
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** existing magic-link + Google OAuth auth flow (`gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`)
 **Affects:** `gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`, `gateway/src/routes/` (new `waitlist.ts`), `web/src/app/auth/page.tsx`, `web/src/app/page.tsx`, `web/src/app/` (new waitlist surface), `schema.sql`, `migrations/`
@@ -313,3 +313,69 @@ itself; the form currently carries none, faithful to §V).
 `/waitlist`. The landing still shows the old signup CTA, `/auth` still defaults
 to signup, and the Phase-1 closed-beta notices still point at the `mailto:`
 fallback rather than the surface. Wiring those is Phase 3's stated job.
+
+---
+
+## X. As-built — Phase 3 (2026-07-24)
+
+The presentation layer per §IV/D4, plus the §VIII "carried into Phase 3"
+surfaces. **Every public signup CTA sitewide now routes to `/waitlist`;** the
+only `mode=signup` string left in the code is a comment. Frontend-only — no
+gateway, schema, or endpoint change. `next build` green; hairline tripwire clean
+on all touched files.
+
+**Landing (`app/page.tsx`).** Readers-first (§IV): hero "Read everything / in one
+place.", body "Articles, notes, and feeds from across the web — one reader. Pay
+only for what's worth it." (§V). CTA swap: primary **"Join the waiting list"** →
+`/waitlist`, secondary **"Log in"** → `/auth?mode=login`, "About all.haus" text
+link, and the quiet "all.haus is in closed beta — invited users for now." line.
+Metadata (title/OG/Twitter) reconciled to the readers-first line, killing the
+author-centric copy §VII flagged. `HomeRedirect` untouched.
+
+**`/auth` (`app/auth/page.tsx`).** Rewritten **login-only**: the signup form,
+the display-name/username fields, `handleSignup`, and the login/signup toggle are
+deleted. The Google button and dev-login stay. The two D4 edge cases —
+`?mode=signup` arrived at directly, and `?error=closed_beta` (the shape the
+Google callback used to send) — trigger `router.replace('/waitlist?from=beta')`
+in an effect, and the component returns `null` while redirecting so the login
+form never flashes. Bottom link is now "New here? Join the waiting list". The
+inline closed-beta notice + `mailto` fallback (Phase 1's §VIII item 2) is
+retired in favour of the real surface.
+
+**Google callback (`app/auth/google/callback/page.tsx`).** The `closed_beta`
+branch now routes **straight to `/waitlist?from=beta`** (D4's "route to the
+waitlist surface") instead of `/auth?error=closed_beta` — one hop, no
+intermediate. `/auth` still forwards a stray `error=closed_beta` as belt-and-
+suspenders.
+
+**Waitlist surface (`app/waitlist/page.tsx`).** Gains the §V edge-case line:
+arriving with `?from=beta` shows "You're not in the beta yet. Join the waiting
+list and we'll be in touch when there's room." in place of the default
+subhead. Read from `window.location.search` in an effect, **not**
+`useSearchParams`, to keep the page out of a Suspense boundary.
+
+**§VIII carried surfaces, all swept to `/waitlist`:**
+- `Nav.tsx` — desktop bar and mobile sheet "Sign up" → "Join the waiting list".
+- `about/AboutContent.tsx` — CTA → "Join the waiting list"; the prose's "Sign
+  up, log in with Google…" imperative softened to "Log in with Google…" (the
+  £5-credit line is a product fact, kept).
+- `article/PaywallGate.tsx` — the logged-out branch (shared paywalled article)
+  drops "Create a free account / Sign up to read" for a closed-beta line and
+  renders a `/waitlist` link in place of the `onUnlock` button (which assumes an
+  account). `ArticleReader.handleUnlock`'s logged-out fallback likewise →
+  `/waitlist`.
+
+**Two §VIII open items, ruled conservatively (recruit only existing members
+during the beta) rather than building new exemptions:**
+- **Publication invites (`invite/[token]`)** — the logged-out branch is now
+  "Log in to accept" → `/auth?mode=login`, not signup. The token-scoped signup
+  exemption for outside writers (§VIII's "one hole worth probing") remains a
+  deferred design decision, **not** built here. `redirect=` stays inert as noted.
+- **Tribute claim (`tribute/claim`)** — the anonymous CTA → `/waitlist`
+  ("Join the waiting list"), keeping the existing-member log-in path. The
+  feature is itself dark (`tributesEnabled()` false in prod), so the anonymous
+  branch is unreachable there; this is honesty cleanup, not a live path.
+
+**Not verified:** rendered appearance / copy tone (no browser tooling in the
+build session; the copy still wants the author's ear per §V). Behaviour is
+covered by the build and by manual trace of each redirect.

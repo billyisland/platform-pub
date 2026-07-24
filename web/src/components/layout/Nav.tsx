@@ -41,7 +41,8 @@ function Wordmark({ href }: { href: string }) {
 //
 // The topbar is the logged-out marketing/auth register only (LayoutShell:
 // logged-in surfaces are chromeless — the workspace ∀ is the sole member nav).
-// So this sheet carries no member destinations; it's About / Log in / Sign up.
+// So this sheet carries no member destinations; it's About / Log in / Join the
+// waiting list (closed beta — no public signup, CLOSED-BETA-ADR §IV).
 
 function MobileSheet({ onClose }: { onClose: () => void }) {
   const pathname = usePathname()
@@ -58,7 +59,7 @@ function MobileSheet({ onClose }: { onClose: () => void }) {
       <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
       <Link href="/auth?mode=login" onClick={onClose} className="block py-3 label-ui text-grey-400 hover:text-white transition-colors">Log in</Link>
-      <Link href="/auth?mode=signup" onClick={onClose} className="inline-block mt-1 btn-accent text-center text-sm py-2 px-6">Sign up</Link>
+      <Link href="/waitlist" onClick={onClose} className="inline-block mt-1 btn-accent text-center text-sm py-2 px-6">Join the waiting list</Link>
     </div>
   )
 }
@@ -136,8 +137,8 @@ export function Nav() {
               >
                 Log in
               </Link>
-              <Link href="/auth?mode=signup" className="btn-accent btn-sm">
-                Sign up
+              <Link href="/waitlist" className="btn-accent btn-sm">
+                Join the waiting list
               </Link>
             </div>
 

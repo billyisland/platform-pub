@@ -46,11 +46,12 @@ export default function GoogleCallbackPage() {
         if (!res.ok) {
           // Closed beta: this Google email has no account and the gateway
           // refused to create one (CLOSED-BETA-ADR D1). That is a normal
-          // outcome, not a failure — route to the explanation rather than the
+          // outcome, not a failure — route straight to the waitlist surface
+          // (D4), which explains and captures the interest, rather than the
           // generic error, which would read as "something broke".
           const body = await res.json().catch(() => null)
           if (body?.error === 'closed_beta') {
-            router.replace('/auth?mode=login&error=closed_beta')
+            router.replace('/waitlist?from=beta')
             return
           }
           throw new Error('Exchange failed')

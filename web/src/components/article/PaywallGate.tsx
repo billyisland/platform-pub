@@ -48,8 +48,11 @@ export function PaywallGate({
     pricePence == null || pricePence <= freeAllowanceRemaining
 
   if (!isLoggedIn) {
-    subtext = 'Create a free account to continue. Your first £5 of reading is on us — no card required.'
-    buttonLabel = 'Sign up to read'
+    // Closed beta (CLOSED-BETA-ADR §IV): no public signup. A logged-out reader
+    // on a shared paywalled article joins the waiting list rather than being
+    // offered an account that can't be created. Rendered as a /waitlist link
+    // below (not the onUnlock button, which assumes an account).
+    subtext = 'all.haus is in closed beta. Join the waiting list to read pieces like this.'
   } else if (hasPaymentMethod) {
     subtext = 'This will be added to your reading tab.'
     showPrice = true
@@ -137,9 +140,15 @@ export function PaywallGate({
           </div>
         )}
 
-        <button onClick={onUnlock} disabled={unlocking} className="btn-accent disabled:opacity-50">
-          {unlocking ? 'Unlocking...' : buttonLabel}
-        </button>
+        {isLoggedIn ? (
+          <button onClick={onUnlock} disabled={unlocking} className="btn-accent disabled:opacity-50">
+            {unlocking ? 'Unlocking...' : buttonLabel}
+          </button>
+        ) : (
+          <a href="/waitlist" className="btn-accent inline-block">
+            Join the waiting list
+          </a>
+        )}
 
         {/* Add-card affordance whenever a card is the fix (pre-empted by the
             copy above, or surfaced by a 402 from the unlock attempt). Links to
