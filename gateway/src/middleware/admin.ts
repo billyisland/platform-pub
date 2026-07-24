@@ -21,7 +21,8 @@ export async function getAdminIds(): Promise<string[]> {
       `SELECT value FROM platform_config WHERE key = 'admin_account_ids'`
     )
     const dbValue = rows[0]?.value ?? ''
-    const ids = dbValue.split(',').filter(Boolean)
+    // Trim entries so "id1, id2" parses as two ids, not one id + one " id2".
+    const ids = dbValue.split(',').map((s) => s.trim()).filter(Boolean)
     if (ids.length > 0) {
       adminIdsCache = ids
       adminIdsCacheExpiry = Date.now() + 60_000 // cache for 1 minute
@@ -31,7 +32,10 @@ export async function getAdminIds(): Promise<string[]> {
     logger.warn({ err }, 'Failed to read admin_account_ids from platform_config')
   }
   // Fallback to env var
-  return (process.env.ADMIN_ACCOUNT_IDS ?? '').split(',').filter(Boolean)
+  return (process.env.ADMIN_ACCOUNT_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
 }
 
 async function isAdmin(accountId: string): Promise<boolean> {

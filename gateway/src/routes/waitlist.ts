@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import { zodValidationError } from "@platform-pub/shared/lib/validation.js";
 
 // =============================================================================
 // Waitlist Routes — closed-beta waiting list (CLOSED-BETA-ADR Phase 2, D2/D3)
@@ -27,7 +28,10 @@ export async function waitlistRoutes(app: FastifyInstance) {
   const JoinSchema = z.object({
     // Trim first so a pasted "  you@x.com " passes .email() (Zod validates the
     // raw string) — the route then lower-cases for the unique key.
-    email: z.string().trim().email(),
+    // .max(254): the RFC 5321 address ceiling — Zod's .email() doesn't bound
+    // length, and this route WRITES the value (a multi-KB "email" would insert
+    // a junk row).
+    email: z.string().trim().max(254).email(),
     // D3 — reader is the default identity; publishing is a single soft opt-in.
     // Optional so a stale/minimal client that omits it defaults to reader.
     publishInterest: z.boolean().optional(),
@@ -39,7 +43,7 @@ export async function waitlistRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const parsed = JoinSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() });
+        return reply.status(400).send(zodValidationError(parsed.error));
       }
 
       const email = parsed.data.email.toLowerCase().trim();

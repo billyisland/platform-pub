@@ -5,7 +5,7 @@
 //
 // The ∀ site-navigation control left its floating disc position; it now sits in
 // an ordinary opaque row along the bottom of the viewport. This component is the
-// row's CHROME ONLY — the bar, its ground, and the 4px slab on its top edge. The
+// row's CHROME ONLY — the bar and its ground, nothing else (see NO DIVIDER). The
 // lockup itself (wordmark + ∀ disc, adjacent, at the row's right end) is
 // rendered by `ForallMenu anchor="row"` at z-60, exactly as the mobile bar docks
 // the disc via anchor="bar". Keeping the pair in one fixed container is what

@@ -246,6 +246,17 @@ placeholders): `docs/audits/starter-feed-repair-2026-07-22.sql`. Open:
    or the `matched` rewrite (per-type UNION branches instead of one OR chain)
    — measure first. Related: §8's performance cluster.
 
+## 0m. 2026-07-24 commit audit — Jul 22–24 window (columnar floor, owner dashboard, closed beta, brand)
+
+Four-agent adversarial review of the window's 25 commits (`48913a2`…`d599d76`) plus the mechanical gates (drift guard, ledger adjacency, hairlines, root lint, `next build`, all test suites). The load-bearing invariants verified clean: no closed-beta signup bypass on any path, all `/admin` routes guarded with ledger-view money numbers, waitlist enumeration-safety matches WAITLIST-PRIVACY-NOTE, disc geometry numerically exact across all instances, schema/migration 162 hygiene green. **The 1 HIGH + 7 MEDIUM + the cheap LOWs were FIXED same-day — see the FIX-PROGRAMME 2026-07-24 audit-fix entry** (resize no-op/abort guard + regimented stamp protection; parked-vessel listener gating; horizontal pull-vs-floor-pan disarm; waitlist envelope + email cap; `trustProxy: 1`; one-home admin identity; saves-cursor clamp; `prefer-const`; `/waitlist` register; overview holding-warning dial; unhide-revert guard; `\` mid-resize guard; Google deleted-account label; starter-guard `FOR UPDATE`; config-PATCH transaction + rowCount; signup-gate test; stale comments; the literal-NUL memo-key bytes that made `WorkspaceView.tsx` read as binary). Deferred residue:
+
+1. **Invite "Log in to accept" is a dead-end for logged-out invitees (LOW, now the only affordance):** `web/src/app/invite/[token]/page.tsx` links `/auth?mode=login&redirect=/invite/<token>` but `/auth` ignores `redirect` and magic-link verify always lands `/reader` — the invitee must rediscover the invite email. Fix shape: the tribute-claim sessionStorage stash, replayed after verify. (ADR-acknowledged pre-beta; Phase 3 made it the sole path.)
+2. **1.5px input borders on `/auth` + `/waitlist` (LOW, register-wide design call):** below the "enclosure ≥ 2px" floor and invisible to the 1px-only tripwire; can rasterise single-pixel at 1dppx. Decide the logged-out register's field treatment once and sweep both pages (the idiom predates the window; `/waitlist` extended it).
+3. **Admin config changes have no durable audit trail (LOW):** `PATCH /admin/dashboard/config` logs adminId + old/new via pino only — the trail lives as long as process-log retention, on a surface that edits `platform_fee_bps`. Fix shape: a small append-only `config_audit` table written in the same transaction.
+4. **Admin trigger proxies misreport long cycles (LOW):** the settlement/payout trigger proxies abort at 60s and render "Payment service unreachable" while the cycle keeps running server-side; double-run is defended (row claiming) but an operator may re-click a succeeded run. Fix shape: fire-and-poll instead of hold-open.
+5. **PullToRefresh polish (pre-existing debt, batch with the palette sweep):** the `label-ui text-grey-400` indicator is hard-coded on a themed (possibly dark) vessel interior instead of `palette.cardMeta`; the resize grip (`role="button"`) has no `tabIndex`/`:focus-visible` so resize is pointer-only.
+6. **`trustProxy: 1` prod verification (deploy note):** shipped so per-IP rate limits key per visitor behind nginx (one trusted hop; XFF appended entry). On the next prod deploy, verify gateway logs show real client IPs and that the waitlist 429 no longer trips globally. Dev direct-connection behaviour is unchanged.
+
 ---
 
 ## 1. Money & payments (highest stakes)

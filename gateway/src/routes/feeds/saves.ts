@@ -34,6 +34,11 @@ function parseSaveCursor(
   // (~1.7e12); real seconds are ~1.7e9. Anything past year 5138 in seconds is
   // a legacy ms cursor — rescale rather than strand the client mid-scroll.
   if (ts > 1e11) ts = ts / 1000;
+  // Clamp AFTER the rescale (mirrors parseCursorEpoch, §0k.4b): a crafted
+  // finite epoch (1e300) survives the one-shot rescale and would reach
+  // to_timestamp(), which raises `timestamp out of range` → 500. Out of range
+  // degrades to page 1 instead.
+  if (ts < 0 || ts > 1e11) return undefined;
   return { ts, id };
 }
 

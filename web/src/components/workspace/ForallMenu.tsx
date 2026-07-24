@@ -762,7 +762,7 @@ export function ForallMenu({
             consequence of the rim constraint, and only the disc form has a rim;
             the bare crimson ∀ (Nav/Footer/About) has nothing to kiss and keeps
             the canonical stance. The trigger, the favicon and the brand exports
-            are the disc form and are now one geometry again. (§V's earlier
+            are the disc form and are now one geometry again. (§IV.4's earlier
             "the live button keeps the ∀ clear of the rim" recommendation is
             superseded by this call.)
 

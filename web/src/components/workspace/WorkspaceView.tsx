@@ -386,6 +386,14 @@ export function WorkspaceView() {
     w: number;
     h: number;
   } | null>(null);
+  // Ref mirror for the `\` handler (whose listener closes over stale state):
+  // a live resize must block the mode toggle the same way a live drag does —
+  // reflowing the floor under a captured handle, then committing, would stamp
+  // the parade over the stored layout.
+  const resizeActiveRef = useRef(false);
+  useEffect(() => {
+    resizeActiveRef.current = resizePreview !== null;
+  }, [resizePreview]);
 
   // §V. Regimented mode is a VIEW over the feed list, not an edit: the stored
   // layout stays exactly as it was, so leaving the mode is free and there is no
@@ -394,12 +402,12 @@ export function WorkspaceView() {
   // where two feeds share a server rank. The id key keeps the array stable
   // across renders; without it every render would re-derive the geometry and
   // re-render every vessel.
-  const visibleIdsKey = visibleSorted.map((v) => v.feed.id).join(" ");
+  const visibleIdsKey = visibleSorted.map((v) => v.feed.id).join("\0");
   const regimentedFeeds = useMemo(
     () =>
       visibleIdsKey
         ? visibleIdsKey
-            .split(" ")
+            .split("\0")
             .map((id, i) => ({ id, sortRank: i + 1 }))
         : [],
     [visibleIdsKey],
@@ -508,6 +516,7 @@ export function WorkspaceView() {
       if (useLightbox.getState().isOpen) return;
       if (localSurfaceOpenRef.current) return;
       if (dragActiveRef.current) return;
+      if (resizeActiveRef.current) return;
       e.preventDefault();
       const next = !useWorkspace.getState().regimented;
       setRegimented(next);
@@ -571,8 +580,8 @@ export function WorkspaceView() {
         cancelAnimationFrame(virtRafRef.current);
       virtRafRef.current = null;
     };
-    // Same re-attach reason as the floorScrollRef listener above: the pre-auth
-    // frame renders a Floor without the ref.
+    // Re-attach on auth-resolve: the pre-auth frame renders a Floor without
+    // the ref, so the listener must bind once the real floor exists.
   }, [user, loading, isMobile, syncPan]);
   // Cold start and layout changes. The dead band only fires on real scroll
   // events, so a floor that mounts already scrolled (a browser restoring a
@@ -870,6 +879,12 @@ export function WorkspaceView() {
     const removedFrom = hidden
       ? locateSlot(useWorkspace.getState().layout, feedId)
       : null;
+    // For an unhide, remember whether the feed ALREADY had a slot (a
+    // double-fired restore whose first PATCH succeeded): insertFeed is an
+    // idempotent no-op then, and the failure revert below must not remove a
+    // slot this call never added.
+    const hadSlotAlready =
+      !hidden && locateSlot(useWorkspace.getState().layout, feedId) !== null;
     if (hidden) removeFeedLayout(feedId);
     else insertFeedLayout(feedId);
     try {
@@ -889,7 +904,7 @@ export function WorkspaceView() {
       if (hidden) {
         if (removedFrom) restoreSlotLayout(removedFrom);
         else insertFeedLayout(feedId);
-      } else {
+      } else if (!hadSlotAlready) {
         removeFeedLayout(feedId);
       }
     }

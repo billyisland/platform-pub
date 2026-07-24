@@ -57,6 +57,7 @@ export interface AdminOverview {
     totalHeldPence: number
     oldestHeldReadAt: string | null
     holdingDurationDays: number
+    holdingWarningDays: number
   }
   counts: {
     totalAccounts: number

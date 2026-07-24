@@ -23,6 +23,7 @@ import {
   sendEmail,
 } from "@platform-pub/shared/lib/email.js";
 import { requireAuth, invalidateAuthCache } from "../middleware/auth.js";
+import { getAdminIds } from "../middleware/admin.js";
 import { CLOSED_BETA, CLOSED_BETA_ERROR } from "../lib/closed-beta.js";
 import { generateKeypair, signEvent } from "../lib/key-custody-client.js";
 import { republishProfile } from "../lib/discovery-publish.js";
@@ -292,10 +293,12 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Account not found" });
     }
 
-    const adminIds = (process.env.ADMIN_ACCOUNT_IDS ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    // The ONE admin-identity home (middleware/admin.ts): platform_config
+    // first, env fallback — the same set requireAdmin checks. A divergent
+    // env-only read here meant an admin granted via the dashboard's config
+    // editor passed the API guard but /auth/me said isAdmin:false, so
+    // AdminShell bounced them to /reader (audit 2026-07-24).
+    const adminIds = await getAdminIds();
 
     return reply.status(200).send({
       id: account.id,

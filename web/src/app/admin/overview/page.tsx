@@ -188,7 +188,7 @@ export default function AdminOverviewPage() {
               <StatCard
                 label="Oldest holding"
                 value={`${data.custody.holdingDurationDays}d`}
-                warn={data.custody.holdingDurationDays > 14}
+                warn={data.custody.holdingDurationDays > data.custody.holdingWarningDays}
               />
             </StatGrid>
           </StatSection>

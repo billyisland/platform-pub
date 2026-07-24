@@ -169,9 +169,12 @@ export async function googleAuthRoutes(app: FastifyInstance) {
         // reactivates on login — the promised reactivation path, mirroring the
         // magic-link /auth/verify branch.
         if (status !== "active" && status !== "deactivated") {
-          return reply
-            .status(403)
-            .send({ error: "Account suspended or not found" });
+          // Distinguish deleted (terminal, migration 159) from suspended —
+          // mirrors the magic-link /auth/verify branch, which already does.
+          return reply.status(403).send({
+            error:
+              status === "deleted" ? "Account deleted" : "Account suspended",
+          });
         }
         accountId = existing.rows[0].id;
         if (status === "deactivated") {

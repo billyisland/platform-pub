@@ -464,7 +464,14 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
             owner_id: string;
             is_starter_template: boolean;
           }>(
-            `SELECT id, owner_id, is_starter_template FROM feeds WHERE id = ANY($1::uuid[])`,
+            // FOR UPDATE: pins is_starter_template for the length of the
+            // transaction, so an operator flagging the source feed between
+            // this check and step 5's DELETE can't have the template merged
+            // away underneath them.
+            // ORDER BY id keeps the two-row lock order deterministic, so
+            // opposing concurrent merges (A→B and B→A) queue instead of
+            // deadlocking.
+            `SELECT id, owner_id, is_starter_template FROM feeds WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
             [[targetId, sourceFeedId]],
           );
           const targetFeed = feedRows.find((r) => r.id === targetId);

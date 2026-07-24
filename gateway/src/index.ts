@@ -98,7 +98,13 @@ const SESSION_SECRET = requireEnvMinLength("SESSION_SECRET", 32);
 const COOKIE_SECRET = process.env.COOKIE_SECRET ?? SESSION_SECRET;
 const APP_URL = requireEnv("APP_URL");
 
-const app = Fastify({ logger: pinoConfig });
+// trustProxy: 1 — exactly one trusted hop (prod: nginx; dev: the Next.js
+// /api rewrite), so req.ip is the client address nginx APPENDED to
+// X-Forwarded-For, and per-IP rate limiting keys per visitor instead of
+// collapsing every request onto the proxy's address (one global bucket —
+// six waitlist joins per minute worldwide). Never `true`: trust-all takes
+// the LEFTMOST XFF entry, which the client controls (spoofable limits).
+const app = Fastify({ logger: pinoConfig, trustProxy: 1 });
 
 async function start() {
   // Plugins

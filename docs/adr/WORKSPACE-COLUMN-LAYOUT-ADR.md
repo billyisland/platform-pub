@@ -805,6 +805,25 @@ all fixed the same day (FIX-PROGRAMME 2026-07-22):
   exact loss the no-snapshot design promises can't happen. `dropIsNoop`
   (layout.ts, column-identity-blind structural compare) now guards the commit
   in `handleVesselDragEnd`: a no-op release neither materialises nor writes.
+- **A no-op resize commits nothing either (2026-07-24 audit fix).** The grip's
+  pointer-up used to commit unconditionally — `liveSize` is seeded at
+  pointer-DOWN, so a zero-movement press committed the seed (freezing an
+  `h: null` fill slot to a number, baking a viewport-squeezed height into the
+  stored layout, and under §V materialising the parade on a bare click — the
+  drop bug's unguarded twin), and `pointercancel` routed to the same handler,
+  committing a half-dragged size when the browser stole the pointer. Now
+  `Vessel.handleResizePointerUp` commits only when the pointer actually moved
+  AND the size differs from the seed; `handleResizePointerCancel` aborts to
+  the derived rect. `WorkspaceView` additionally refuses the `\` toggle while
+  a resize proposal is live (`resizeActiveRef`), mirroring the mid-drag guard
+  — reflowing the floor under a captured grip and then committing would have
+  stamped the parade. Related same-pass fixes: the parked vessel's load-more
+  and caught-up listeners now gate on `parked` (the unmount's scroll-clamp
+  event read as "near end" against the 100% wash and fetched a page per park
+  cycle — a §VII violation), and horizontal pull-to-refresh disarms while the
+  floor can still pan left under the cursor (`floorCanConsume` in
+  PullToRefresh.tsx — a leftward wheel at the mouth scroll-chains into the
+  floor pan, which must not walk toward a refresh).
 - **Rule 1 hit-tests the slot's own rect, not the column span.** A slot
   narrower than its column left-aligns; the empty band beside it used to
   count as "over the feed" and could arm a merge from visually empty ground.

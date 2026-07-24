@@ -23,6 +23,77 @@ starts.
 
 ## Progress
 
+- **2026-07-24 (Jul 22–24 commit-audit fix batch — CONSOLIDATED-TODO §0m)** —
+  Four-agent adversarial review of the window's 25 commits (`48913a2`…`d599d76`:
+  columnar floor Slices 0–5 + follow-ups, owner dashboard, closed-beta Phases
+  1–3 + waitlist, brand disc, §0k batch), all findings re-verified in source
+  before fixing. Clean on the load-bearing checks: no signup bypass, admin
+  routes guarded, ledger-view money numbers, enumeration-safe waitlist, exact
+  disc geometry, drift/ledger/hairline/build/test gates all green. Fixed
+  same-day (1 HIGH, 7 MEDIUM, the cheap LOWs):
+  **HIGH — resize commit was unguarded** (`Vessel.tsx`): a zero-movement press
+  on the grip committed a "resize" (freezing an `h: null` fill slot, baking a
+  squeezed height into the stored layout) and `onPointerCancel` routed to the
+  same commit handler — and since `onSizeCommit` runs `materializeIfRegimented()`
+  first, a bare click in `\` mode silently replaced the stored custom layout
+  with the parade (the drop path's `dropIsNoop` class, unguarded on resize).
+  Now: a `moved` flag + seed-equality check make the no-op release commit
+  nothing, and pointercancel ABORTS to the derived rect. `WorkspaceView` also
+  gains a `resizeActiveRef` guard so `\` is refused mid-resize (mirroring
+  mid-drag).
+  **MEDIUM** — (1) parked-vessel phantom fetch: the load-more + caught-up
+  listeners weren't gated on `parked`; the unmount's scroll-clamp event always
+  read "near end" against the 100% wash, fetching a page per park cycle for an
+  off-screen feed (§VII violation). Both effects now bail when parked,
+  mirroring the scroll-save listener. (2) Horizontal pull-to-refresh vs floor
+  pan (`PullToRefresh.tsx`): at a horizontal vessel's mouth a leftward wheel
+  scroll-chains to the floor AND fed the refresh accumulator, so panning
+  flicks could fire a refresh mid-pan (collapsing the open conversation). New
+  `floorCanConsume` guard: while the next horizontally-scrollable ancestor
+  (the floor) can still pan left, toward-mouth deltas disarm instead of
+  accumulate (wheel + touch). (3) `waitlist.ts` returned a raw Zod
+  `flatten()` as `error` — now the shared `zodValidationError` envelope, plus
+  `.max(254)` on the email (the route writes; no length bound before).
+  (4) Gateway `trustProxy: 1` (`index.ts`): behind nginx every visitor shared
+  one `req.ip`, so the waitlist's 5/min limit was one **global** bucket (six
+  genuine joins/minute worldwide; one curl loop = lockout). One trusted hop
+  takes the nginx-appended XFF entry — never `true`, which trusts the
+  client-controlled leftmost. (5) One-home admin identity: `/auth/me` computed
+  `isAdmin` from env only while `requireAdmin` reads `platform_config` first,
+  so a dashboard-granted admin passed the API but AdminShell bounced them —
+  `/auth/me` now calls `getAdminIds()`, and both its paths trim entries.
+  (6) `saves.ts` cursor: the bespoke `parseSaveCursor` missed §0k.4b's clamp —
+  a crafted finite epoch (`1e300`) survived the ms-rescale and 500'd at
+  `to_timestamp()` (repro'd on dev PG16); now clamped to the shared
+  `[0, 1e11]` after the rescale. (7) `PaywallGate.tsx` `prefer-const` — the
+  root lint pass was at 1 error (rule: 0); back to 0.
+  **Smaller** — `/waitlist` added to `PLATFORM_PREFIXES` (the beta's main
+  capture page rendered the bare canvas topbar instead of the logged-out
+  register); overview "Oldest holding" warn now reads the served
+  `custody.holdingWarningDays` (the `regulatory_holding_warning_days` dial,
+  same fallback discipline as the regulatory endpoint) instead of a hardcoded
+  14; `Stat.tsx` `text-[20px]`→`text-[1.25rem]` (scales with the type-size
+  control); config PATCH now one transaction with `rowCount` checked (a key
+  DELETEd between pre-check and write no longer no-ops silently; audit lines
+  logged post-commit; `updated` counts real changes); starter-merge guard's
+  SELECT takes `ORDER BY id FOR UPDATE` (closes the operator-flag TOCTOU,
+  deterministic lock order); unhide-failure revert no longer removes a slot
+  the idempotent insert never added (`hadSlotAlready`); Google OAuth deleted
+  accounts get "Account deleted" (mirroring magic-link, §0k.4a's class); NEW
+  TEST `closed-beta-signup-gate.test.ts` pins the `/auth/signup` flat refusal
+  in both flag positions (deleting the gate previously failed zero tests);
+  stale comments corrected (NavRow slab, WorkspaceView `floorScrollRef`,
+  ForallMenu §V→§IV.4); and `WorkspaceView.tsx` carried two **literal NUL
+  bytes** (the Slice-5 `join("\0")` memo key written as raw 0x00 in source) —
+  semantically identical but every grep/tool classified the file as binary;
+  rewritten as the two-character escape.
+  **Deferred to §0m**: invite login-redirect stash, the 1.5px logged-out-register
+  field borders, a durable config audit table, trigger-proxy fire-and-poll,
+  PullToRefresh palette/grip-focus debt, and the `trustProxy` prod
+  verification note. Validation: gateway `tsc` + 397 tests green (2 new),
+  web workspace suites 76/76, root lint 0 errors, `next build` green,
+  hairline tripwire clean over every touched file.
+
 - **2026-07-24 (workspace — horizontal vessel opened the wrong way)** — The
   horizontal orientation opened on the RIGHT (`Vessel.tsx` walls top+left, glyph
   `⊏`) while newest items arrive on the LEFT (newest-first row, load-more fires

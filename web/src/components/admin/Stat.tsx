@@ -23,7 +23,7 @@ export function StatCard({
   return (
     <div className="bg-glasshouse-well p-4">
       <p className="label-ui text-grey-600 mb-1">{label}</p>
-      <p className={`text-[20px] font-sans tabular-nums ${warn ? 'text-crimson' : 'text-black'}`}>
+      <p className={`text-[1.25rem] font-sans tabular-nums ${warn ? 'text-crimson' : 'text-black'}`}>
         {value}
       </p>
       {detail !== undefined && <p className="text-ui-xs text-grey-600 mt-1">{detail}</p>}

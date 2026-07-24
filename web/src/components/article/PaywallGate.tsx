@@ -34,7 +34,7 @@ export function PaywallGate({
 }: PaywallGateProps) {
   const heading = 'Keep reading'
   let subtext: string
-  let buttonLabel = 'Continue reading'
+  const buttonLabel = 'Continue reading'
   let showPrice = false
   let suggestCard = false
 

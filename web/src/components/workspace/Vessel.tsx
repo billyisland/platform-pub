@@ -221,6 +221,10 @@ export function Vessel({
     startH: number;
     maxW: number;
     maxH: number;
+    // Whether the pointer ever actually travelled — a bare click must be a
+    // no-op (see handleResizePointerUp), and a zero-delta pointermove's snap
+    // rounding must not be able to fake a "change".
+    moved: boolean;
   } | null>(null);
 
   const effOrientation = orientation ?? DEFAULT_ORIENTATION;
@@ -239,7 +243,10 @@ export function Vessel({
   const prevScrollTopRef = useRef(0);
 
   useEffect(() => {
-    if (!caughtUp || !onCaughtUpDismiss) return;
+    // Parked: the card tree is unmounted and the browser clamps scrollTop to
+    // 0, firing a scroll event — which must not read as "the user scrolled
+    // up" and dismiss an unseen caught-up banner.
+    if (parked || !caughtUp || !onCaughtUpDismiss) return;
     const el = scrollBodyRef.current;
     if (!el) return;
     prevScrollTopRef.current = el.scrollTop;
@@ -262,13 +269,17 @@ export function Vessel({
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel);
     };
-  }, [caughtUp, onCaughtUpDismiss]);
+  }, [parked, caughtUp, onCaughtUpDismiss]);
 
   // Infinite scroll: fire onLoadMore when the scroll position nears the end so
   // older content keeps flowing in. The threshold (a card-or-two ahead of the
   // edge) makes the load feel seamless. Fires on the active axis only.
   useEffect(() => {
-    if (!onLoadMore) return;
+    // Parked: the wash is height:100%, so scrollHeight ≈ clientHeight and
+    // "near end" is ALWAYS true — the unmount's scroll-clamp event would
+    // fetch a page for an off-screen feed, and every park cycle another
+    // (§VII: parking tears down nothing and refetches nothing).
+    if (parked || !onLoadMore) return;
     const el = scrollBodyRef.current;
     if (!el) return;
     const THRESHOLD = 320;
@@ -281,7 +292,7 @@ export function Vessel({
     }
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [onLoadMore, feedId, isHorizontal]);
+  }, [parked, onLoadMore, feedId, isHorizontal]);
 
   // Spring the vessel to its DERIVED rect. Runs on every real geometry change
   // (a neighbour's drop shunted this column, a resize widened the one to the
@@ -473,6 +484,7 @@ export function Vessel({
       startH,
       maxW: MAX_W,
       maxH: MAX_H,
+      moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     setLiveSize({ w: startW, h: startH });
@@ -483,6 +495,7 @@ export function Vessel({
     if (!state) return;
     const dx = event.clientX - state.startX;
     const dy = event.clientY - state.startY;
+    if (dx !== 0 || dy !== 0) state.moved = true;
     const w = snap(Math.max(MIN_W, Math.min(state.maxW, state.startW + dx)));
     const h = snap(Math.max(MIN_H, Math.min(state.maxH, state.startH + dy)));
     const next = clampResize ? clampResize({ w, h }) : { w, h };
@@ -500,12 +513,36 @@ export function Vessel({
     } catch {
       // Pointer capture may already be released if the gesture was cancelled.
     }
-    if (!state || !liveSize || !onSizeCommit) {
+    // A release at the seed size is a no-op and commits NOTHING — the resize
+    // twin of `dropIsNoop`. Committing a zero-movement press would freeze an
+    // `h: null` fill slot to a number, bake a squeezed height into the stored
+    // layout, and (under the regimented view) stamp the parade over the
+    // custom layout on a bare click of the grip.
+    const unchanged =
+      state && liveSize
+        ? !state.moved ||
+          (liveSize.w === state.startW && liveSize.h === state.startH)
+        : true;
+    if (!state || !liveSize || !onSizeCommit || unchanged) {
       setLiveSize(null);
       onResizeFrame?.(null);
       return;
     }
     onSizeCommit({ w: liveSize.w, h: liveSize.h });
+    setLiveSize(null);
+    onResizeFrame?.(null);
+  }
+
+  // A cancelled gesture (browser steals the pointer: alt-tab, OS edge swipe)
+  // ABORTS — reverting to the derived rect — rather than committing the
+  // half-dragged size the pointer happened to be at.
+  function handleResizePointerCancel(event: React.PointerEvent<HTMLDivElement>) {
+    resizeStateRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Already released.
+    }
     setLiveSize(null);
     onResizeFrame?.(null);
   }
@@ -748,7 +785,7 @@ export function Vessel({
             onPointerDown={handleResizePointerDown}
             onPointerMove={handleResizePointerMove}
             onPointerUp={handleResizePointerUp}
-            onPointerCancel={handleResizePointerUp}
+            onPointerCancel={handleResizePointerCancel}
             style={{
               position: "absolute",
               // Both orientations now carry a right wall (vertical: left+right;

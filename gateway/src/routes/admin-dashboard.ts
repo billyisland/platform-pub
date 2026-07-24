@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool, loadConfig } from '@platform-pub/shared/db/client.js'
+import { pool, loadConfig, withTransaction } from '@platform-pub/shared/db/client.js'
 import { zodValidationError } from '@platform-pub/shared/lib/validation.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { requireEnv } from '@platform-pub/shared/lib/env.js'
@@ -106,7 +106,7 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
       const config = await loadConfig()
       const nearThresholdPence = Math.floor(config.tabSettlementThresholdPence * 0.8)
 
-      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts] =
+      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts, holdingDial] =
         await Promise.all([
           pool.query(
             `SELECT
@@ -175,6 +175,9 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
                (SELECT COUNT(DISTINCT writer_id) FROM articles WHERE published_at IS NOT NULL AND deleted_at IS NULL) AS publishing_writers,
                (SELECT COUNT(DISTINCT reader_id) FROM read_events) AS readers_ever,
                (SELECT COUNT(*) FROM moderation_reports WHERE status IN ('open', 'under_review')) AS open_report_count`
+          ),
+          pool.query<{ value: string }>(
+            `SELECT value FROM platform_config WHERE key = 'regulatory_holding_warning_days'`
           ),
         ])
 
@@ -259,6 +262,15 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           holdingDurationDays: oldestHeld
             ? Math.floor((Date.now() - oldestHeld.getTime()) / 86_400_000)
             : 0,
+          // The dial the regulatory page honours — served here too so the
+          // Overview tile's warn state can't drift from a retuned threshold
+          // (same fallback discipline as the regulatory endpoint's dial()).
+          holdingWarningDays: (() => {
+            const v = Number(holdingDial.rows[0]?.value)
+            return Number.isFinite(v)
+              ? v
+              : REGULATORY_DIAL_DEFAULTS.regulatory_holding_warning_days
+          })(),
         },
         counts: {
           totalAccounts: num(c.total_accounts),
@@ -545,20 +557,35 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         }
       }
 
-      for (const u of parsed.data.updates) {
-        const oldValue = existingByKey.get(u.key)
-        if (oldValue === u.value) continue
-        await pool.query(
-          `UPDATE platform_config SET value = $2, updated_at = now() WHERE key = $1`,
-          [u.key, u.value]
-        )
+      // One transaction: a mid-batch failure rolls the whole batch back
+      // instead of leaving an unreported partial apply. rowCount is checked
+      // even though existence was pre-validated above — a key DELETEd between
+      // the check and the write would otherwise no-op silently (the bare-
+      // UPDATE-matches-zero-rows hazard the platform_config invariant names).
+      const applied: { key: string; oldValue: string | undefined; newValue: string }[] = []
+      await withTransaction(async (client) => {
+        for (const u of parsed.data.updates) {
+          const oldValue = existingByKey.get(u.key)
+          if (oldValue === u.value) continue
+          const result = await client.query(
+            `UPDATE platform_config SET value = $2, updated_at = now() WHERE key = $1`,
+            [u.key, u.value]
+          )
+          if (result.rowCount !== 1) {
+            throw new Error(`config key '${u.key}' vanished mid-update`)
+          }
+          applied.push({ key: u.key, oldValue, newValue: u.value })
+        }
+      })
+      // Log after commit so a rolled-back batch leaves no "changed" lines.
+      for (const entry of applied) {
         logger.info(
-          { adminId, key: u.key, oldValue, newValue: u.value },
+          { adminId, ...entry },
           'platform_config changed via owner dashboard'
         )
       }
 
-      return reply.send({ ok: true, updated: parsed.data.updates.length })
+      return reply.send({ ok: true, updated: applied.length })
     } catch (err) {
       req.log.error({ err }, 'admin dashboard config update failed')
       return reply.status(500).send({ error: 'Failed to update config' })

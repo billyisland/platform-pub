@@ -14,6 +14,7 @@ const PLATFORM_PREFIXES = [
   '/dashboard',
   '/about',
   '/auth',
+  '/waitlist',
   '/search',
   '/profile',
   '/settings',
