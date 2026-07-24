@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict LoafpNgCjOy5TlUoX2XFDv66zmcga6T5chqojSCbtLJfRvFyKJsWSmjonFFdMWv
+\restrict i9IfEFeFbyD0nd6cT46EFcchf3wgjqL4jKXbwQ1DCMjbQKPWhlZMmG0BqxIxanG
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2386,6 +2386,18 @@ CREATE TABLE public.vouches (
 
 
 --
+-- Name: waitlist; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.waitlist (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    email text NOT NULL,
+    publish_interest boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: writer_payouts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3656,6 +3668,22 @@ ALTER TABLE ONLY public.vouches
 
 ALTER TABLE ONLY public.vouches
     ADD CONSTRAINT vouches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: waitlist waitlist_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.waitlist
+    ADD CONSTRAINT waitlist_email_key UNIQUE (email);
+
+
+--
+-- Name: waitlist waitlist_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.waitlist
+    ADD CONSTRAINT waitlist_pkey PRIMARY KEY (id);
 
 
 --
@@ -7120,7 +7148,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict LoafpNgCjOy5TlUoX2XFDv66zmcga6T5chqojSCbtLJfRvFyKJsWSmjonFFdMWv
+\unrestrict i9IfEFeFbyD0nd6cT46EFcchf3wgjqL4jKXbwQ1DCMjbQKPWhlZMmG0BqxIxanG
 
 
 
@@ -7290,4 +7318,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('158_resonance_baselines.sql'),
     ('159_account_status_deleted.sql'),
     ('160_resonance_band_thresholds.sql'),
-    ('161_feed_proof_floor.sql');
+    ('161_feed_proof_floor.sql'),
+    ('162_waitlist.sql');

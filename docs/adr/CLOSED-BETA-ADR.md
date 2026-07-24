@@ -1,8 +1,9 @@
 # CLOSED-BETA-ADR: Closed Beta Gating & Waiting List
 
 **all.haus Architectural Decision Record**
-**Status:** Accepted — 2026-07-22. **Phase 1 built 2026-07-23** (local; not yet
-deployed). Phases 2–3 outstanding. As-built notes: §VIII.
+**Status:** Accepted — 2026-07-22. **Phase 1 built 2026-07-23**, **Phase 2 built
+2026-07-24** (local; not yet deployed). Phase 3 outstanding. As-built notes:
+§VIII (Phase 1), §IX (Phase 2).
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** existing magic-link + Google OAuth auth flow (`gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`)
 **Affects:** `gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`, `gateway/src/routes/` (new `waitlist.ts`), `web/src/app/auth/page.tsx`, `web/src/app/page.tsx`, `web/src/app/` (new waitlist surface), `schema.sql`, `migrations/`
@@ -101,10 +102,10 @@ similar). This preserves the cohort-recruitment signal — you can still pull th
 would-be publishers out first — without contradicting the readers-first message
 on the page.
 
-> **Open.** The exact control and wording of the publish opt-in is not yet
-> fixed. The decision here is the _shape_ (reader default, publishing opt-in),
-> not the final copy. Alternative on the table: capture email only and drop the
-> flag. Resolve before Phase 2 build.
+> **Resolved (2026-07-24, Phase 2 build).** Keep the opt-in. The form carries a
+> single unticked checkbox — "I'd also like to publish" — persisted to
+> `waitlist.publish_interest` (default false). The email-only alternative was
+> declined: the cohort-recruitment signal is worth the one boolean.
 
 ### D4 — Frontend presentation
 
@@ -267,3 +268,48 @@ masthead; Phase 1 dead-ends it. Either it gets a token-scoped exemption (a real
 design decision — it is the one hole worth probing) or publications recruit
 only existing members during the beta. Note `redirect=` is already inert:
 `auth/page.tsx` reads only `mode` and always pushes `/reader`.
+
+---
+
+## IX. As-built — Phase 2 (2026-07-24)
+
+The waiting list, per D2/D3. **Storage, endpoint, surface, and the D5 note; no
+Phase-3 presentation** — the landing CTA swap, `/auth` default-to-login, and the
+edge-case routing *to* the waitlist surface remain Phase 3.
+
+**Storage.** Migration 162 adds `waitlist(id, email UNIQUE, publish_interest
+bool default false, created_at)` — the D2 minimal shape, no more PII than
+necessary. `schema.sql` regenerated and the seed re-appended in one step; drift
+guard green.
+
+**Endpoint.** `POST /waitlist` (`gateway/src/routes/waitlist.ts`, registered in
+`index.ts`, rate-limited 5/min like the other unauthenticated auth routes).
+**Enumeration-safe by construction:** email is lower-cased/trimmed and upserted
+`ON CONFLICT (email) DO NOTHING`, and the route returns a **fixed
+acknowledgement** whether the email is new or already present — it never
+branches on the result, so the list cannot be probed for existing membership
+(the D5 concern; mirrors `/auth/login`). `publish_interest` is **not** updated
+on a repeat POST — the first expressed intent stands, and flipping it would leak
+row-existence via a later export. Covered by `gateway/tests/waitlist.test.ts`
+(6 cases: normalise + reader-default; opt-in threaded; enumeration-safe repeat
+returns the identical body; malformed and missing email rejected pre-write;
+storage failure → 500). Mutation-checked — dropping the lower-case or the
+`ON CONFLICT` fails it.
+
+**Surface.** `web/src/app/waitlist/page.tsx` — a standalone `/waitlist` page in
+the logged-out register (matches the `/auth` page's chrome: serif head, mono
+copy, the shared field/`.btn` grammar). Email field + the single unticked
+"I'd also like to publish" opt-in (D3) + success state. Copy per §V, to the
+author's ear. `web/src/lib/api/waitlist.ts` is the client method.
+
+**D3 resolved:** keep the opt-in (see the D3 note). **D5:** the lawful-basis /
+purpose note is drafted at `docs/adr/WAITLIST-PRIVACY-NOTE.md` — what is stored,
+consent basis, single purpose, retention, subject rights, and why the endpoint
+can't leak membership — with three points flagged for counsel (consent
+sufficiency, a retention backstop, whether a privacy line must sit on the form
+itself; the form currently carries none, faithful to §V).
+
+**Deliberately deferred to Phase 3** (not oversights): nothing yet *links* to
+`/waitlist`. The landing still shows the old signup CTA, `/auth` still defaults
+to signup, and the Phase-1 closed-beta notices still point at the `mailto:`
+fallback rather than the surface. Wiring those is Phase 3's stated job.

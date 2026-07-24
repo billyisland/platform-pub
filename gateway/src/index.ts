@@ -12,6 +12,7 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import { authRoutes } from "./routes/auth.js";
+import { waitlistRoutes } from "./routes/waitlist.js";
 import { signingRoutes } from "./routes/signing.js";
 import { writerRoutes } from "./routes/writers.js";
 import { articleRoutes } from "./routes/articles/index.js";
@@ -134,6 +135,7 @@ async function start() {
   // Auth routes
   await app.register(authRoutes, { prefix: "/api/v1" });
   await app.register(googleAuthRoutes, { prefix: "/api/v1" });
+  await app.register(waitlistRoutes, { prefix: "/api/v1" });
 
   // Signing service (event signing + NIP-44 key unwrapping)
   await app.register(signingRoutes, { prefix: "/api/v1" });

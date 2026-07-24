@@ -23,6 +23,21 @@ starts.
 
 ## Progress
 
+- **2026-07-24 (closed beta — Phase 2, the waiting list)** — CLOSED-BETA-ADR
+  Phase 2 built. Migration 162 adds the minimal `waitlist(email UNIQUE,
+  publish_interest, created_at)` table; `POST /waitlist`
+  (`gateway/src/routes/waitlist.ts`) is enumeration-safe by construction —
+  lower-cased/trimmed email, `ON CONFLICT (email) DO NOTHING`, a fixed
+  acknowledgement new-or-repeat, and `publish_interest` not bumped on a repeat
+  (a bump would leak row-existence via export). Surface at `/waitlist`
+  (`web/src/app/waitlist/page.tsx`) with the single unticked "I'd also like to
+  publish" opt-in (D3, resolved: keep the flag). D5 lawful-basis/purpose note
+  drafted at `docs/adr/WAITLIST-PRIVACY-NOTE.md`. Tests
+  `gateway/tests/waitlist.test.ts` (6, mutation-checked); drift guard green;
+  `next build` clean. **Phase 3 (presentation) still outstanding** — nothing
+  links to `/waitlist` yet (landing CTA, `/auth` default-to-login, edge-case
+  routing). As-built: ADR §IX.
+
 - **2026-07-22 (brand — the nav row loses its slab; the disc adopts the cut mark's
   dimensions)** — two review notes on the shipped columnar workspace, both design
   calls by the operator.
