@@ -52,8 +52,10 @@ import { useExplainable } from "./ExplainProvider";
 //
 // Brightness drives a resolved palette across walls, interior, name label, and
 // (via prop) the cards inside. Orientation toggles the chassis between vertical
-// (⊔: left + right + bottom walls) and horizontal (⊏: top + left + bottom
-// walls, opening on the right) — cards lay out in a row when horizontal.
+// (⊔: left + right + bottom walls, opening at the top) and horizontal (⊐: top +
+// right + bottom walls, opening on the LEFT) — cards lay out in a row when
+// horizontal. The open end tracks where new items arrive (top for vertical,
+// left for the newest-first row), so the mouth is the arrival end in both.
 // (Density is a per-feed control too, but it's applied to the cards in
 // WorkspaceView's CardContext, not threaded through the Vessel.)
 
@@ -531,11 +533,14 @@ export function Vessel({
   }
 
   // Wall arrangement per orientation. The bottom wall is replaced by VesselBar,
-  // so only left/right (vertical) or top/left (horizontal) get thin borders.
+  // so only left/right (vertical) or top/right (horizontal) get thin borders.
+  // Horizontal opens on the LEFT, where newest items arrive (newest-first row,
+  // scroll-right-for-older) — the mouth tracks the arrival end, matching the
+  // vertical ⊔ whose open top is where new items drop in.
   const wallStyle = isHorizontal
     ? {
         borderTop: `${WALL}px solid ${palette.walls}`,
-        borderLeft: `${WALL}px solid ${palette.walls}`,
+        borderRight: `${WALL}px solid ${palette.walls}`,
       }
     : {
         borderLeft: `${WALL}px solid ${palette.walls}`,
@@ -697,7 +702,11 @@ export function Vessel({
             // PullToRefresh listeners — the chassis around it is unchanged.
             <div aria-hidden style={{ width: "100%", height: "100%" }} />
           ) : onRefresh ? (
-            <PullToRefresh onRefresh={onRefresh} scrollRef={scrollBodyRef}>
+            <PullToRefresh
+              onRefresh={onRefresh}
+              scrollRef={scrollBodyRef}
+              axis={isHorizontal ? "horizontal" : "vertical"}
+            >
               <div
                 style={{
                   display: "flex",
@@ -742,7 +751,9 @@ export function Vessel({
             onPointerCancel={handleResizePointerUp}
             style={{
               position: "absolute",
-              right: isHorizontal ? 0 : -WALL,
+              // Both orientations now carry a right wall (vertical: left+right;
+              // horizontal: top+right, open left), so the grip overhangs it.
+              right: -WALL,
               bottom: 0,
               width: 16,
               height: 16,

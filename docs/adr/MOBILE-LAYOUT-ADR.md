@@ -33,7 +33,7 @@ mobile breakpoint (`useIsMobile`, ≤767px); ForallMenu docks into the bar via
 
 The mobile view has not been reworked since the workspace canvas landed. The canvas is
 an inescapably pointer-spatial paradigm: `Vessel.tsx` is a ⊔-chassis the user drags to
-position, resizes, reorients (⊔/⊏), and merges by dragging one onto another, with each
+position, resizes, reorients (⊔/⊐), and merges by dragging one onto another, with each
 feed's `{x, y}` held in the `positions` map in `stores/workspace.ts`. None of that has a
 touch translation. Drag-to-arrange on a 380px viewport is not a degraded version of the
 desktop interaction — it is no interaction at all.

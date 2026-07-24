@@ -9,25 +9,36 @@ import React, {
   type RefObject,
 } from "react";
 
+// Which way the feed scrolls. Vertical (⊔, open top): the mouth is the top, the
+// gesture runs on scrollTop/clientY/deltaY and the indicator grows downward.
+// Horizontal (⊐, open left): the mouth is the left, the gesture runs on
+// scrollLeft/clientX/deltaX and the indicator grows rightward from the left edge.
+// In both, "toward the mouth" is a POSITIVE touch delta (finger follows content
+// back past the start) and a NEGATIVE wheel delta (scrolling before scroll-0).
+type Axis = "vertical" | "horizontal";
+
 interface PullToRefreshProps {
   onRefresh: () => Promise<void>;
   children: ReactNode;
   scrollRef?: RefObject<HTMLElement | null>;
+  axis?: Axis;
 }
 
 const THRESHOLD = 60;
 const WHEEL_DECAY_MS = 400;
-// How long the feed must rest at the top (no upward wheel events) before a
-// fresh scroll-up is treated as an intentional refresh gesture. This keeps the
-// single continuous scroll-to-top that opens the top card's conversation from
-// rolling straight into a refresh — the user must stop, then scroll up again.
+// How long the feed must rest at the mouth (no toward-mouth wheel events) before
+// a fresh scroll toward it is treated as an intentional refresh gesture. This
+// keeps the single continuous scroll-to-start that opens the first card's
+// conversation from rolling straight into a refresh — the user must stop, then
+// scroll toward the mouth again.
 const ARM_IDLE_MS = 220;
 
-function findScrollParent(el: HTMLElement): HTMLElement {
+function findScrollParent(el: HTMLElement, axis: Axis): HTMLElement {
   let cur = el.parentElement;
   while (cur) {
-    const { overflowY } = getComputedStyle(cur);
-    if (overflowY === "auto" || overflowY === "scroll") return cur;
+    const style = getComputedStyle(cur);
+    const overflow = axis === "horizontal" ? style.overflowX : style.overflowY;
+    if (overflow === "auto" || overflow === "scroll") return cur;
     cur = cur.parentElement;
   }
   return el;
@@ -37,20 +48,30 @@ export function PullToRefresh({
   onRefresh,
   children,
   scrollRef,
+  axis = "vertical",
 }: PullToRefreshProps) {
+  const horizontal = axis === "horizontal";
   const containerRef = useRef<HTMLDivElement>(null);
   const [pulling, setPulling] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const startY = useRef(0);
+  const startPos = useRef(0);
   const active = useRef(false);
   const wheelAccum = useRef(0);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Refresh is "armed" only once the feed has settled at the top; until then,
-  // upward wheel deltas are ignored so the scroll-to-top gesture itself can't
-  // trigger a refresh.
+  // Refresh is "armed" only once the feed has settled at the mouth; until then,
+  // toward-mouth wheel deltas are ignored so the scroll-to-start gesture itself
+  // can't trigger a refresh.
   const armed = useRef(false);
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The mouth-ward scroll offset (scrollLeft when horizontal, scrollTop else):
+  // 0 means the feed is resting at the mouth, where a pull is allowed.
+  const scrollOffsetOf = useCallback(
+    (scroller: HTMLElement) =>
+      horizontal ? scroller.scrollLeft : scroller.scrollTop,
+    [horizontal],
+  );
 
   const doRefresh = useCallback(() => {
     armed.current = false;
@@ -73,18 +94,20 @@ export function PullToRefresh({
       if (refreshing) return;
       const el = containerRef.current;
       if (!el) return;
-      const scroller = scrollRef?.current ?? findScrollParent(el);
-      if (scroller.scrollTop > 0) return;
-      startY.current = e.touches[0].clientY;
+      const scroller = scrollRef?.current ?? findScrollParent(el, axis);
+      if (scrollOffsetOf(scroller) > 0) return;
+      const t = e.touches[0];
+      startPos.current = horizontal ? t.clientX : t.clientY;
       active.current = true;
     },
-    [refreshing, scrollRef],
+    [refreshing, scrollRef, axis, horizontal, scrollOffsetOf],
   );
 
   const onTouchMove = useCallback(
     (e: React.TouchEvent) => {
       if (!active.current || refreshing) return;
-      const delta = e.touches[0].clientY - startY.current;
+      const t = e.touches[0];
+      const delta = (horizontal ? t.clientX : t.clientY) - startPos.current;
       if (delta <= 0) {
         setPullDistance(0);
         setPulling(false);
@@ -94,7 +117,7 @@ export function PullToRefresh({
       setPullDistance(dampened);
       setPulling(dampened >= THRESHOLD);
     },
-    [refreshing],
+    [refreshing, horizontal],
   );
 
   const onTouchEnd = useCallback(() => {
@@ -109,16 +132,20 @@ export function PullToRefresh({
     }
   }, [pulling, refreshing, doRefresh]);
 
-  // Wheel handler (desktop): accumulate upward scroll while at top
+  // Wheel handler (desktop): accumulate toward-mouth scroll while at the mouth.
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       if (refreshing) return;
       const el = containerRef.current;
       if (!el) return;
-      const scroller = scrollRef?.current ?? findScrollParent(el);
-      if (scroller.scrollTop > 0 || e.deltaY >= 0) {
-        // Scrolling through content or downward: disarm. Reaching the top via
-        // this gesture must not count toward a refresh.
+      const scroller = scrollRef?.current ?? findScrollParent(el, axis);
+      // Horizontal wheel: trackpads emit deltaX; a plain mouse wheel over an
+      // overflow-x scroller emits deltaY that the browser applies horizontally —
+      // accept either, preferring the axis-native one.
+      const delta = horizontal ? e.deltaX || e.deltaY : e.deltaY;
+      if (scrollOffsetOf(scroller) > 0 || delta >= 0) {
+        // Scrolling through content or away from the mouth: disarm. Reaching the
+        // mouth via this gesture must not count toward a refresh.
         wheelAccum.current = 0;
         armed.current = false;
         if (armTimer.current) {
@@ -131,10 +158,10 @@ export function PullToRefresh({
         }
         return;
       }
-      // At the top, scrolling up. If not yet armed, this is (the tail of) the
-      // gesture that brought us here — don't accumulate. Instead wait for a
-      // quiet gap: a continuous gesture keeps resetting this timer, so it only
-      // fires once the feed has come to rest, arming the next scroll-up.
+      // At the mouth, scrolling toward it. If not yet armed, this is (the tail
+      // of) the gesture that brought us here — don't accumulate. Instead wait for
+      // a quiet gap: a continuous gesture keeps resetting this timer, so it only
+      // fires once the feed has come to rest, arming the next scroll toward.
       if (!armed.current) {
         if (armTimer.current) clearTimeout(armTimer.current);
         armTimer.current = setTimeout(() => {
@@ -143,7 +170,7 @@ export function PullToRefresh({
         }, ARM_IDLE_MS);
         return;
       }
-      wheelAccum.current += Math.abs(e.deltaY);
+      wheelAccum.current += Math.abs(delta);
       if (wheelTimer.current) clearTimeout(wheelTimer.current);
       wheelTimer.current = setTimeout(() => {
         wheelAccum.current = 0;
@@ -164,7 +191,7 @@ export function PullToRefresh({
         setPulling(dampened >= THRESHOLD * 0.8);
       }
     },
-    [refreshing, pullDistance, doRefresh, scrollRef],
+    [refreshing, pullDistance, doRefresh, scrollRef, axis, horizontal, scrollOffsetOf],
   );
 
   useEffect(() => {
@@ -174,6 +201,14 @@ export function PullToRefresh({
     };
   }, []);
 
+  const label = refreshing
+    ? "REFRESHING..."
+    : pulling
+      ? "RELEASE TO REFRESH"
+      : horizontal
+        ? "← PULL TO REFRESH"
+        : "↑ PULL TO REFRESH";
+
   return (
     <div
       ref={containerRef}
@@ -181,23 +216,42 @@ export function PullToRefresh({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       onWheel={onWheel}
-      style={{ position: "relative" }}
+      style={{
+        position: "relative",
+        // Horizontal: the indicator sits left of the card row and grows it
+        // rightward, mirroring the vertical push-down.
+        ...(horizontal
+          ? { display: "flex", flexDirection: "row", alignItems: "stretch" }
+          : {}),
+      }}
     >
       {(pullDistance > 0 || refreshing) && (
         <div
           className="flex items-center justify-center"
-          style={{
-            height: pullDistance,
-            overflow: "hidden",
-            transition: active.current ? "none" : "height 0.2s ease",
-          }}
+          style={
+            horizontal
+              ? {
+                  width: pullDistance,
+                  flex: "0 0 auto",
+                  overflow: "hidden",
+                  transition: active.current ? "none" : "width 0.2s ease",
+                }
+              : {
+                  height: pullDistance,
+                  overflow: "hidden",
+                  transition: active.current ? "none" : "height 0.2s ease",
+                }
+          }
         >
-          <span className="label-ui text-grey-400">
-            {refreshing
-              ? "REFRESHING..."
-              : pulling
-                ? "RELEASE TO REFRESH"
-                : "↑ PULL TO REFRESH"}
+          <span
+            className="label-ui text-grey-400"
+            style={
+              horizontal
+                ? { writingMode: "vertical-rl", whiteSpace: "nowrap" }
+                : undefined
+            }
+          >
+            {label}
           </span>
         </div>
       )}

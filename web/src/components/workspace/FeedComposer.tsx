@@ -955,16 +955,17 @@ export function FeedComposer({
 }
 
 // The orientation glyph depicts the feed container itself as an open ⊔ vessel,
-// open on the side it grows from: a tall portrait U open at the top for
-// vertical, the same U on its side open to the right for horizontal. A 2px
-// stroke keeps it clear of the sitewide thin-rule ban.
+// open on the side where new items arrive: a tall portrait U open at the top for
+// vertical, the same U on its side open to the LEFT for horizontal (newest items
+// arrive at the left of the newest-first row). A 2px stroke keeps it clear of the
+// sitewide thin-rule ban.
 function OrientationGlyph({ orientation }: { orientation: Orientation }) {
   const portrait = orientation === "vertical";
   // Portrait: tall U open at top (left wall, floor, right wall).
-  // Horizontal: wide U on its side open to the right (top wall, left wall, floor).
+  // Horizontal: wide U on its side open to the LEFT (top wall, right wall, floor).
   const path = portrait
     ? "M4.5 1.5 L4.5 14.5 L11.5 14.5 L11.5 1.5"
-    : "M14.5 4.5 L1.5 4.5 L1.5 11.5 L14.5 11.5";
+    : "M1.5 4.5 L14.5 4.5 L14.5 11.5 L1.5 11.5";
   return (
     <svg
       width={16}

@@ -850,5 +850,6 @@ end rather than remembering its old slot. The regimented hotkey is `\`. The
 merge/insert edge band is ~48px and the auto-pan margin ~48px, both tuned by eye.
 Column ids come from `crypto.randomUUID()` (no ULID dependency exists in `web/`
 and nothing orders by id). The three-band wall/buffer/wall stripe (§II.3) fully
-reads only for vertical-orientation vessels — a horizontal ⊏ has no right wall
-and stack seams meet a VesselBar; accepted as-is.
+reads only for vertical-orientation vessels — a horizontal ⊐ (open on the left,
+where newest items arrive) has no left wall and stack seams meet a VesselBar;
+accepted as-is.

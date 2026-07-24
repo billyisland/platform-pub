@@ -23,6 +23,25 @@ starts.
 
 ## Progress
 
+- **2026-07-24 (workspace — horizontal vessel opened the wrong way)** — The
+  horizontal orientation opened on the RIGHT (`Vessel.tsx` walls top+left, glyph
+  `⊏`) while newest items arrive on the LEFT (newest-first row, load-more fires
+  approaching the far right), so the mouth sat at the OLDEST end — a 180° break
+  from WORKSPACE-DESIGN-SPEC §"Opening" (*"the open end of the ⊔ is where new
+  content arrives"*) and from the vertical `⊔`, whose open top IS the arrival
+  end. Fixed cosmetically (no scroll/geometry logic touched): horizontal is now
+  `⊐` — walls top+**right**, open on the **left** (`Vessel.tsx` `wallStyle`); the
+  resize grip overhangs the now-present right wall in both orientations
+  (`right: -WALL`); the `OrientationGlyph` path flips to open-left
+  (`FeedComposer.tsx`). **Pull-to-refresh made axis-aware** (`PullToRefresh.tsx`,
+  new `axis` prop, default `vertical` so other callers are untouched): horizontal
+  gates on `scrollLeft`, gestures on `clientX` (drag right) / `deltaX || deltaY`
+  (trackpad or mouse-wheel-over-overflow-x), and the indicator grows rightward
+  from the left mouth with a vertical `← PULL TO REFRESH` label; `Vessel` passes
+  `axis={isHorizontal ? "horizontal" : "vertical"}`. ADR notes updated
+  (WORKSPACE-COLUMN-LAYOUT §XI `⊏`→`⊐`, MOBILE-LAYOUT §intro glyph). `next build`
+  green, hairline tripwire clean over touched files.
+
 - **2026-07-24 (closed beta — Phase 3, the presentation)** — CLOSED-BETA-ADR
   Phase 3 built; all three phases now complete. Frontend-only (no gateway/schema
   change). **Every public signup CTA sitewide routes to `/waitlist`**; the only
