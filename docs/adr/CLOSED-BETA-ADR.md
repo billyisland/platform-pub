@@ -158,10 +158,28 @@ author's own ear.
 **Landing — closed-beta line**
 > all.haus is in closed beta — invited users for now.
 
-**Landing — hero (readers-first)**
-> **Read everything in one place.**
-> Articles, notes, feeds from across the web — one reader. Pay only for what's
-> worth it.
+**Landing — hero (three propositions).** Superseded the earlier "Read everything
+in one place." hero (2026-07-24): a serif head + a numbered manifesto naming the
+thesis (ownership / farming / paying writers), then three mono body paragraphs
+(omnivorous feeds · pay-a-few-pence · runs on Nostr). Still readers-first per §IV
+— it just leads with *why* instead of *what*.
+> **all.haus is a writing platform dedicated to three propositions.**
+> 1. No one should own the public square.
+> 2. Keeping up shouldn't mean being farmed.
+> 3. Writing is work and deserves to be paid as such.
+>
+> Build omnivorous feeds that pull in the whole open social web — Bluesky,
+> Mastodon, Substack, plain old RSS — in one place, sorted by rules you set
+> rather than rules set on you. No engagement hacks, nothing optimised against
+> you. A feed is a tool: you need the right one for each job. At all.haus you
+> can create as many as you like.
+>
+> Read what's worth reading and pay a few pence for it. No subscription, no
+> bundle, no commitment you'll forget to cancel. The money goes to whoever
+> wrote the thing.
+>
+> It runs on Nostr: an open protocol with no company behind it, no servers to
+> seize, and no owner to sell it to someone worse.
 
 **Waitlist surface**
 > **Not open yet.**
@@ -324,18 +342,23 @@ only `mode=signup` string left in the code is a comment. Frontend-only — no
 gateway, schema, or endpoint change. `next build` green; hairline tripwire clean
 on all touched files.
 
-**Landing (`app/page.tsx`).** Readers-first (§IV): hero "Read everything / in one
-place.", body "Articles, notes, and feeds from across the web — one reader. Pay
-only for what's worth it." (§V). CTA swap: primary **"Join the waiting list"** →
-`/waitlist`, secondary **"Log in"** → `/auth?mode=login`, "About all.haus" text
-link, and the quiet "all.haus is in closed beta — invited users for now." line.
-Metadata (title/OG/Twitter) reconciled to the readers-first line, killing the
+**Landing (`app/page.tsx`).** Readers-first (§IV): originally hero "Read
+everything / in one place." + one body line. CTA swap: primary **"Join the
+waiting list"** → `/waitlist`, secondary **"Log in"** → `/auth?mode=login`,
+"About all.haus" text link, and the quiet "all.haus is in closed beta — invited
+users for now." line. Metadata (title/OG/Twitter) reconciled, killing the
 author-centric copy §VII flagged. `HomeRedirect` untouched. **Restyled (same day)
 into the logged-out register's idiom** — the giant Swiss-sans `hero-headline` and
 the 6px `slab-rule` beam (used nowhere else in that register) dropped for the
 centred crimson `∀` + serif head + mono copy grammar shared by `/auth`,
 `/waitlist`, `/about`; the redundant body "Log in" / "About" links removed (both
-in the topbar), leaving one CTA + the closed-beta line.
+in the topbar), leaving one CTA + the closed-beta line. **Copy reworked to the
+three-propositions manifesto (2026-07-24, §V):** the single hero line became a
+serif head + a numbered `<ol>` (crimson mono numerals, serif propositions) +
+three mono body paragraphs; container widened `max-w-sm` → `max-w-xl` to hold the
+prose; metadata TITLE/DESCRIPTION re-led with "No one should own the public
+square." The idiom (centred ∀, serif head, mono copy, single `.btn-accent` CTA,
+closed-beta line) is unchanged.
 
 **`/auth` (`app/auth/page.tsx`).** Rewritten **login-only**: the signup form,
 the display-name/username fields, `handleSignup`, and the login/signup toggle are
