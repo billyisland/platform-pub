@@ -4,7 +4,6 @@ import { createContext, useContext } from 'react'
 import { usePathname } from 'next/navigation'
 import { useLayoutMode, type LayoutMode } from '../../hooks/useLayoutMode'
 import { Nav } from './Nav'
-import { Footer } from './Footer'
 // Code-split + open-gated (performance audit #4): these four ride in *every*
 // page bundle, so deferring them shrinks initial JS sitewide. TipTap (editor)
 // is the biggest single win.
@@ -93,7 +92,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         <main className={chromeless ? 'min-h-screen' : 'min-h-screen pt-[60px]'}>
           {children}
         </main>
-        {!chromeless && <Footer />}
         {/* Mounted unconditionally — bylines anywhere (incl. the workspace) open it. */}
         <ProfileOverlay />
         {/* Mounted unconditionally — source/tag/publication links anywhere (e.g.

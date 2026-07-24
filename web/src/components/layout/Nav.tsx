@@ -7,17 +7,6 @@ import { useAuth } from '../../stores/auth'
 import { useLayoutModeContext } from './LayoutShell'
 import { ForAllMark } from '../icons/ForAllMark'
 
-// ─── Nav link styling (Plex Mono, uppercase, on black) ──────────────────────
-
-function navLinkClass(active: boolean) {
-  return [
-    'label-ui transition-colors px-3 py-1',
-    active
-      ? 'text-white border-b-4 border-crimson'
-      : 'text-grey-400 hover:text-white',
-  ].join(' ')
-}
-
 // ─── Wordmark lockup ────────────────────────────────────────────────────────
 
 function Wordmark({ href }: { href: string }) {
@@ -45,19 +34,8 @@ function Wordmark({ href }: { href: string }) {
 // waiting list (closed beta — no public signup, CLOSED-BETA-ADR §IV).
 
 function MobileSheet({ onClose }: { onClose: () => void }) {
-  const pathname = usePathname()
-  const isActive = (path: string) => pathname.startsWith(path)
-  const linkClass = (path: string) => [
-    'block py-3 label-ui transition-colors',
-    isActive(path) ? 'text-white font-medium' : 'text-grey-400 hover:text-white',
-  ].join(' ')
-
   return (
     <div className="fixed inset-x-0 top-[60px] bg-black z-40 px-6 py-4">
-      <Link href="/about" onClick={onClose} className={linkClass('/about')}>About</Link>
-
-      <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
-
       <Link href="/auth?mode=login" onClick={onClose} className="block py-3 label-ui text-grey-400 hover:text-white transition-colors">Log in</Link>
       <Link href="/waitlist" onClick={onClose} className="inline-block mt-1 btn-accent text-center text-sm py-2 px-6">Join the waiting list</Link>
     </div>
@@ -81,10 +59,6 @@ export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => { setMenuOpen(false) }, [pathname])
-
-  function isActive(path: string) {
-    return pathname === path
-  }
 
   const loggedIn = !loading && !!user
   const logoHref = loggedIn ? '/reader' : '/'
@@ -124,9 +98,6 @@ export function Nav() {
 
           <div className="flex items-center gap-6">
             <Wordmark href="/" />
-            <nav className="hidden md:flex items-center gap-1">
-              <Link href="/about" className={navLinkClass(isActive('/about'))}>About</Link>
-            </nav>
           </div>
 
           <div className="flex items-center gap-4">

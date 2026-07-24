@@ -27,8 +27,8 @@ export default function HomePage() {
   return (
     // Readers-first, in the logged-out register's own idiom (matches
     // /auth, /waitlist, /about): centred ∀, serif head, mono copy, .btn.
-    // CLOSED-BETA-ADR §IV. About / Log in live in the topbar — not repeated.
-    <div className="mx-auto max-w-xl px-4 sm:px-6 py-28">
+    // CLOSED-BETA-ADR §IV. Log in lives in the topbar — not repeated.
+    <div className="mx-auto max-w-2xl px-4 sm:px-6 py-28">
       <HomeRedirect />
 
       <div className="flex justify-center mb-8">
@@ -37,9 +37,9 @@ export default function HomePage() {
 
       <h1
         className="font-serif font-medium text-black tracking-tight text-center"
-        style={{ fontSize: '28px' }}
+        style={{ fontSize: '30px' }}
       >
-        all.haus is a writing platform dedicated to three propositions.
+        all.haus is a writing platform dedicated to three propositions:
       </h1>
 
       <ol className="mt-10 space-y-5">
@@ -54,7 +54,7 @@ export default function HomePage() {
             </span>
             <span
               className="font-serif text-black"
-              style={{ fontSize: '20px', lineHeight: 1.4 }}
+              style={{ fontSize: '22px', lineHeight: 1.4 }}
             >
               {proposition}
             </span>
@@ -62,12 +62,12 @@ export default function HomePage() {
         ))}
       </ol>
 
-      <div className="mt-12 space-y-6 text-mono-sm text-grey-600 leading-relaxed">
+      <div className="mt-12 space-y-6 text-[1.0625rem] font-mono tracking-[0.01em] text-grey-600 leading-relaxed">
         <p>
           Build omnivorous feeds that pull in the whole open social web —
           Bluesky, Mastodon, Substack, plain old RSS — in one place, sorted by
           rules you set rather than rules set on you. No engagement hacks,
-          nothing optimised against you. A feed is a tool: you need the right
+          no algorithm optimised against you. A feed is a tool: you need the right
           one for each job. At all.haus you can create as many as you like.
         </p>
         <p>
@@ -86,10 +86,6 @@ export default function HomePage() {
           Join the waiting list
         </Link>
       </div>
-
-      <p className="mt-10 text-mono-xs text-grey-400 text-center">
-        all.haus is in closed beta — invited users for now.
-      </p>
     </div>
   )
 }

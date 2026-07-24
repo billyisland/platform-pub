@@ -357,8 +357,15 @@ three-propositions manifesto (2026-07-24, §V):** the single hero line became a
 serif head + a numbered `<ol>` (crimson mono numerals, serif propositions) +
 three mono body paragraphs; container widened `max-w-sm` → `max-w-xl` to hold the
 prose; metadata TITLE/DESCRIPTION re-led with "No one should own the public
-square." The idiom (centred ∀, serif head, mono copy, single `.btn-accent` CTA,
-closed-beta line) is unchanged.
+square." The idiom (centred ∀, serif head, mono copy, single `.btn-accent` CTA)
+is unchanged. **Chrome pared back (2026-07-24):** the closed-beta line was dropped
+from the landing (it still lives in the topbar CTA cluster + `/waitlist`), the
+container widened again `max-w-xl` → `max-w-2xl` and head/propositions/body sizes
+bumped (30 / 22 / 17px). The **About link was removed from the topbar** (desktop
+nav + mobile sheet, `Nav.tsx`) and the **sitewide `Footer` was unmounted entirely**
+(`LayoutShell.tsx` no longer renders `<Footer />`; `Footer.tsx` retained, unused).
+Consequence: About / Guidelines / Privacy / Terms are no longer linked from the
+logged-out register — reachable by direct URL only.
 
 **`/auth` (`app/auth/page.tsx`).** Rewritten **login-only**: the signup form,
 the display-name/username fields, `handleSignup`, and the login/signup toggle are
