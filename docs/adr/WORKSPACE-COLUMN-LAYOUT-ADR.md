@@ -841,6 +841,21 @@ all fixed the same day (FIX-PROGRAMME 2026-07-22):
   the open ∀ menu (`[role="menu"]` — it is neither a Glasshouse nor a local
   surface), the store's dead `reset()` is gone, and `handleMergeConfirm` no
   longer kicks a refetch off inside a `setVessels` updater.
+- **The vertical run is grid-aligned at its source (2026-07-25 fix).**
+  `availableHeight` returned `vp.h − navRowH − 2·GRID`, which rides the raw
+  viewport height and so is off the lattice whenever `vp.h` is not a GRID
+  multiple. A single `h: null` slot fills the column to that off-grid `H`, but
+  a **fixed** slot can only reach `floorGrid(H)` (a resize snaps to the grid,
+  and `clampSlotSize` caps at the grid multiple below `H`) — so a resized
+  vessel could never line its bottom up with a null-filled neighbour, always
+  `H mod GRID` px (1–7) short. Most visible after a `\`-materialise: the parade
+  is all-`null` columns, so resizing one feed leaves it unable to match the
+  rest. `availableHeight` now floors to the grid, so the whole vertical axis is
+  on the lattice and the max fixed height equals the null fill exactly; the
+  up-to-GRID remainder pads the bottom buffer, invisibly. The exact-navRowH
+  drop between viewports is preserved because `NAV_ROW_H` (56) is itself a GRID
+  multiple. Regression-tested in `layout.test.ts` (bottoms match to the pixel
+  at an off-grid viewport height).
 
 ---
 

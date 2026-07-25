@@ -302,9 +302,10 @@ describe("resizeSlot", () => {
   it("clamps height at the stack remainder, not squeezing a fixed sibling", () => {
     const next = resizeSlot(stack, "a", { w: 400, h: 5000 }, VP);
     const h = next.columns[0].slots[0].h!;
-    // Sibling keeps its 300; the resized slot takes the largest lattice
-    // height that fits in what is left.
-    const remainder = availableHeight(VP) - GRID - 300;
+    // Sibling keeps its 300, which renders at its grid-floored height; the
+    // resized slot takes the largest lattice height that fits in what is left.
+    const siblingH = 300 - (300 % GRID);
+    const remainder = availableHeight(VP) - GRID - siblingH;
     expect(h).toBe(remainder - (remainder % GRID));
     expectTautGeometry(next, VP, "after resize");
   });
@@ -330,6 +331,31 @@ describe("resizeSlot", () => {
     expect(slot.h).toBeGreaterThanOrEqual(SLOT_MIN_H);
     expect(slot.w % GRID).toBe(0);
     expect(slot.h! % GRID).toBe(0);
+  });
+
+  // Regression: in regimented mode every column is a single `h: null` slot that
+  // fills to availableHeight(vp). At an off-grid viewport height, a resized
+  // (fixed-h) feed dragged to its max used to stop `H mod GRID` px short of a
+  // null neighbour's bottom — impossible to line up on the grid. availableHeight
+  // is now floored, so max fixed == null fill exactly.
+  it("lets a resized feed line its bottom up with a null neighbour at an off-grid height", () => {
+    // 903 - 56 (nav) - 16 (buffers) = 831, deliberately NOT a GRID multiple.
+    const odd: Viewport = { w: 1440, h: 903, navRowH: 56 };
+    const H = availableHeight(odd);
+    expect(H % GRID).toBe(0); // the whole vertical axis is on the lattice
+
+    const parade: WorkspaceLayout = {
+      columns: [
+        makeColumn([{ feedId: "a", w: FACTORY_W, h: null }]),
+        makeColumn([{ feedId: "b", w: FACTORY_W, h: null }]),
+      ],
+    };
+    // Drag "a" as tall as possible; it becomes a fixed-height slot.
+    const resized = resizeSlot(parade, "a", { w: FACTORY_W, h: 100000 }, odd);
+    const geom = deriveGeometry(resized, odd);
+    const a = geom.rects.get("a")!;
+    const b = geom.rects.get("b")!; // still null → fills the column
+    expect(a.y + a.h).toBe(b.y + b.h); // bottoms line up to the pixel
   });
 });
 
@@ -493,8 +519,10 @@ describe("resolveDrop", () => {
     if (drop.kind !== "into-column") return;
     expect(drop.columnIndex).toBe(0);
     expect(drop.slotIndex).toBe(1);
-    // The run below the fixed slot, less the one buffer the insertion needs.
-    expect(drop.h).toBe(availableHeight(vp) - 300 - GRID);
+    // The run below the fixed slot (which renders at its grid-floored height),
+    // less the one buffer the insertion needs.
+    const fixedH = 300 - (300 % GRID);
+    expect(drop.h).toBe(availableHeight(vp) - fixedH - GRID);
   });
 
   it("resolves an empty layout to the first column", () => {

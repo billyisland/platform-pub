@@ -165,9 +165,21 @@ export function makeColumn(slots: Slot[]): Column {
 
 /** The vertical run available to a column's stack: viewport less the nav row
  *  and the top/bottom buffers (§III.2). Feeds may never extend below the top
- *  of the nav row. */
+ *  of the nav row.
+ *
+ *  FLOORED TO THE GRID so the whole vertical axis lives on the lattice. The raw
+ *  viewport height is arbitrary, so `vp.h - navRowH - 2·GRID` is off-grid
+ *  whenever `vp.h` is not a multiple of GRID. A `null` slot then fills the
+ *  column to that off-grid H, but a FIXED slot can only reach `floorGrid(H)` (a
+ *  resize snaps to the grid, and clampSlotSize caps at the grid multiple below
+ *  H) — so a resized vessel could never line its bottom up with a null-filled
+ *  neighbour, always `H mod GRID` px short (the regimented-mode "won't line up"
+ *  bug). Flooring here makes H itself a grid multiple, so the max fixed height
+ *  equals the null fill exactly; the up-to-GRID remainder just pads the bottom
+ *  buffer, below the last row and invisible. SLOT_MIN_H is grid-aligned, so the
+ *  floor branch stays on the lattice too. */
 export function availableHeight(vp: Viewport): number {
-  return Math.max(SLOT_MIN_H, vp.h - vp.navRowH - 2 * GRID);
+  return Math.max(SLOT_MIN_H, floorGrid(vp.h - vp.navRowH - 2 * GRID));
 }
 
 /**
