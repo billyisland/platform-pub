@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 
 // =============================================================================
@@ -92,3 +93,30 @@ export const useColorScheme = create<ColorSchemeState>((set, get) => ({
     set({ dark: resolveDark("system") });
   },
 }));
+
+// =============================================================================
+// useResolvedDark — a FLASH-FREE dark flag for surfaces that drive INLINE STYLES
+// from the mode (the landing vessel + static lockup) rather than letting
+// `html.dark` + the CSS var inversion do it.
+//
+// The store's own `dark` field defaults to false and only flips once `hydrate()`
+// runs in a post-mount effect, so `useColorScheme(s => s.dark)` reports light on
+// the first client render — fine for CSS-driven chrome (the pre-paint script in
+// app/layout.tsx already set `html.dark`, and CSS reads it for free), but wrong
+// for a surface that picks its palette variant in JS: a dark-mode visitor paints
+// the light variant, then snaps to dark.
+//
+// This reads the DOM class the blocking script already set as the client
+// snapshot, with `false` as the server snapshot (SSR can't know a per-device
+// preference — it matches the light default the rest of the SSR tree renders).
+// Because it's a useSyncExternalStore, React reconciles the two during hydration
+// BEFORE paint, so the light variant never shows. Subscribing to the store means
+// a live mode toggle (which re-toggles the class) re-reads.
+// =============================================================================
+export function useResolvedDark(): boolean {
+  return useSyncExternalStore(
+    (onChange) => useColorScheme.subscribe(onChange),
+    () => document.documentElement.classList.contains("dark"),
+    () => false,
+  );
+}

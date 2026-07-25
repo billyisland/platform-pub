@@ -55,12 +55,20 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // topbar + footer don't mount behind the frosted overlay.
   const surfaceOpen = useSurfaceOverlay((s) => s.isOpen)
   // Standalone surfaces retired off the black topbar (it's reserved for the
-  // logged-out marketing/auth register — `/`, `/auth`). `/admin/*` is a
+  // logged-out marketing/auth register — `/auth`). `/admin/*` is a
   // logged-in tool that carries its own PageShell + self-navigates back to the
   // workspace; `/about` is a leaf with its own signup CTA. Neither is reachable
   // from the workspace, so dropping the topbar can't strand a navigation.
+  // `/` joined them 2026-07-25: the landing page is now built from the member
+  // grammar (bone floor, one ⊔ vessel, cards) and carries its own nav row with
+  // the lockup docked right (components/landing/LandingNavRow). Mounting the
+  // black topbar over it would put two logos on one screen — the topbar's bare
+  // glyph + white wordmark, and the row's disc 40 / wordmark 24 — so the
+  // topbar's auth CTAs moved into the row's left end instead. `/auth` and
+  // `/waitlist` keep the topbar: they are still the marketing/auth register.
   const pathname = usePathname()
   const chromelessRoute =
+    pathname === '/' ||
     pathname === '/about' ||
     pathname === '/admin' ||
     pathname.startsWith('/admin/')

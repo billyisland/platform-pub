@@ -23,6 +23,39 @@ starts.
 
 ## Progress
 
+- **2026-07-25 (landing page `/` rebuilt from the member grammar)** — The
+  logged-out `/` carried the old marketing register (black topbar + centred
+  crimson ∀ + serif/mono column). Rebuilt it from the member grammar: a
+  `--ah-bone` floor, one *abstracted* ⊔ vessel (`web/src/components/landing/
+  LandingVessel.tsx` — the ⊔ stance + 8px wall/lattice + cards on a continuous
+  ground, deliberately WITHOUT the feed vessel's numeral/roundel/VesselBar,
+  which assert a "feed n of m" the page can't make), and a fixed bottom nav row
+  (`LandingNavRow.tsx`) with the static lockup (`components/brand/
+  ForallLockup.tsx` — wordmark + disc-form ∀, painted not punched) docked
+  right; the row's left carries the two CTAs the retired topbar held (Log in ·
+  Join the waiting list). `/` joined `chromelessRoute` in `LayoutShell` so the
+  black topbar no longer mounts over it (two logos on one screen otherwise);
+  `HomeRedirect` still bounces a logged-in member to `/reader`.
+  **Three fixes over the handed-off draft.** (1) The bundle's `.patch` was
+  stale — its base predated `8f40ba5` (the copy sharpen), so it wouldn't apply;
+  hand-applied against HEAD and **kept HEAD's newer copy** ("three *radical*
+  propositions", the "dopamine hacks"/"set the terms" prose) rather than
+  regressing to the patch's older strings. (2) **Restored `<ol>`/`<li>`
+  semantics** for the three propositions (the draft had flattened them to
+  `<div>`s with a decorative numeral — a screen-reader regression); the crimson
+  numeral is now `aria-hidden` since the list position carries order, and the
+  `<ol>` is one flex child with the same `GAP` so card spacing is unchanged.
+  (3) **Killed a dark-mode first-paint flash**: the islanded, SSR'd landing
+  surfaces gated their palette variant on the store's `dark` field, which lags
+  until `hydrate()` runs post-mount, so a dark-mode visitor painted a light
+  vessel on the (already-dark) floor with a near-invisible lockup, then snapped
+  dark. Added `useResolvedDark()` to `stores/colorScheme.ts` — a
+  `useSyncExternalStore` reading the `html.dark` class the pre-paint script set,
+  reconciled by React before paint — and switched both landing components to it.
+  Verified: `tsc` clean, `next build` (`/` prerenders static), hairline
+  tripwire + root promise-safety lint both pass. CLAUDE.md workspace-escape
+  invariant + light/dark section updated.
+
 - **2026-07-25 (feed-items page load 7.2s → 78ms — the slow/failing-reload
   incident)** — Feeds with follow-import-scale source sets (251–717
   `feed_sources` rows) had become multi-second or failing to load. Measured on
