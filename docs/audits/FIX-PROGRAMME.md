@@ -23,6 +23,30 @@ starts.
 
 ## Progress
 
+- **2026-07-25 (NAV-ROW-MUSTER-ADR Phase 3 — polish)** — Closed out the muster's
+  deferred §VIII.3 polish. (1) **Floating hover-name label** (§V): the `title`
+  stand-in is replaced by the vessel roundel's own `ROUNDEL_TOKENS` treatment
+  (`.label-ui`, ink-925 ground, bone text), floated *above* the disc — the muster
+  sits at the screen's bottom edge, so its label rises where the vessel's drops —
+  centred over the disc and pointer-inert, driven by per-roundel local hover
+  state. (2) **Reduced-motion gate**: `prefersReducedMotion()` nulls both the disc
+  state transition and the label fade (matching `ExplainOverlay`/`Vessel`).
+  (3) **Explain `navRow.muster`**: new kind + copy (`registry.ts` union,
+  `copy.ts` — "One roundel per feed… click any of them to go straight there").
+  The muster is a separate fixed layer *above* the floor-mode scrim (z-58 > 50),
+  so — like the ∀ disc — it **reports its own hover** to the engine rather than
+  relying on the scrim's hit-test (which never reaches it); gated to floor mode
+  and About-closed, so pane-mode Explain still annotates only the pane. This is
+  an owned HOW-divergence from §VII's imagined passive `data-explain` tag, which
+  would be unreachable above the scrim. (4) **§VII a11y close-out**: the labelled
+  group of aria-labelled state-naming buttons was already in place from Phase 2;
+  the addition is a click-while-Explain-active guard that sheds the annotations
+  instead of navigating (the disc's behaviour, since the muster's click never
+  reaches the scrim's own dismiss). (5) The overflow track gained a `max()` floor
+  so a pathologically narrow viewport can't collapse it. `next build` green,
+  hairline tripwire clean. Phase 4 (arrival flags, §VI) stays deferred to its own
+  ADR. Spec: `docs/adr/NAV-ROW-MUSTER-ADR.md` §VIII.3.
+
 - **2026-07-25 (NAV-ROW-MUSTER-ADR Phase 2 — the muster)** — The nav row was a
   56px silent reserved band with nothing but the ∀ lockup docked at its right
   end, so the workspace had no persistent answer to "how many feeds do I have,

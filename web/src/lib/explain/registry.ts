@@ -27,6 +27,11 @@ export type ExplainKind =
   // singletons
   | "floor"
   | "disc"
+  // the nav-row muster — the run of numbered feed roundels (NAV-ROW-MUSTER-ADR
+  // §VII). Hover-only, floor mode: the muster sits above the floor-mode scrim
+  // (z-58 > 50), so — like the ∀ disc — it reports its own hover to the engine
+  // rather than being found by the scrim's hit-test.
+  | "navRow.muster"
   // the "About all.haus" button that stands in for the wordmark while a
   // program is active (D3, 2026-07-15 form). Hover-only: never in the
   // sequence, annotated via the button's own hover handlers.

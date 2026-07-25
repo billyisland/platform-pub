@@ -1,9 +1,9 @@
 # NAV-ROW-MUSTER-ADR: Stable numerals and the muster row
 
 **all.haus Architectural Decision Record**
-**Status:** Proposed, 2026-07-25; **Phase 1 (stable numerals, §III) shipped
-2026-07-25; Phase 2 (the muster, §IV) shipped 2026-07-25** — Phases 3–4 (polish,
-arrival flags) remain. Revised
+**Status:** Proposed, 2026-07-25; **Phase 1 (stable numerals, §III), Phase 2
+(the muster, §IV) and Phase 3 (polish, §VIII.3) all shipped 2026-07-25** —
+Phase 4 (arrival flags, §VI) remains, deferred to its own ADR. Revised
 2026-07-25 after a code review: the §IV
 state flip now drives off a genuine viewport-intersection test (not the wider
 `visibleIds` mount band), the roundel ring is 2px (a 1.5px ring broke the
@@ -320,10 +320,23 @@ muster is interactive, so:
    therefore correct to keep (it is genuinely empty). The muster container is
    marked `data-explain-chrome` as the conservative default pending the Phase-3
    `data-explain="navRow.muster"` label. → FIX-PROGRAMME 2026-07-25.
-3. **Polish.** Overflow and centring rule (edge cases past the reserve), the §V
-   floating hover-name label (a `title` stands in now), the Explain
-   `navRow.muster` label + copy, the full §VII accessibility pass, and a
-   reduced-motion gate on the disc transition.
+3. ~~**Polish.**~~ **SHIPPED 2026-07-25.** §VIII.3 — the §V floating hover-name
+   label (the vessel roundel's `ROUNDEL_TOKENS` treatment, floated *above* the
+   disc since the muster sits at the screen's bottom edge; the `title` stand-in
+   removed), a reduced-motion gate on the disc + label transitions
+   (`prefersReducedMotion`), the Explain `navRow.muster` kind + copy, and the
+   §VII a11y close-out (the group of aria-labelled buttons was already in place
+   from Phase 2; the addition is a click-while-Explain-active guard that sheds
+   the annotations instead of navigating). The overflow track gained a `max()`
+   floor so a pathologically narrow viewport can't collapse it. **HOW-divergence
+   from §VII, owned:** §VII imagined a passive `data-explain="navRow.muster"`
+   tag the scrim would hit-test, but the as-built muster is a separate fixed
+   layer *above* the floor-mode scrim (z-58 > 50) with `pointerEvents:auto`, so
+   a pointermove over it never reaches the scrim and a passive tag is
+   unreachable — exactly as for the ∀ disc. So the muster **reports its own
+   hover** to the engine (the disc pattern in `ForallMenu`), floor mode only
+   (pane-mode Explain annotates the pane alone), and the outer band keeps
+   `data-explain-chrome` for every look-through path. → FIX-PROGRAMME 2026-07-25.
 4. **Later ADR.** Arrival flags, under the §VI constraints.
 
 ## IX. Decided by default (flag to reopen)

@@ -36,6 +36,10 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "This is the ∀ menu. Aside from individual feed settings, everything runs from here. (Right now, clicking it just turns off Explain mode).",
   about:
     "This opens all.haus's About page.",
+  // NAV-ROW-MUSTER-ADR §VII. Names the three states without teaching the
+  // virtualization behind them, and says the one thing to do with it.
+  "navRow.muster":
+    "One roundel per feed, in numbered order. A filled one is a feed you can see right now; a hollow one is off to the side, and a grey one is minimised. Click any of them to go straight there.",
   pane: "This is a pane, floating over your workspace. Drag it to move it and it will remember where you put it. Close it by clicking outside or on the x, or by pressing Escape.",
   // First sentence deliberately echoes vessel.resize: same grammar for the
   // same gesture (Appendix A.4 harmonisation note).
