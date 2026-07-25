@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
-import { ForAllMark } from '../../components/icons/ForAllMark'
 
 // Closed beta (CLOSED-BETA-ADR Phase 3, D4). `/auth` is now login-only: the
 // signup form and the login/signup toggle are gone (account creation is closed
@@ -78,9 +77,6 @@ export default function AuthPage() {
   if (magicLinkSent) {
     return (
       <div className="mx-auto max-w-sm px-4 sm:px-6 py-28 text-center">
-        <div className="flex justify-center mb-8">
-          <ForAllMark size={28} className="text-grey-300" />
-        </div>
         <h1 className="font-serif text-2xl font-medium text-black mb-4 tracking-tight">
           Check your email
         </h1>

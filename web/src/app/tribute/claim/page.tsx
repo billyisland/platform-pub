@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '../../../stores/auth'
 import { tributesEnabled } from '../../../lib/api'
 import { TRIBUTE_CLAIM_KEY } from '../../../components/tribute/TributeClaimResumer'
-import { ForAllMark } from '../../../components/icons/ForAllMark'
 
 // =============================================================================
 // /tribute/claim?token=… — the landing for an external tribute-offer email.
@@ -77,9 +76,6 @@ function ClaimInner() {
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-sm px-4 sm:px-6 py-28">
-      <div className="flex justify-center mb-8">
-        <ForAllMark size={28} className="text-grey-300" />
-      </div>
       <h1 className="text-2xl font-medium text-black mb-4 tracking-tight">{title}</h1>
       <div className="text-ui-sm text-grey-600 leading-relaxed">{children}</div>
     </div>

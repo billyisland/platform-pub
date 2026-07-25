@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { waitlist } from '../../lib/api'
-import { ForAllMark } from '../../components/icons/ForAllMark'
 
 // Closed-beta waiting-list surface (CLOSED-BETA-ADR Phase 2, D2/D3/D4).
 // Readers-first: everyone joins as a user by default; "I'd also like to
@@ -43,9 +42,6 @@ export default function WaitlistPage() {
   if (joined) {
     return (
       <div className="mx-auto max-w-sm px-4 sm:px-6 py-28 text-center">
-        <div className="flex justify-center mb-8">
-          <ForAllMark size={28} className="text-grey-300" />
-        </div>
         <h1 className="font-serif text-2xl font-medium text-black mb-4 tracking-tight">
           You&apos;re on the list.
         </h1>

@@ -72,6 +72,15 @@ const MIN_H = 240;
 // top + side padding gutters. Both dimensions clear the banned single-pixel range.
 const FRAME_TOP = 8; // top-bar thickness (the substantial bar; reads above the rules)
 const FRAME_SIDE = 4; // side-rule thickness
+
+// Top seam (`topSeam`) — the band of pane-coloured background that a flush body's
+// content flows INTO, so it never collides with the pinned chrome. Opaque to
+// SEAM_SOLID (the grip sits at y 14–18, so 20 clears it outright), then fading
+// out by SEAM_H. Sized to stay clear of the readers' own top padding at rest
+// (external 32 + the reader's pt-2 = 40; native md 40 + 8 = 48), so the seam is
+// pure background until something scrolls under it.
+const SEAM_SOLID = 20;
+const SEAM_H = 38;
 // Skip "ears": half-circle tabs that protrude from the pane's left/right edges,
 // each carrying a triangular arrow — the up/down feed-skip buttons. Coloured the
 // frame colour; the arrow takes the frame's contrast tone.
@@ -472,6 +481,16 @@ interface GlasshouseProps {
   /** Contrast tone for the skip-ear arrows on the frame (`palette.barText`).
    *  Falls back to bone when omitted. Only meaningful alongside `sideNav`. */
   frameTextColor?: string | null;
+  /** Reserve a seam at the pane's top edge for a body that scrolls flush under
+   *  the pinned chrome (the reader). The pane clips but doesn't pad, so prose
+   *  scrolls straight under the drag grip and collides with it. This paints a
+   *  short band of the pane's OWN background across the top — opaque behind the
+   *  grip, fading to nothing below it — so text dissolves into the page before
+   *  it reaches the furniture instead of running behind it. Invisible at rest
+   *  (it is the pane colour, over the body's own top padding); it only does work
+   *  once content moves under it. Desktop only — it exists for the grip, and the
+   *  mobile full-screen sheet has none. */
+  topSeam?: boolean;
   /** Feed-skip "ears": half-circle tabs on the pane's left/right edges that step
    *  through the launching feed's articles in place (the reader's up/down skip).
    *  Rendered only when `frameColor` is set (the ears take its colour) and not
@@ -503,6 +522,7 @@ export function Glasshouse({
   coverNavRow,
   frameColor,
   frameTextColor,
+  topSeam,
   sideNav,
   selfHistory,
   children,
@@ -721,6 +741,25 @@ export function Glasshouse({
               />
             </div>
           )}
+          {/* Top seam — a band of the pane's own background across the top edge,
+              solid behind the grip and fading to nothing below it. A flush body
+              (the reader) scrolls its prose straight under the pinned chrome;
+              this gives the text somewhere to go, dissolving it into the page
+              rather than letting it clash with the furniture. z-[4]: above the
+              body (static, in flow) but below the feed frame's colour bar (z-5)
+              and the chrome (z-10), so it hides neither. Desktop only — gated on
+              `pane.startDrag`, which is exactly "there is a grip to clear". */}
+          {topSeam && pane.startDrag && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute left-0 right-0 top-0 z-[4]"
+              style={{
+                height: SEAM_H,
+                background: `linear-gradient(to bottom, var(--ah-glasshouse) 0px, var(--ah-glasshouse) ${SEAM_SOLID}px, transparent ${SEAM_H}px)`,
+              }}
+            />
+          )}
+
           {/* Drag handle — a grip pill, top-centre, pinned over the content.
               4px tall — a grip glyph, not a thin rule. Discoverable affordance
               for the whole-pane drag (the pane body drags too via

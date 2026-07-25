@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { ForAllMark } from '../../components/icons/ForAllMark'
 import { useAuth } from '../../stores/auth'
 
 export function AboutContent() {
@@ -46,12 +45,8 @@ export function AboutContent() {
         </p>
       </div>
 
-      <div className="flex justify-center mb-12">
-        <ForAllMark size={28} className="text-grey-300" />
-      </div>
-
       {!loading && !user && (
-        <div className="text-center">
+        <div className="text-center mt-12">
           <Link href="/waitlist" className="btn-accent text-base px-10 py-4">
             Join the waiting list
           </Link>

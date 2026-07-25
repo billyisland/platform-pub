@@ -5,19 +5,19 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useLayoutModeContext } from './LayoutShell'
-import { ForAllMark } from '../icons/ForAllMark'
 
-// ─── Wordmark lockup ────────────────────────────────────────────────────────
+// ─── Wordmark ───────────────────────────────────────────────────────────────
+//
+// Type alone. The bare crimson ∀ that used to sit beside it was retired from the
+// design language (2026-07-25) — the mark survives only in its DISC stance (the
+// workspace nav-row lockup, favicon, brand exports), which this topbar never
+// carries.
 
 function Wordmark({ href }: { href: string }) {
   return (
-    <Link href={href} className="flex items-center gap-[8px] flex-shrink-0 group">
-      <ForAllMark
-        size={21}
-        className="text-crimson group-hover:text-crimson-dark transition-colors"
-      />
+    <Link href={href} className="flex items-center flex-shrink-0 group">
       <span
-        className="font-sans text-[18px] font-medium text-white leading-none"
+        className="font-sans text-[18px] font-medium text-white leading-none group-hover:opacity-70 transition-opacity"
         style={{ letterSpacing: '-0.01em' }}
       >
         all.haus
@@ -63,15 +63,13 @@ export function Nav() {
   const loggedIn = !loading && !!user
   const logoHref = loggedIn ? '/reader' : '/'
 
-  // ── Canvas mode: minimal black bar, mark only ──────────────────────────────
+  // ── Canvas mode: minimal black bar, wordmark only ──────────────────────────
 
   if (mode === 'canvas') {
     return (
       <header className="site-topbar fixed top-0 inset-x-0 z-50 bg-black">
         <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
-          <Link href={logoHref} className="flex-shrink-0 logo-spin">
-            <ForAllMark size={21} className="text-crimson hover:text-crimson-dark transition-colors" />
-          </Link>
+          <Wordmark href={logoHref} />
         </div>
       </header>
     )

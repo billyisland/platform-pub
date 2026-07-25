@@ -172,8 +172,14 @@ export function ReaderOverlay() {
       coverNavRow
       frameColor={frameColor}
       frameTextColor={frameTextColor}
+      topSeam
       sideNav={sideNav}
     >
+      {/* The reading body is flush to the pane edges, so its prose would scroll
+          straight under the drag grip. `topSeam` on the Glasshouse paints the
+          top band in the pane's own background, fading out below the grip, and
+          the `pt-2` here keeps every reader's own top padding clear of that fade
+          at rest — so the seam is invisible until text flows into it. */}
       <div
         ref={scrollRef}
         onTouchStart={onSwipeStart}
@@ -182,7 +188,7 @@ export function ReaderOverlay() {
         // hover a more specific leaf (reader.gate) doesn't, ahead of the
         // generic `pane` tag on the Glasshouse root.
         data-explain="reader"
-        className="overflow-y-auto max-h-[var(--gh-h)]"
+        className="overflow-y-auto max-h-[var(--gh-h)] pt-2"
       >
         {target.kind === "external" ? (
           <ExternalArticleReader

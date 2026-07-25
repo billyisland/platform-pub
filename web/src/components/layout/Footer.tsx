@@ -1,17 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { ForAllMark } from '../icons/ForAllMark'
 
 export function Footer() {
   return (
     <footer className="site-footer bg-black mt-16">
       <div className="max-w-content mx-auto px-6 py-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        {/* Left: mark + wordmark */}
-        <div className="flex items-center gap-2">
-          <ForAllMark size={16} className="text-grey-600" />
-          <span className="label-ui text-grey-600">all.haus</span>
-        </div>
+        {/* Left: wordmark (type alone — the bare ∀ was retired 2026-07-25) */}
+        <span className="label-ui text-grey-600">all.haus</span>
 
         {/* Right: links */}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">

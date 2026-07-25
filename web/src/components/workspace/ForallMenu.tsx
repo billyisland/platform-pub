@@ -758,11 +758,12 @@ export function ForallMenu({
             open question in favour of "the DISC form carries the rim-kiss
             stance": pinning both ends to the rim forces a ≈16.7° splay from
             vertical rather than the bare glyph's ~20.5°, so the disc reads
-            narrower and taller than `ForAllMark` — deliberately. The splay is a
-            consequence of the rim constraint, and only the disc form has a rim;
-            the bare crimson ∀ (Nav/Footer/About) has nothing to kiss and keeps
-            the canonical stance. The trigger, the favicon and the brand exports
-            are the disc form and are now one geometry again. (§IV.4's earlier
+            narrower and taller than the bare stance — deliberately. The splay is
+            a consequence of the rim constraint, and only the disc form has a rim.
+            (The bare crimson ∀ that kept the ~20.5° stance — Nav/Footer/About —
+            left the design language 2026-07-25, and `ForAllMark` with it; the
+            disc is now the mark's only rendered form.) The trigger, the favicon
+            and the brand exports are that one geometry. (§IV.4's earlier
             "the live button keeps the ∀ clear of the rim" recommendation is
             superseded by this call.)
 

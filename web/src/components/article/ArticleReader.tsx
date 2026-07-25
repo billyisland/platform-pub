@@ -13,7 +13,6 @@ import { ReportButton } from '../ui/ReportButton'
 import { ShareButton } from '../ui/ShareButton'
 import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
-import { ForAllMark } from '../icons/ForAllMark'
 import { UpstreamEdges } from './UpstreamEdges'
 import { useCitationDraft } from '../../stores/citationDraft'
 import { articles as articlesApi, giftLinks } from '../../lib/api'
@@ -299,10 +298,11 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
                 bodyHtml={freeHtml}
               />
 
-              <div className="flex justify-center mt-16 mb-12">
-                <ForAllMark size={28} className="text-grey-300" />
+              {/* Foot of the piece — whitespace alone carries the break (the ∀
+                  ornament that stood here was retired 2026-07-25). */}
+              <div className="mt-24">
+                <ReplySection targetEventId={article.id} targetKind={30023} targetAuthorPubkey={article.pubkey} contentAuthorId={undefined} isUnlocked={isUnlocked} />
               </div>
-              <ReplySection targetEventId={article.id} targetKind={30023} targetAuthorPubkey={article.pubkey} contentAuthorId={undefined} isUnlocked={isUnlocked} />
             </article>
 
           </div>

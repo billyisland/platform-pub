@@ -12,9 +12,12 @@ import { useResolvedDark } from '../../stores/colorScheme'
 // (FORALL-CUT-AND-LOCKUP-ADR §III.1, as resolved 2026-07-22). Both ends pin to
 // the rim — feet overshooting so the circle trims them flush through the top,
 // apex mitring to a point that kisses the bottom — which forces the ≈16.7°
-// splay. Do NOT substitute `ForAllMark` here: that is the bare glyph at the
-// canonical ~20.5°, correct for Nav/Footer/About where there is no rim to kiss
-// and wrong the moment you put a disc behind it.
+// splay. Do NOT re-derive it from the bare glyph's canonical ~20.5° stance: that
+// splay belongs to a mark with no rim to kiss, and is wrong the moment you put a
+// disc behind it. (The bare stance's only implementation, `ForAllMark`, was
+// deleted 2026-07-25 when the bare crimson ∀ left the design language — the DISC
+// is now the mark's sole rendered form. The bare geometry survives as spec only,
+// in docs/adr/LOGO-REFINEMENT-SPEC.md.)
 //
 // PAINT, NOT PUNCH (§II). The ∀ is drawn in the ground colour over an opaque
 // disc rather than masked through it. On a flat known ground the two are

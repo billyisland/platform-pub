@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { ProfileLink } from '../ui/ProfileLink'
-import { ForAllMark } from '../icons/ForAllMark'
 
 interface PaywallGateProps {
   pricePounds: string | null
@@ -122,11 +121,6 @@ export function PaywallGate({
         className="px-8 py-12 text-center"
         style={{ borderTop: '4px solid var(--ah-crimson)', borderBottom: '4px solid var(--ah-crimson)' }}
       >
-        {/* Ornament */}
-        <div className="text-center mb-6">
-          <ForAllMark size={28} className="text-crimson inline-block" />
-        </div>
-
         <h2 className="font-serif text-[26px] font-normal text-black mb-3">{heading}</h2>
         <p className="font-sans text-[15px] text-grey-600 max-w-sm mx-auto mb-8 leading-[1.6]">{subtext}</p>
 
