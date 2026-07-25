@@ -338,6 +338,14 @@ export function WorkspaceView() {
   const setRegimented = useWorkspace((s) => s.setRegimented);
   const materializeRegimented = useWorkspace((s) => s.materializeRegimented);
 
+  // The reader is the one immersive pane: while it is open it may cover the nav
+  // row entirely (Glasshouse `coverNavRow`), so the row + muster un-mount and
+  // only the z-60 ∀ lockup floats above the reading surface. Every other pane
+  // keeps the row live (navigation over an open pane — WORKSPACE-COLUMN-LAYOUT
+  // §VI), so this is scoped to the reader alone. One pane opens at a time, so
+  // "reader open" is an unambiguous signal.
+  const readerOpen = useReader((s) => s.isOpen);
+
   // The numeral is persisted rank, not creation order (MOBILE-LAYOUT-ADR
   // §VII). NAV-ROW-MUSTER-ADR §III: the numeral is IDENTITY, assigned over the
   // LIVE feed set — every undeleted feed, hidden included — so a feed keeps its
@@ -1788,12 +1796,15 @@ export function WorkspaceView() {
       )}
       {/* The nav row (§VI) — chrome only; the lockup docks into it via
           ForallMenu anchor="row" below. Desktop only: the mobile bar is
-          top-anchored and carries its own wordmark. */}
-      {!isMobile && <NavRow />}
+          top-anchored and carries its own wordmark. Un-mounted while the reader
+          is open so the immersive reading pane can cover the toolbar region;
+          the ∀ lockup (z-60, rendered below) still floats over it. */}
+      {!isMobile && !readerOpen && <NavRow />}
       {/* The muster (NAV-ROW-MUSTER-ADR §IV) — a separate fixed layer over the
           row band, centred and clearing the lockup. Desktop only: the mobile
-          indicator strip is the pip strip in the top bar. */}
-      {!isMobile && <Muster feeds={musterFeeds} onGoTo={goToFeed} />}
+          indicator strip is the pip strip in the top bar. Hidden with the row
+          under an open reader. */}
+      {!isMobile && !readerOpen && <Muster feeds={musterFeeds} onGoTo={goToFeed} />}
       <ForallMenu
         onAction={handleForallAction}
         hiddenFeeds={hiddenFeeds}

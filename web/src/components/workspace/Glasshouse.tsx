@@ -161,9 +161,16 @@ const maxXFor = (maxWidth: number, vw: number) =>
 // unconditionally on the desktop path: a member always lands in the workspace
 // (HomeRedirect / WorkspacePaneRedirect), so a desktop pane over a rowless
 // standalone page is only ever a transient pre-redirect frame.
-const usableH = (vh: number) => Math.max(0, vh - NAV_ROW_H);
+//
+// `coverNavRow` (the reader) is the exception: an immersive reading pane covers
+// the nav row entirely — WorkspaceView un-mounts the row + muster while the
+// reader is open, so nothing chrome paints over the pane except the z-60 ∀
+// lockup — and its full vertical room is the whole viewport, edge to edge.
+const usableH = (vh: number, coverNavRow = false) =>
+  Math.max(0, coverNavRow ? vh : vh - NAV_ROW_H);
 // Keep at least 120px of the pane (its draggable top + chrome) on-screen.
-const maxYFor = (vh: number) => Math.max(0, usableH(vh) - 120);
+const maxYFor = (vh: number, coverNavRow = false) =>
+  Math.max(0, usableH(vh, coverNavRow) - 120);
 const centreX = (maxWidth: number, vw: number) =>
   clampN(snap((vw - widthFor(maxWidth, vw)) / 2), 0, maxXFor(maxWidth, vw));
 
@@ -181,8 +188,15 @@ function usePanePlacement(
   resizable?: boolean,
   fullScreen?: boolean,
   fillHeight?: boolean,
+  coverNavRow?: boolean,
 ) {
   const paneRef = useRef<HTMLDivElement | null>(null);
+  // When covering the nav row, the pane's side/bottom gutter collapses to the
+  // window edge so it can stretch to the whole window; otherwise the standard
+  // MARGIN gutter. (The top gutter — the default `MARGIN * 2` — is unchanged; a
+  // default reading pane keeps its top breathing room and only reaches the
+  // BOTTOM edge, per the request.)
+  const edge = coverNavRow ? 0 : MARGIN;
   const [vp, setVp] = useState(() =>
     typeof window === "undefined"
       ? { vw: 1024, vh: 768 }
@@ -199,7 +213,7 @@ function usePanePlacement(
     const base = stored ?? { x: centreX(maxWidth, vw), y: MARGIN * 2 };
     return {
       x: clampN(base.x, 0, maxXFor(maxWidth, vw)),
-      y: clampN(base.y, 0, maxYFor(vh)),
+      y: clampN(base.y, 0, maxYFor(vh, coverNavRow)),
     };
   });
 
@@ -222,12 +236,12 @@ function usePanePlacement(
       setVp({ vw, vh });
       setPos((p) => ({
         x: clampN(p.x, 0, maxXFor(maxWidth, vw)),
-        y: clampN(p.y, 0, maxYFor(vh)),
+        y: clampN(p.y, 0, maxYFor(vh, coverNavRow)),
       }));
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [maxWidth]);
+  }, [maxWidth, coverNavRow]);
 
   // Active drag/resize listener teardown. Lives in a ref so (a) the unmount
   // effect below can detach listeners if the pane closes mid-gesture (Escape,
@@ -253,7 +267,7 @@ function usePanePlacement(
     const base = showDefault
       ? {
           x: clampN(centreX(maxWidth, vw), 0, maxXFor(maxWidth, vw)),
-          y: clampN(MARGIN * 2, 0, maxYFor(vh)),
+          y: clampN(MARGIN * 2, 0, maxYFor(vh, coverNavRow)),
         }
       : pos;
     const offX = e.clientX - base.x;
@@ -266,7 +280,7 @@ function usePanePlacement(
       gestureCleanupRef.current?.();
       const dropped = {
         x: clampN(snap(ev.clientX - offX), 0, maxXFor(maxWidth, vw)),
-        y: clampN(snap(ev.clientY - offY), 0, maxYFor(vh)),
+        y: clampN(snap(ev.clientY - offY), 0, maxYFor(vh, coverNavRow)),
       };
       // A drag makes this the new custom arrangement — leave the default view.
       // Batched with setPos, so the pane never flashes the old custom spot.
@@ -285,7 +299,7 @@ function usePanePlacement(
       setShowDefault(false);
       setPos({
         x: clampN(ev.clientX - offX, 0, maxXFor(maxWidth, vw)),
-        y: clampN(ev.clientY - offY, 0, maxYFor(vh)),
+        y: clampN(ev.clientY - offY, 0, maxYFor(vh, coverNavRow)),
       });
     };
     window.addEventListener("pointermove", onMove);
@@ -310,9 +324,9 @@ function usePanePlacement(
     // toggle shows it, else the custom `pos`) so the stretched pane keeps a
     // gutter to the right / bottom edge — "bottom" being the top of the nav row.
     const baseX = showDefault ? clampN(centreX(maxWidth, vw), 0, maxXFor(maxWidth, vw)) : pos.x;
-    const baseY = showDefault ? clampN(MARGIN * 2, 0, maxYFor(vh)) : pos.y;
-    const maxW = Math.max(MIN_W, vw - baseX - MARGIN);
-    const maxH = Math.max(MIN_H, usableH(vh) - baseY - MARGIN);
+    const baseY = showDefault ? clampN(MARGIN * 2, 0, maxYFor(vh, coverNavRow)) : pos.y;
+    const maxW = Math.max(MIN_W, vw - baseX - edge);
+    const maxH = Math.max(MIN_H, usableH(vh, coverNavRow) - baseY - edge);
     const resolve = (ev: PointerEvent) => ({
       w: snap(clampN(startW + (ev.clientX - startX), MIN_W, maxW)),
       h: snap(clampN(startH + (ev.clientY - startY), MIN_H, maxH)),
@@ -356,16 +370,17 @@ function usePanePlacement(
   const ePos = showDefault
     ? {
         x: clampN(centreX(maxWidth, vp.vw), 0, maxXFor(maxWidth, vp.vw)),
-        y: clampN(MARGIN * 2, 0, maxYFor(vp.vh)),
+        y: clampN(MARGIN * 2, 0, maxYFor(vp.vh, coverNavRow)),
       }
     : pos;
   const eSize = showDefault ? null : size;
 
   // Available on-screen height below the drop position; `--gh-h` and the pane's
-  // own clamp both derive from it. Bounded above the nav row (usableH).
-  const maxHeight = usableH(vp.vh) - ePos.y - MARGIN;
+  // own clamp both derive from it. Bounded above the nav row (usableH) unless
+  // `coverNavRow`, where it reaches the true window bottom.
+  const maxHeight = usableH(vp.vh, coverNavRow) - ePos.y - edge;
   const effW = resizable
-    ? clampN(eSize?.w ?? widthFor(maxWidth, vp.vw), MIN_W, Math.max(MIN_W, vp.vw - ePos.x - MARGIN))
+    ? clampN(eSize?.w ?? widthFor(maxWidth, vp.vw), MIN_W, Math.max(MIN_W, vp.vw - ePos.x - edge))
     : widthFor(maxWidth, vp.vw);
   // Height precedence: an explicit resized height wins (respect the user's
   // stretch, re-clamped on-screen); else `fillHeight` defaults the pane to the
@@ -436,11 +451,17 @@ interface GlasshouseProps {
   /** Add a bottom-right stretch handle so the pane can be resized (the writers).
    *  `maxWidth` then seeds the default width but no longer caps it. */
   resizable?: boolean;
-  /** Default the pane to the full available height (top gutter → the nav row)
-   *  instead of sizing to its content — for immersive reading panes. Only a
-   *  default: a persisted resized height (the user stretched it smaller) still
-   *  wins. No effect on the mobile full-screen sheet. */
+  /** Default the pane to the full available height (top gutter → the nav row,
+   *  or → the window bottom when `coverNavRow`) instead of sizing to its content
+   *  — for immersive reading panes. Only a default: a persisted resized height
+   *  (the user stretched it smaller) still wins. No effect on the mobile sheet. */
   fillHeight?: boolean;
+  /** The reader's immersive mode: the pane may extend over the desktop nav row
+   *  all the way to the window's bottom / side edges (its gutter collapses to the
+   *  edge), so it can be stretched to the whole window. Requires the caller to
+   *  also un-mount the nav row + muster while open (WorkspaceView does this for
+   *  the reader) — only the z-60 ∀ lockup floats above. No effect on mobile. */
+  coverNavRow?: boolean;
   /** When this Glasshouse was launched from a specific feed (reader / profile
    *  opened off a card), the feed's WALLS colour (`palette.walls`, a
    *  `var(--ah-…)` string). The pane then frames itself with an INVERTED, thinner
@@ -479,6 +500,7 @@ export function Glasshouse({
   persistKey,
   resizable,
   fillHeight,
+  coverNavRow,
   frameColor,
   frameTextColor,
   sideNav,
@@ -497,6 +519,7 @@ export function Glasshouse({
     resizable,
     isMobile,
     fillHeight,
+    coverNavRow,
   );
 
   // Mobile back-guard: on the full-screen sheet, a browser Back / OS edge-swipe

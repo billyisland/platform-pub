@@ -888,6 +888,21 @@ all fixed the same day (FIX-PROGRAMME 2026-07-22):
   nothing jumps). Same guard list as the floor binding; desktop only. Alongside
   it, the new `fillHeight` prop (opted in by `ReaderOverlay`) makes a reading
   pane default to the full available height rather than sizing to content.
+- **The reader may cover the nav row (`coverNavRow`, 2026-07-25).** §VI keeps the
+  nav row above every pane so navigation stays live — but the *reader* is meant to
+  be immersive, and a reading pane that stops above the toolbar (and can't reach
+  the window bottom) reads as unfinished. There is no z-budget to simply raise the
+  reader between the row (58) and the ∀ (60), so instead `WorkspaceView` un-mounts
+  the row + muster while the reader is open (`!readerOpen` gates both `<NavRow>`
+  and `<Muster>`), and `Glasshouse`'s `coverNavRow` drops the pane's nav-row inset
+  and side/bottom gutter so it reaches the true window edges (`usableH(vh, true)`
+  = `vh`; `edge` = 0). The default reading pane keeps its top gutter and centred
+  width — only its BOTTOM goes flush — while a stretch can now fill the whole
+  window; the z-60 ∀ lockup is the only chrome that floats above it. Scoped to the
+  reader alone (one pane opens at a time, so `useReader().isOpen` is unambiguous);
+  every other pane still keeps the row live. Consequence to accept: when the pane
+  is stretched to the bottom-right corner the ∀ overlaps the resize grip — `\`
+  (the default/custom toggle above) is the escape back to the default size.
 
 ---
 

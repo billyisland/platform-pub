@@ -169,6 +169,7 @@ export function ReaderOverlay() {
       persistKey="reader"
       resizable
       fillHeight
+      coverNavRow
       frameColor={frameColor}
       frameTextColor={frameTextColor}
       sideNav={sideNav}
