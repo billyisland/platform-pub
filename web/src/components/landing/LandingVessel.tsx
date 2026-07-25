@@ -51,7 +51,7 @@ import { ForallDisc } from '../brand/ForallDisc'
 //
 // THE SCROLL EARNS ITS KEEP: sell text, then a SHOWCASE of live-site
 // screengrabs (LandingShot — each a framed figure with a caption), then a
-// closing CODA (the ∀ disc + the motto “FOR ALL”, centred) that ends the
+// closing CODA (the ∀ disc + the motto ‘FOR ALL’, centred) that ends the
 // column. The screengrabs are real <img>s pointed at `/landing/*` in
 // web/public; until those files exist each frame shows a faint disc placeholder
 // (LandingShot's onError), so a missing asset reads as an intentional slot, not
@@ -296,7 +296,7 @@ export function LandingVessel({
                 letterSpacing: '0.2em',
               }}
             >
-              “FOR ALL”
+              ‘FOR ALL’
             </span>
           </div>
         </div>
