@@ -39,7 +39,7 @@ export default function HomePage() {
         className="font-serif font-medium text-black tracking-tight text-center"
         style={{ fontSize: '30px' }}
       >
-        all.haus is a writing platform dedicated to three propositions:
+        all.haus is a writing platform dedicated to three radical propositions:
       </h1>
 
       <ol className="mt-10 space-y-5">
@@ -64,19 +64,19 @@ export default function HomePage() {
 
       <div className="mt-12 space-y-6 text-[1.0625rem] font-mono tracking-[0.01em] text-grey-600 leading-relaxed">
         <p>
-          Build omnivorous feeds that pull in the whole open social web —
-          Bluesky, Mastodon, Substack, plain old RSS — in one place, sorted by
-          rules you set rather than rules set on you. No engagement hacks,
-          no algorithm optimised against you. A feed is a tool: you need the right
+          Build omnivorous feeds that pull the whole open social web —
+          Bluesky, Mastodon, Substack, plain old RSS — into one place. Sort them with
+          rules you set rather than rules set on you. No dopamine hacks,
+          no algorithm optimised for pointless, endless engagement. A feed is a tool: you need the right
           one for each job. At all.haus you can create as many as you like.
         </p>
         <p>
           Read what&apos;s worth reading and pay a few pence for it. No
           subscription, no bundle, no commitment you&apos;ll forget to cancel.
-          The money goes to whoever wrote the thing.
+          The money goes to whoever wrote the piece, and they set the terms.
         </p>
         <p>
-          It runs on Nostr: an open protocol with no company behind it, no
+          The whole thing runs on Nostr: an open protocol with no company behind it, no
           servers to seize, and no owner to sell it to someone worse.
         </p>
       </div>
