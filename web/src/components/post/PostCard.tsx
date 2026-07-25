@@ -75,6 +75,12 @@ export function PostCard({
     READABILITY_FLOOR_PX,
   );
 
+  // Headline density collapses the body to a single line — the article
+  // standfirst/dek is dropped, notes/external clamp to one line — so a feed
+  // reads as source + title only. (Media + actions are already hidden for the
+  // condensed family; see PostMedia/PostActions/chassis.)
+  const bodyMode = ctx.density === "headline" ? "one-line" : spec.body;
+
   const pollVote = interactions
     ? {
         canVote: interactions.canVote,
@@ -104,7 +110,7 @@ export function PostCard({
     return (
       <div style={{ cursor: onClick ? "pointer" : undefined }} onClick={onClick}>
         <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} showResonance={spec.showResonance} onPipOpen={onPipOpen} feedId={ctx.feedId} />
-        <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} />
+        <PostBody post={post} bodyPx={bodyPx} mode={bodyMode} palette={ctx.palette} />
         <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />
       </div>
     );
@@ -113,7 +119,7 @@ export function PostCard({
   return (
     <PostCardShell ctx={ctx} indentPx={spec.indentPx} gapBelowPx={spec.gapBelowPx} onClick={onClick} explainParam={explainCardFlavour(post)}>
       <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} showResonance={spec.showResonance} onPipOpen={onPipOpen} feedId={ctx.feedId} />
-      <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} pollVote={pollVote} />
+      <PostBody post={post} bodyPx={bodyPx} mode={bodyMode} palette={ctx.palette} pollVote={pollVote} />
       <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />
       <QuotedEmbed post={post} mode={spec.quoteEmbed} palette={ctx.palette} onQuoteOpen={onQuoteOpen} />
       <PostCounters post={post} mode={spec.originCounters} palette={ctx.palette} interactions={interactions} />

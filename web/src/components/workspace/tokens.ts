@@ -41,7 +41,7 @@ export type FeedScheme =
 // Legacy name — the per-vessel "brightness" axis grew into the scheme picker;
 // the persisted localStorage field and existing prop names keep this alias.
 export type Brightness = FeedScheme
-export type Density = 'compact' | 'standard'
+export type Density = 'compact' | 'standard' | 'headline'
 export type Orientation = 'vertical' | 'horizontal'
 
 export const DEFAULT_BRIGHTNESS: FeedScheme = 'basic'
@@ -336,19 +336,20 @@ export function isDarkPalette(p: VesselPalette): boolean {
   return p.isDark
 }
 
-// Density is a two-state toggle: Condensed (tight padding, media + action row
-// hidden) vs Standard (the full card). A former third value 'full' rendered
-// byte-identically to 'standard' in every path, so it was removed;
+// Density is a three-state cycle: Standard (the full card) → Condensed (tight
+// padding, media + action row hidden, standfirst kept) → Headline (as Condensed,
+// but the standfirst/dek is also dropped — source + title only). A former value
+// 'full' rendered byte-identically to 'standard', so it was removed;
 // normalizeDensity migrates any persisted 'full' (or junk) to 'standard' on
 // read, so no DB backfill is needed.
 export function normalizeDensity(
   d: Density | string | null | undefined,
 ): Density {
-  return d === 'compact' ? 'compact' : 'standard'
+  return d === 'compact' || d === 'headline' ? d : 'standard'
 }
 
 export function nextDensity(d: Density): Density {
-  return d === 'compact' ? 'standard' : 'compact'
+  return d === 'standard' ? 'compact' : d === 'compact' ? 'headline' : 'standard'
 }
 
 export function nextOrientation(o: Orientation): Orientation {

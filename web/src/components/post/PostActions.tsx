@@ -45,7 +45,7 @@ export function PostActions({
   onQuote?: () => void;
   onReport?: () => void;
 }) {
-  if (density === "compact") return null;
+  if (density !== "standard") return null;
   if (haus === "none") return null;
 
   if (haus === "numerals-only") {

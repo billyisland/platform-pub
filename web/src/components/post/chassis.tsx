@@ -52,8 +52,8 @@ export function PostCardShell({
   explainParam?: string | null;
   children: React.ReactNode;
 }) {
-  const padding = ctx.density === "compact" ? "8px 12px" : "16px";
-  const canDrag = !!ctx.dragData && ctx.density !== "compact";
+  const padding = ctx.density !== "standard" ? "8px 12px" : "16px";
+  const canDrag = !!ctx.dragData && ctx.density === "standard";
   const rootRef = React.useRef<HTMLDivElement>(null);
 
   // `draggable` and text selection are mutually exclusive: a draggable element

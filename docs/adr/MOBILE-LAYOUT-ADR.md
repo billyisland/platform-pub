@@ -142,8 +142,10 @@ the unification taking effect, not a regression.)
 
 **Retained:** the colour scheme, density, and the hide toggle (§V), surfaced through a
 per-feed **settings sheet** — the mobile form of the FeedComposer gear that already owns
-appearance on desktop. (Density is a two-state toggle since 2026-07-19 — `compact`
-vs `standard`; the identical-to-standard `full` was removed. See
+appearance on desktop. (Density is a three-state cycle since 2026-07-25 —
+`standard` → `compact` (Condensed) → `headline`; the identical-to-standard `full`
+was removed but still aliases to `standard` on read. Headline is Condensed with
+the standfirst/dek also dropped (source + title only). See
 GLASSHOUSE-AND-PALETTE-ADR §III.4a.) (Since 2026-06-11 the colour scheme — brightness's successor,
 the six-swatch `SchemePicker` — already persists server-side on
 `feeds.appearance.scheme`, migration 112, so it travels to mobile for free; **density is

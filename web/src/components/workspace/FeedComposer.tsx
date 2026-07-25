@@ -776,6 +776,7 @@ export function FeedComposer({
                     {
                       compact: "Condensed",
                       standard: "Standard",
+                      headline: "Headline",
                     }[normalizeDensity(density)]
                   }
                   onClick={() =>

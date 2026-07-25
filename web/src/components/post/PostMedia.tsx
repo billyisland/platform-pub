@@ -61,7 +61,7 @@ export function PostMedia({
   palette: VesselPalette;
   density: string;
 }) {
-  if (mode === "none" || density === "compact") return null;
+  if (mode === "none" || density !== "standard") return null;
   const items = mediaForPost(post);
   if (items.length === 0) return null;
 
