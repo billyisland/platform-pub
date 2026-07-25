@@ -55,6 +55,18 @@ starts.
   Verified: `tsc` clean, `next build` (`/` prerenders static), hairline
   tripwire + root promise-safety lint both pass. CLAUDE.md workspace-escape
   invariant + light/dark section updated.
+  **Follow-up same day (two live bugs).** (1) The page rubber-banded on mobile —
+  stretch, snap back, the end of the text re-hidden. Cause: `100vh` is the LARGE
+  (URL-bar-hidden) viewport on mobile, so both the landing container and the
+  shared `<main className="min-h-screen">` forced a phantom overflow taller than
+  the visible area. Switched the chromeless `<main>` branch and the landing
+  container to `100dvh` (dynamic viewport). Safe for the workspace —
+  `WorkspaceView` sets its own explicit `height:100vh` (line ~1994), independent
+  of `main`. (2) The ∀ lockup did nothing when clicked — it linked to `/`, a
+  no-op on the home page. Pointed it at `/waitlist` (the closed-beta sign-up
+  funnel; `/auth?mode=signup` only redirects there) via `ForallLockup`'s `href`
+  prop, so the mark doubles as the get-started CTA. `tsc`/`next build`/hairline
+  all still clean.
 
 - **2026-07-25 (feed-items page load 7.2s → 78ms — the slow/failing-reload
   incident)** — Feeds with follow-import-scale source sets (251–717

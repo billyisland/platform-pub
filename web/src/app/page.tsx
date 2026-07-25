@@ -56,7 +56,10 @@ export default function HomePage() {
     <div
       style={{
         background: 'var(--ah-bone)',
-        minHeight: '100vh',
+        // dvh, not vh — see LayoutShell: `100vh` is the large (URL-bar-hidden)
+        // viewport on mobile, which forces a phantom overflow that rubber-bands.
+        minHeight: '100dvh',
+        // Reserve the fixed nav row's band so the last line clears it at rest.
         paddingBottom: NAV_ROW_H + GRID,
       }}
     >

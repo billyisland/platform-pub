@@ -54,7 +54,11 @@ export function LandingNavRow() {
         </Link>
       </div>
 
-      <ForallLockup href="/" />
+      {/* The lockup is the row's brand mark, but `/` IS home — a Link there is a
+          dead no-op. On the landing it doubles as the get-started CTA: `/waitlist`
+          is the closed-beta sign-up funnel (`/auth?mode=signup` only redirects
+          there anyway). */}
+      <ForallLockup href="/waitlist" />
     </div>
   )
 }

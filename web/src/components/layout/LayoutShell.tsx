@@ -97,7 +97,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       <div data-layout-mode={mode}>
         {!chromeless && <Nav />}
         {!chromeless && <ComposeOverlay />}
-        <main className={chromeless ? 'min-h-screen' : 'min-h-screen pt-[60px]'}>
+        {/* Chromeless surfaces use dvh, not vh: on mobile `100vh` is the LARGE
+            viewport (URL bar hidden), so `min-h-screen` forces the page taller
+            than the visible area — the phantom height that made `/` rubber-band
+            (stretch, snap back, re-hide the end of the text). `100dvh` tracks the
+            actual visible viewport. Safe for the workspace: WorkspaceView sets its
+            own explicit height. The topbar branch keeps vh (its `pt-[60px]` offset
+            is calibrated to it). */}
+        <main className={chromeless ? 'min-h-[100dvh]' : 'min-h-screen pt-[60px]'}>
           {children}
         </main>
         {/* Mounted unconditionally — bylines anywhere (incl. the workspace) open it. */}
