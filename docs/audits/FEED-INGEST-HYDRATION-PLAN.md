@@ -177,6 +177,16 @@ feed p95 starts tracking total `repost_edges` size / followee history.
   every page; page 10 redoes page 1's work. Real fix is a **two-phase read** (cheap candidate-id
   pull, then hydrate only the page) or a **materialised per-reader candidate pool** refreshed by
   a worker. Also bound max page depth. Largest single item.
+  **2026-07-25 note:** the legacy `/feed` query this was written against is retired, but the
+  same disease resurfaced in the workspace `GET /workspace/feeds/:id/items` query and the
+  **two-phase read half shipped there** (rank-then-project: slim `(id, effective_score)`
+  ranking pass → LIMIT → fat projection on the winners only), alongside the bigger finds the
+  `EXPLAIN` (#15) turned up: the OR-of-arms `matched` join brute-forcing
+  `feed_items × feed_sources` (fixed as per-arm UNION ALL), and per-query JIT compilation
+  (fixed with pool-level `jit=off`). 7,246ms → 78ms measured. The candidate set is still
+  scored-and-sorted per page (the ranking pass scans all matches), so the **materialised
+  per-reader candidate pool remains the escalation** if scale outruns the ~90× headroom.
+  FIX-PROGRAMME 2026-07-25.
 
 ### C2 · #1 — decouple enqueue rate from per-host politeness
 `feed-ingest/src/tasks/feed-ingest-poll.ts` — `maxConcurrent` (default 10) is doing double duty
