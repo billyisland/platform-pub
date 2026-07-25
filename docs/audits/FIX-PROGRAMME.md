@@ -79,6 +79,15 @@ starts.
   Both ⊔ frames now `overflow: hidden` so the column reads as cards passing a
   fixed mouth. Net: the vessel is fully visible and only its contents move —
   no rubber-band possible. `tsc`/`next build` (`/` static)/hairline/lint clean.
+  **Follow-up 3 (content for the scroll).** Added a live-site SHOWCASE (three
+  screengrab cards below the sell text — `LandingShot`, a 16:10 `next/image fill`
+  figure + caption, pointed at `/landing/*.webp` in web/public; missing assets
+  fall back to a faint-disc placeholder via `onError`, so an absent file reads as
+  an intentional slot, never a broken image) and a closing CODA (the ∀ disc +
+  the motto “FOR ALL”, centred) that ends the column. Extracted the disc-form ∀
+  into `components/brand/ForallDisc` (ADR-locked geometry, per-instance `useId`
+  clip so several discs on one page don't collide); `ForallLockup` now composes
+  it. Real screengrabs still to be supplied. `tsc`/`next build`/hairline/lint clean.
 
 - **2026-07-25 (feed-items page load 7.2s → 78ms — the slow/failing-reload
   incident)** — Feeds with follow-import-scale source sets (251–717

@@ -40,6 +40,27 @@ const PROSE = [
   'The whole thing runs on Nostr: an open protocol with no company behind it, no servers to seize, and no owner to sell it to someone worse.',
 ]
 
+// Live-site screengrabs shown as cards below the sell text. Drop the real images
+// at these paths under web/public (16:10 reads best); until then each frame
+// shows a faint-disc placeholder (see LandingShot). Keep alt text descriptive.
+const SHOTS = [
+  {
+    src: '/landing/workspace.webp',
+    alt: 'The all.haus workspace with several feeds open side by side as columns.',
+    caption: 'Your feeds, side by side',
+  },
+  {
+    src: '/landing/omnivore.webp',
+    alt: 'A single all.haus feed mixing posts from Bluesky, Mastodon and RSS in one timeline.',
+    caption: 'The whole open social web, one feed',
+  },
+  {
+    src: '/landing/reader.webp',
+    alt: 'Reading an article on all.haus, with the pay-a-few-pence control.',
+    caption: 'Read it — pay a few pence',
+  },
+]
+
 export default function HomePage() {
   return (
     // The logged-out register is retired on `/` (LayoutShell chromelessRoute):
@@ -95,6 +116,7 @@ export default function HomePage() {
             headline={HEADLINE}
             propositions={PROPOSITIONS}
             prose={PROSE}
+            shots={SHOTS}
           />
         </div>
       </div>

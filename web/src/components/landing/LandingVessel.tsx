@@ -1,8 +1,11 @@
 'use client'
 
+import { useState } from 'react'
+import Image from 'next/image'
 import { paletteFor } from '../workspace/tokens'
 import { LIGHT_ISLAND_STYLE } from '../../lib/palette/island'
 import { useResolvedDark } from '../../stores/colorScheme'
+import { ForallDisc } from '../brand/ForallDisc'
 
 // =============================================================================
 // LandingVessel — `/`'s chassis. An ABSTRACTION of the workspace vessel, not a
@@ -46,6 +49,14 @@ import { useResolvedDark } from '../../stores/colorScheme'
 // argument. If it ever comes back it belongs in a card of its own, not tacked
 // onto the bottom of the prose card.
 //
+// THE SCROLL EARNS ITS KEEP: sell text, then a SHOWCASE of live-site
+// screengrabs (LandingShot — each a framed figure with a caption), then a
+// closing CODA (the ∀ disc + the motto “FOR ALL”, centred) that ends the
+// column. The screengrabs are real <img>s pointed at `/landing/*` in
+// web/public; until those files exist each frame shows a faint disc placeholder
+// (LandingShot's onError), so a missing asset reads as an intentional slot, not
+// a broken image. The coda is the one place the disc appears inside the vessel.
+//
 // THE PROPOSITIONS ARE A REAL <ol>. They are literally three numbered
 // propositions, so the list is the ordered list, not div-soup with a decorative
 // numeral — a screen reader announces "list, 3 items" and the count. The <ol>
@@ -68,16 +79,77 @@ const PAD = 16 // interior padding
 const GAP = 12 // inter-card gap
 const GRID = 8 // the workspace lattice square — here, the wall buffer
 
+export interface Shot {
+  /** Path under web/public, e.g. `/landing/workspace.webp`. */
+  src: string
+  alt: string
+  caption: string
+}
+
 interface LandingVesselProps {
   headline: string
   propositions: string[]
   prose: string[]
+  shots: Shot[]
+}
+
+// A single screengrab card body: a 16:10 framed figure with a caption. Until the
+// image at `shot.src` exists it falls back to a faint disc placeholder, so the
+// slot always looks deliberate and never shows a broken-image glyph.
+function LandingShot({
+  shot,
+  frameBg,
+  captionColor,
+}: {
+  shot: Shot
+  frameBg: string
+  captionColor: string
+}) {
+  const [failed, setFailed] = useState(false)
+
+  return (
+    <figure style={{ margin: 0 }}>
+      <div
+        style={{
+          position: 'relative',
+          aspectRatio: '16 / 10',
+          background: frameBg,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {failed ? (
+          <span style={{ opacity: 0.22 }}>
+            <ForallDisc size={56} />
+          </span>
+        ) : (
+          <Image
+            src={shot.src}
+            alt={shot.alt}
+            fill
+            sizes="(max-width: 760px) 100vw, 680px"
+            onError={() => setFailed(true)}
+            style={{ objectFit: 'cover' }}
+          />
+        )}
+      </div>
+      <figcaption
+        className="label-ui"
+        style={{ color: captionColor, marginTop: 10 }}
+      >
+        {shot.caption}
+      </figcaption>
+    </figure>
+  )
 }
 
 export function LandingVessel({
   headline,
   propositions,
   prose,
+  shots,
 }: LandingVesselProps) {
   const globalDark = useResolvedDark()
   const palette = paletteFor('basic', globalDark)
@@ -190,6 +262,42 @@ export function LandingVessel({
                 </p>
               ))}
             </div>
+          </div>
+
+          {shots.map((shot, i) => (
+            <div key={`shot-${i}`} style={card}>
+              <LandingShot
+                shot={shot}
+                frameBg={palette.interior}
+                captionColor={palette.cardStandfirst}
+              />
+            </div>
+          ))}
+
+          {/* Closing coda — the mark, then the motto. Ends the scroll. Its own
+              padding (not the shared `card` spread) so it can breathe as a
+              finale. */}
+          <div
+            style={{
+              background: palette.cardBg,
+              padding: '40px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 18,
+            }}
+          >
+            <ForallDisc size={64} />
+            <span
+              className="font-mono"
+              style={{
+                color: palette.cardStandfirst,
+                fontSize: 13,
+                letterSpacing: '0.2em',
+              }}
+            >
+              “FOR ALL”
+            </span>
           </div>
         </div>
       </div>
