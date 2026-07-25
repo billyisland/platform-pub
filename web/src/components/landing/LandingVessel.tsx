@@ -53,9 +53,10 @@ import { ForallDisc } from '../brand/ForallDisc'
 // screengrabs (LandingShot — each a framed figure with a caption), then a
 // closing CODA (the ∀ disc + the motto ‘FOR ALL’, centred) that ends the
 // column. The screengrabs are real <img>s pointed at `/landing/*` in
-// web/public; until those files exist each frame shows a faint disc placeholder
-// (LandingShot's onError), so a missing asset reads as an intentional slot, not
-// a broken image. The coda is the one place the disc appears inside the vessel.
+// web/public, pre-cropped to the frame's 16:10 (see page.tsx's SHOTS); if one
+// ever goes missing the frame shows a faint disc placeholder instead
+// (LandingShot's onError), so the slot reads as intentional rather than as a
+// broken image. The coda is the one place the disc appears inside the vessel.
 //
 // THE PROPOSITIONS ARE A REAL <ol>. They are literally three numbered
 // propositions, so the list is the ordered list, not div-soup with a decorative

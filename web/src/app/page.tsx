@@ -40,23 +40,26 @@ const PROSE = [
   'The whole thing runs on Nostr: an open protocol with no company behind it, no servers to seize, and no owner to sell it to someone worse.',
 ]
 
-// Live-site screengrabs shown as cards below the sell text. Drop the real images
-// at these paths under web/public (16:10 reads best); until then each frame
-// shows a faint-disc placeholder (see LandingShot). Keep alt text descriptive.
+// Live-site screengrabs shown as cards below the sell text. Real images live at
+// these paths under web/public, pre-cropped to the frame's 16:10 (LandingShot
+// paints them `objectFit: cover`, so shipping any other aspect just throws
+// pixels away); if one ever goes missing the frame falls back to a faint-disc
+// placeholder rather than a broken-image glyph. Keep alt text descriptive, and
+// keep it honest about what the shot actually shows.
 const SHOTS = [
   {
     src: '/landing/workspace.webp',
-    alt: 'The all.haus workspace with several feeds open side by side as columns.',
+    alt: 'The all.haus workspace: four feeds open side by side as columns, each numbered, on a pale floor.',
     caption: 'Your feeds, side by side',
   },
   {
     src: '/landing/omnivore.webp',
-    alt: 'A single all.haus feed mixing posts from Bluesky, Mastodon and RSS in one timeline.',
-    caption: 'The whole open social web, one feed',
+    alt: 'The same workspace in dark mode, its feeds carrying posts marked via Bluesky, via Nostr and via RSS.',
+    caption: 'Bluesky, Nostr, RSS — read together',
   },
   {
     src: '/landing/reader.webp',
-    alt: 'Reading an article on all.haus, with the pay-a-few-pence control.',
+    alt: 'Reading an article on all.haus: the prose breaks at a “Keep reading” panel offering to continue for a few pence from your reading credit.',
     caption: 'Read it — pay a few pence',
   },
 ]
