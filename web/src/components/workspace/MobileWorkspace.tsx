@@ -85,8 +85,15 @@ function beganInHorizontalScroller(
 
 interface MobileWorkspaceProps {
   /** Visible feeds in rank order — the swipe sequence. Hidden feeds are
-   *  excluded upstream (§V) so the numerals here read 1..N with no gaps. */
+   *  excluded upstream (§V), so the pip POSITIONS are gapless 1..N. The spoken
+   *  feed NUMBER is not (NAV-ROW-MUSTER-ADR §III: the numeral is stable
+   *  identity, so it gap-numbers on the gapless strip) — the aria-label
+   *  announces both. */
   feeds: WorkspaceFeed[];
+  /** Stable identity numeral for a feed (NAV-ROW-MUSTER-ADR §III) — matches the
+   *  desktop badge and the FeedComposer rank list, gaps and all. Spoken in the
+   *  aria-label alongside the gapless pip position; does not drive the swipe. */
+  numeralFor: (feedId: string) => number;
   /** Stable per-user key for resume-by-id. */
   userId: string;
   /** Interior ground colour for a feed's page (its scheme's interior). */
@@ -101,6 +108,7 @@ interface MobileWorkspaceProps {
 
 export function MobileWorkspace({
   feeds,
+  numeralFor,
   userId,
   interiorFor,
   renderFeedContents,
@@ -344,17 +352,19 @@ export function MobileWorkspace({
           {feeds.map((f, i) => {
             const isActive = i === activeIndex;
             const name = f.name.trim();
+            // Stable identity number (may have gaps) AND gapless strip position
+            // (NAV-ROW-MUSTER-ADR §III.1): "Feed 4, 3 of 4" — the number matches
+            // the desktop badge, the position tells a linear scan where it is.
+            const label = `Feed ${numeralFor(f.id)}, ${i + 1} of ${count}${
+              name ? `: ${name}` : ""
+            }`;
             return (
               <button
                 key={f.id}
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                aria-label={
-                  isActive
-                    ? `Feed ${i + 1}${name ? `: ${name}` : ""} — feed settings`
-                    : `Go to feed ${i + 1}${name ? `: ${name}` : ""}`
-                }
+                aria-label={isActive ? `${label} — feed settings` : `Go to ${label}`}
                 onClick={() =>
                   isActive ? onOpenFeedSettings(f.id) : jumpRef.current(i)
                 }

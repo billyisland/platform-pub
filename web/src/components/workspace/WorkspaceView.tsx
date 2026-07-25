@@ -338,20 +338,22 @@ export function WorkspaceView() {
   const materializeRegimented = useWorkspace((s) => s.materializeRegimented);
 
   // The numeral is persisted rank, not creation order (MOBILE-LAYOUT-ADR
-  // §VII), and numbering skips hidden feeds (§V) — visible feeds read 1..N
-  // with no gaps, the same sequence the mobile pager swipes through. Hidden
-  // feeds carry no numeral until restored. Declared here rather than beside
-  // its consumers because the regimented view (§V) is ordered by it.
-  const visibleSorted = vessels
-    .filter((v) => !v.feed.hidden)
-    .sort(
-      (a, b) =>
-        a.feed.sortRank - b.feed.sortRank ||
-        a.feed.createdAt.localeCompare(b.feed.createdAt) ||
-        a.feed.id.localeCompare(b.feed.id),
-    );
+  // §VII). NAV-ROW-MUSTER-ADR §III: the numeral is IDENTITY, assigned over the
+  // LIVE feed set — every undeleted feed, hidden included — so a feed keeps its
+  // number when a neighbour is minimised. `liveSorted` is that set in numeral
+  // order; `visibleSorted` (hidden filtered out) is a subsequence of it and
+  // stays the layout/parade ordering, so the floor and parade still fall in
+  // numeral order — they just read with gaps (1, 2, 4, 5) where a feed is away.
+  // Declared here rather than beside its consumers because the regimented view
+  // (§V) is ordered by `visibleSorted`.
+  const feedRankComparator = (a: VesselState, b: VesselState) =>
+    a.feed.sortRank - b.feed.sortRank ||
+    a.feed.createdAt.localeCompare(b.feed.createdAt) ||
+    a.feed.id.localeCompare(b.feed.id);
+  const liveSorted = [...vessels].sort(feedRankComparator);
+  const visibleSorted = liveSorted.filter((v) => !v.feed.hidden);
   const feedNumerals = new Map<string, number>();
-  visibleSorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
+  liveSorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
 
   // ── The columnar floor ───────────────────────────────────────────────────
   // Geometry is DERIVED, never stored: one pure function turns the persisted
@@ -520,7 +522,9 @@ export function WorkspaceView() {
       e.preventDefault();
       const next = !useWorkspace.getState().regimented;
       setRegimented(next);
-      // The parade reads 1..N from the left, so entering it starts at Feed 1.
+      // Entering the parade jumps to the left edge — the lowest-numbered
+      // VISIBLE feed (which is Feed 1 unless it is minimised; the parade reads
+      // in numeral order but with gaps, NAV-ROW-MUSTER-ADR §III.1).
       // Instant, not smooth: the whole floor just changed shape under the
       // scroll position, so there is nothing coherent to animate between.
       if (next) floorRef.current?.scrollTo({ left: 0, behavior: "auto" });
@@ -1574,6 +1578,11 @@ export function WorkspaceView() {
           // intent — visibleSorted already runs Feed 1 first; removed
           // 2026-07-06, MOBILE-LAYOUT-ADR §X.)
           feeds={visibleSorted.map((v) => v.feed)}
+          // The muster numeral is IDENTITY (NAV-ROW-MUSTER-ADR §III): stable
+          // across minimising, so it is gap-numbered on the gapless mobile
+          // strip. The strip stays positional (pip order = swipe order); the
+          // aria-label announces BOTH the stable number and the position.
+          numeralFor={(feedId) => feedNumerals.get(feedId) ?? 1}
           userId={user.id}
           interiorFor={(feedId) =>
             paletteFor(appearance[feedId]?.brightness, globalDark).interior

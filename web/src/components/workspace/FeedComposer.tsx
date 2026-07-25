@@ -1205,9 +1205,11 @@ function SchemeMenu({
 // Drag-to-rank list (MOBILE-LAYOUT-ADR §VII.4). One component for both
 // surfaces, so the drag is pointer-event based (HTML5 DnD has no touch
 // translation). Rows live-reorder while dragging; the new order commits on
-// release. Numerals are derived live over visible feeds only (§V — hidden
-// feeds keep their place in the rank order but wear no number), so the list
-// previews exactly what the desktop badges and the mobile pager will show.
+// release. Numerals are IDENTITY (NAV-ROW-MUSTER-ADR §III): derived live over
+// every feed in the rank order, hidden included, so a hidden feed keeps its
+// number and this list previews exactly what the desktop badges show. `order`
+// is the numbering domain and already includes hidden feeds, so dragging one to
+// a new number needs no restore first — this list is the sole renumber surface.
 const RANK_ROW_H = 34;
 const RANK_ROW_GAP = 6;
 
@@ -1304,7 +1306,7 @@ function FeedRankList({
       {order.map((id) => {
         const f = byId.get(id);
         if (!f) return null;
-        const num = f.hidden ? null : ++numeral;
+        const num = ++numeral;
         const isCurrent = f.id === currentFeedId;
         const isDragging = draggingId === f.id;
         const name = f.name.trim();
@@ -1332,7 +1334,7 @@ function FeedRankList({
                 textAlign: "right",
               }}
             >
-              {num ?? "–"}
+              {num}
             </span>
             <span
               className="font-sans text-ui-xs"

@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-07-25 (NAV-ROW-MUSTER-ADR Phase 1 — stable numerals)** — Feed numerals
+  were assigned over the *visible* set (`WorkspaceView` `visibleSorted` →
+  `feedNumerals`), so minimising a feed renumbered everything after it and the
+  hidden feed lost its number (`FeedComposer` rendered `–`). NAV-ROW-MUSTER-ADR
+  §III makes the numeral **identity**: it now derives over the **live** set
+  (every undeleted feed, hidden included) via a shared `feedRankComparator` →
+  `liveSorted`, with `feedNumerals` mapped over that; `visibleSorted` is derived
+  as its hidden-filtered subsequence and is unchanged as the layout/parade
+  ordering (still a subsequence of the live order, so floor + parade still fall
+  in numeral order — just with gaps where a feed is away). `FeedComposer`'s rank
+  list numbers every row (`const num = ++numeral`, the `–` placeholder gone;
+  hidden rows keep their muted weight + "hidden" tag), and it is the sole
+  renumber surface — its `order` already includes hidden feeds. `MobileWorkspace`
+  gained a `numeralFor` prop (fed from `feedNumerals`) and its pip aria-labels
+  now announce **both** the stable number and the gapless position ("Feed 4, 3
+  of 4") — position still drives the swipe. Four stale comments rewritten
+  (`WorkspaceView` ~341 + the regimented "starts at Feed 1" scroll comment,
+  `FeedComposer` header, `MobileWorkspace` ~88); the §V regimented code left
+  untouched per the ADR. **Also fixed two ADR citation slips found in the
+  pre-build code review**: `handleReorderFeeds` (no such function — it is the
+  `FeedRankList` component's `onReorder`) and the claim that `NavRow` holds the
+  lockup (the row element is empty; the lockup docks in via `ForallMenu
+  anchor="row"`). No schema change, no new UI; `tsc`, the hairline tripwire on
+  the three files, and `next build` all clean. Observable on its own: minimise a
+  feed and the others hold their numbers; the visible run reads 1, 2, 4, 5.
+  Phases 2–4 (the muster row, polish/a11y, arrival flags) remain. →
+  `docs/adr/NAV-ROW-MUSTER-ADR.md` §VIII.
+
 - **2026-07-25 (landing page `/` rebuilt from the member grammar)** — The
   logged-out `/` carried the old marketing register (black topbar + centred
   crimson ∀ + serif/mono column). Rebuilt it from the member grammar: a
