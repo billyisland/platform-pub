@@ -856,6 +856,38 @@ all fixed the same day (FIX-PROGRAMME 2026-07-22):
   drop between viewports is preserved because `NAV_ROW_H` (56) is itself a GRID
   multiple. Regression-tested in `layout.test.ts` (bottoms match to the pixel
   at an off-grid viewport height).
+- **The parade floor is `REGIMENTED_MIN_W` (400), not `SLOT_MIN_W` (2026-07-25).**
+  The regimented view used the absolute vessel floor (224) as its scale-down
+  minimum, so a member with many feeds got uselessly narrow columns crammed onto
+  one screen. The parade is an *overview*, not a fit-everything constraint, so it
+  now scales down only to a generous readable `REGIMENTED_MIN_W = 400` (grid-
+  aligned, `layout.ts`), below which it admits horizontal scroll — deferring to
+  readability over one-screen fit. `deriveGeometry`'s own per-slot `SLOT_MIN_W`
+  clamp is unchanged; this is only the parade's scale-down target.
+- **Resize gained the drag's edge auto-pan (2026-07-25).** §IV.1's auto-pan was
+  drag-only, so widening the *rightmost* vessel stalled at the viewport edge —
+  there is no off-screen territory to the right to pull into, and unlike a drag
+  nothing scrolled to make room (a feed BETWEEN two others felt free only because
+  its handle starts far from the edge). `Vessel.tsx` now runs a resize-scoped
+  auto-pan (`startResizePan`): holding the handle within `AUTOPAN_MARGIN` of the
+  right edge accumulates a `growth` term into the resize proposal and scrolls the
+  floor to keep the handle under the cursor (targeted at `position.x + w`, so a
+  middle feed grown near the edge tracks its own handle rather than jumping to the
+  floor's far right). Starts on the first real pointer-move (a bare click can't
+  auto-grow), stops on up/cancel; `growth` folds into the same `liveSize`/commit
+  path, so the no-op guard and everything downstream are unchanged.
+- **`\` doubles as the pane default/custom toggle (2026-07-25).** The floor's `\`
+  is inert while a Glasshouse is open (the `WorkspaceView` handler guards on the
+  presence registry). That key is now claimed, pane-scoped, inside `Glasshouse`:
+  it toggles the open pane between the user's custom arrangement (persisted
+  `pos`/`size`) and the default placement (snapped-centre + default width +
+  fill/content height). Transient and non-destructive — `pos`/`size` stay in
+  state, so a second `\` restores them, while a drag/resize commits a new custom
+  and clears the toggle (`usePanePlacement`'s `showDefault` + effective `ePos`/
+  `eSize`; gestures base their grab point / caps on the rendered placement so
+  nothing jumps). Same guard list as the floor binding; desktop only. Alongside
+  it, the new `fillHeight` prop (opted in by `ReaderOverlay`) makes a reading
+  pane default to the full available height rather than sizing to content.
 
 ---
 

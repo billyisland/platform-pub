@@ -246,7 +246,10 @@ function ExternalVolume({
 
 // ---------------------------------------------------------------------------
 // Presentational stepper. Fill-only swatches (no borders — the no-thin-line
-// rule); colours come from the registry vars so they read on the white panel.
+// rule); colours are the INVERTING neutral slugs (ink / grey-600 / bone-bright /
+// white) so they read on the AuthorModal panel in both modes — the panel is
+// mode-neutral chrome that flips to dark under html.dark, so the fixed-dark slugs
+// this once used (ink-925 / stone-600) rendered dark-on-dark and vanished.
 // ---------------------------------------------------------------------------
 function VolumeStepper({
   step,
@@ -287,13 +290,13 @@ function VolumeStepper({
                   background: muteActive
                     ? "var(--ah-crimson)"
                     : active
-                      ? "var(--ah-ink-925)"
+                      ? "var(--ah-ink)"
                       : "var(--ah-bone-bright)",
                   border: "none",
                   cursor: busy ? "default" : "pointer",
                   padding: 0,
                   fontSize: 9,
-                  color: muteActive ? "var(--ah-white)" : "var(--ah-stone-600)",
+                  color: muteActive ? "var(--ah-white)" : "var(--ah-grey-600)",
                   fontFamily: "IBM Plex Mono, ui-monospace, monospace",
                 }}
               >
@@ -318,8 +321,8 @@ function VolumeStepper({
                 disabled={busy || samplingMoot}
                 className="label-ui"
                 style={{
-                  background: on ? "var(--ah-ink-925)" : "var(--ah-bone-bright)",
-                  color: on ? "var(--ah-white)" : "var(--ah-stone-600)",
+                  background: on ? "var(--ah-ink)" : "var(--ah-bone-bright)",
+                  color: on ? "var(--ah-white)" : "var(--ah-grey-600)",
                   border: "none",
                   cursor: busy || isMuted ? "default" : "pointer",
                   padding: "3px 8px",

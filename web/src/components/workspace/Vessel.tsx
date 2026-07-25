@@ -221,6 +221,10 @@ export function Vessel({
     startH: number;
     maxW: number;
     maxH: number;
+    // Extra width accumulated by the right-edge auto-grow (below): holding the
+    // handle at the viewport edge adds to this, so the slot keeps widening into
+    // new floor territory even though the pointer can travel no further.
+    growth: number;
     // Whether the pointer ever actually travelled — a bare click must be a
     // no-op (see handleResizePointerUp), and a zero-delta pointermove's snap
     // rounding must not be able to fake a "change".
@@ -391,6 +395,90 @@ export function Vessel({
 
   useEffect(() => stopAutoPan, [stopAutoPan]);
 
+  // ── Resize edge auto-grow (mirror of the drag auto-pan) ──────────────────
+  // The taut floor has no slack to the RIGHT of the last feed, so widening the
+  // rightmost vessel used to stall the instant the handle reached the viewport
+  // edge: there is no off-screen territory to drag into and — unlike a drag —
+  // nothing scrolled to make room. (Widening a feed BETWEEN two others felt free
+  // only because its handle starts far from the edge.) Now holding the handle
+  // near the right edge GROWS the slot continuously (a `growth` term added to the
+  // pointer delta) and scrolls the floor to reveal the new width — so pushing a
+  // feed into new workspace width is exactly as easy at the right end as it is
+  // in the middle. The commit path is unchanged: `growth` folds into the same
+  // `liveSize` the pointer drives, so pointer-up commits it like any resize.
+  const resizePanRafRef = useRef<number | null>(null);
+  const lastResizePointerRef = useRef<{ x: number; y: number } | null>(null);
+
+  const applyResizeFrame = (
+    clientX: number,
+    clientY: number,
+  ): { w: number; h: number } | null => {
+    const state = resizeStateRef.current;
+    if (!state) return null;
+    const dx = clientX - state.startX + state.growth;
+    const dy = clientY - state.startY;
+    if (dx !== 0 || dy !== 0) state.moved = true;
+    const w = snap(Math.max(MIN_W, Math.min(state.maxW, state.startW + dx)));
+    const h = snap(Math.max(MIN_H, Math.min(state.maxH, state.startH + dy)));
+    const next = clampResize ? clampResize({ w, h }) : { w, h };
+    setLiveSize(next);
+    // Feed the proposal back through derivation so the columns to the right
+    // slide WITH the handle rather than jumping on release.
+    onResizeFrame?.(next);
+    return next;
+  };
+  // Kept fresh in a ref so the long-lived auto-grow rAF (started once per
+  // gesture) always applies the current render's clamps / callbacks.
+  const applyResizeRef = useRef(applyResizeFrame);
+  applyResizeRef.current = applyResizeFrame;
+
+  const stopResizePan = useCallback(() => {
+    if (resizePanRafRef.current !== null)
+      cancelAnimationFrame(resizePanRafRef.current);
+    resizePanRafRef.current = null;
+  }, []);
+
+  const startResizePan = useCallback(() => {
+    if (resizePanRafRef.current !== null) return;
+    const step = () => {
+      resizePanRafRef.current = null;
+      const state = resizeStateRef.current;
+      const floor = floorRef?.current;
+      const pointer = lastResizePointerRef.current;
+      if (state && floor && pointer) {
+        const r = floor.getBoundingClientRect();
+        const fromRight = r.right - pointer.x;
+        if (fromRight < AUTOPAN_MARGIN) {
+          const speed =
+            AUTOPAN_MAX_SPEED *
+            Math.min(1, (AUTOPAN_MARGIN - fromRight) / AUTOPAN_MARGIN);
+          // Grow the slot, capped so `growth` can't run away past the width
+          // envelope (a clamped width would otherwise take an equal leftward
+          // drag to undo).
+          state.growth = Math.min(
+            state.growth + speed,
+            state.maxW - state.startW,
+          );
+          const next = applyResizeRef.current(pointer.x, pointer.y);
+          // Scroll so the HANDLE stays under the cursor (not to the floor's far
+          // right — that would jump away from a middle feed grown near the edge).
+          // The handle's canvas-x is this vessel's left (`position.x`, stable
+          // during its own resize) + the new width; target the scroll that keeps
+          // it at the pointer. The browser clamps until the prior frame's commit
+          // widens the floor, so it converges within a frame.
+          if (next) {
+            const handleX = positionRef.current.x + next.w;
+            floor.scrollLeft = handleX - (pointer.x - r.left);
+          }
+        }
+        resizePanRafRef.current = requestAnimationFrame(step);
+      }
+    };
+    resizePanRafRef.current = requestAnimationFrame(step);
+  }, [floorRef]);
+
+  useEffect(() => stopResizePan, [stopResizePan]);
+
   function startDrag(event: React.PointerEvent) {
     const target = event.target as HTMLElement;
     if (target.closest("button, a, input, textarea, select, [role='button']"))
@@ -484,28 +572,26 @@ export function Vessel({
       startH,
       maxW: MAX_W,
       maxH: MAX_H,
+      growth: 0,
       moved: false,
     };
+    lastResizePointerRef.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
     setLiveSize({ w: startW, h: startH });
   }
 
   function handleResizePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    const state = resizeStateRef.current;
-    if (!state) return;
-    const dx = event.clientX - state.startX;
-    const dy = event.clientY - state.startY;
-    if (dx !== 0 || dy !== 0) state.moved = true;
-    const w = snap(Math.max(MIN_W, Math.min(state.maxW, state.startW + dx)));
-    const h = snap(Math.max(MIN_H, Math.min(state.maxH, state.startH + dy)));
-    const next = clampResize ? clampResize({ w, h }) : { w, h };
-    setLiveSize(next);
-    // Feed the proposal back through derivation so the columns to the right
-    // slide WITH the handle rather than jumping on release.
-    onResizeFrame?.(next);
+    if (!resizeStateRef.current) return;
+    lastResizePointerRef.current = { x: event.clientX, y: event.clientY };
+    // Start the right-edge auto-grow loop on the FIRST real move (not on
+    // pointer-down), so a bare click on a handle that already sits near the edge
+    // can't accidentally start widening. No-ops if the loop is already running.
+    startResizePan();
+    applyResizeFrame(event.clientX, event.clientY);
   }
 
   function handleResizePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    stopResizePan();
     const state = resizeStateRef.current;
     resizeStateRef.current = null;
     try {
@@ -537,6 +623,7 @@ export function Vessel({
   // ABORTS — reverting to the derived rect — rather than committing the
   // half-dragged size the pointer happened to be at.
   function handleResizePointerCancel(event: React.PointerEvent<HTMLDivElement>) {
+    stopResizePan();
     resizeStateRef.current = null;
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);

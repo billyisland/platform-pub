@@ -119,6 +119,15 @@ export const FACTORY_W = 640;
 export const FACTORY_H: number | null = null;
 
 /**
+ * §V regimented-view minimum column width — the floor the parade scales down to
+ * before it admits horizontal scroll. Deliberately MUCH wider than the absolute
+ * SLOT_MIN_W vessel floor (224): the parade's job is a readable overview, not
+ * cramming every feed onto one screen, so it stays comfortable and scrolls once
+ * the feeds no longer fit at this width. Grid-aligned (400 = 50·GRID). Tunable.
+ */
+export const REGIMENTED_MIN_W = 400;
+
+/**
  * §IV.2's rect split. Within EDGE_BAND of a rect's edge the drop resolves to
  * INSERTION at that boundary; the central region arms a merge. Without the
  * split, a taut floor leaves only the 8px gutters as insertion targets and
@@ -782,8 +791,9 @@ export function withSlotSize(
 /**
  * §V. The parade-ground view: every visible feed on screen at once, one column
  * each, numeral order, factory dimensions. If n at factory width overflows the
- * viewport, widths scale down uniformly; below SLOT_MIN_W it admits horizontal
- * scroll rather than render uselessly narrow feeds.
+ * viewport, widths scale down uniformly; below REGIMENTED_MIN_W it admits
+ * horizontal scroll rather than render uselessly narrow feeds. (The floor is
+ * REGIMENTED_MIN_W, comfortably wider than SLOT_MIN_W — readability over fit.)
  *
  * This DERIVES a transient layout — it is a view over the feed list, never an
  * edit. The user's stored layout is untouched, which is what makes leaving
@@ -801,7 +811,7 @@ export function regimentedLayout(
 
   const avail = vp.w - (n + 1) * GRID;
   const fit = floorGrid(avail / n);
-  const w = Math.max(SLOT_MIN_W, Math.min(FACTORY_W, fit));
+  const w = Math.max(REGIMENTED_MIN_W, Math.min(FACTORY_W, fit));
 
   return {
     columns: ordered.map((f) => makeColumn([{ feedId: f.id, w, h: null }])),

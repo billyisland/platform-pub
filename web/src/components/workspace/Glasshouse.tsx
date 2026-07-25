@@ -46,11 +46,12 @@
 // Ephemeral overlays omit it — their onClose is already state-only.
 // =============================================================================
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 import { useExplain } from "../../stores/explain";
+import { useLightbox } from "../../stores/lightbox";
 import { useBackGuard } from "../../lib/backGuard";
 import { isDragSurface } from "../../lib/dragSurface";
 import { MOBILE_BAR_H } from "./MobileWorkspace";
@@ -179,6 +180,7 @@ function usePanePlacement(
   persistKey?: string,
   resizable?: boolean,
   fullScreen?: boolean,
+  fillHeight?: boolean,
 ) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [vp, setVp] = useState(() =>
@@ -200,6 +202,17 @@ function usePanePlacement(
       y: clampN(base.y, 0, maxYFor(vh)),
     };
   });
+
+  // `\` toggles this pane between the user's custom arrangement (the persisted
+  // `pos`/`size`) and the DEFAULT placement (snapped-centre, default width,
+  // fill/content height) — the pane-scoped mirror of the workspace floor's `\`
+  // (which is inert while a pane is open). It is a transient, NON-DESTRUCTIVE
+  // view: `pos`/`size` stay in state, so a second `\` restores the custom
+  // arrangement, while a drag/resize commits a new custom one and clears it.
+  // Resets to false each time the pane opens (the hook remounts), so a member
+  // always lands on their saved arrangement first.
+  const [showDefault, setShowDefault] = useState(false);
+  const toggleDefault = useCallback(() => setShowDefault((v) => !v), []);
 
   // Re-clamp to the viewport on resize so a remembered spot never strands the
   // pane off-screen on a smaller window.
@@ -235,8 +248,16 @@ function usePanePlacement(
     e.stopPropagation();
     gestureCleanupRef.current?.();
     const { innerWidth: vw, innerHeight: vh } = window;
-    const offX = e.clientX - pos.x;
-    const offY = e.clientY - pos.y;
+    // Drag from wherever the pane is RENDERED — the default spot when a `\`
+    // toggle is showing it, else the custom `pos` — so the grab point never jumps.
+    const base = showDefault
+      ? {
+          x: clampN(centreX(maxWidth, vw), 0, maxXFor(maxWidth, vw)),
+          y: clampN(MARGIN * 2, 0, maxYFor(vh)),
+        }
+      : pos;
+    const offX = e.clientX - base.x;
+    const offY = e.clientY - base.y;
     // Suppress text selection while the window rides the cursor (whole-pane drag
     // can start on a margin and sweep over prose). Restored on gesture teardown.
     const prevUserSelect = document.body.style.userSelect;
@@ -247,6 +268,9 @@ function usePanePlacement(
         x: clampN(snap(ev.clientX - offX), 0, maxXFor(maxWidth, vw)),
         y: clampN(snap(ev.clientY - offY), 0, maxYFor(vh)),
       };
+      // A drag makes this the new custom arrangement — leave the default view.
+      // Batched with setPos, so the pane never flashes the old custom spot.
+      setShowDefault(false);
       setPos(dropped);
       if (persistKey) writePos(persistKey, dropped);
     };
@@ -258,6 +282,7 @@ function usePanePlacement(
         onUp(ev);
         return;
       }
+      setShowDefault(false);
       setPos({
         x: clampN(ev.clientX - offX, 0, maxXFor(maxWidth, vw)),
         y: clampN(ev.clientY - offY, 0, maxYFor(vh)),
@@ -281,10 +306,13 @@ function usePanePlacement(
     const startW = paneRef.current?.offsetWidth ?? widthFor(maxWidth, vw);
     const startH = paneRef.current?.offsetHeight ?? MIN_H;
     const { clientX: startX, clientY: startY } = e;
-    // Cap so the stretched pane keeps a gutter to the right / bottom edge —
-    // "bottom" being the top of the nav row, not the viewport floor.
-    const maxW = Math.max(MIN_W, vw - pos.x - MARGIN);
-    const maxH = Math.max(MIN_H, usableH(vh) - pos.y - MARGIN);
+    // Cap against wherever the pane is RENDERED (default centre while a `\`
+    // toggle shows it, else the custom `pos`) so the stretched pane keeps a
+    // gutter to the right / bottom edge — "bottom" being the top of the nav row.
+    const baseX = showDefault ? clampN(centreX(maxWidth, vw), 0, maxXFor(maxWidth, vw)) : pos.x;
+    const baseY = showDefault ? clampN(MARGIN * 2, 0, maxYFor(vh)) : pos.y;
+    const maxW = Math.max(MIN_W, vw - baseX - MARGIN);
+    const maxH = Math.max(MIN_H, usableH(vh) - baseY - MARGIN);
     const resolve = (ev: PointerEvent) => ({
       w: snap(clampN(startW + (ev.clientX - startX), MIN_W, maxW)),
       h: snap(clampN(startH + (ev.clientY - startY), MIN_H, maxH)),
@@ -292,14 +320,24 @@ function usePanePlacement(
     const onUp = (ev: PointerEvent) => {
       gestureCleanupRef.current?.();
       const next = resolve(ev);
+      // A resize commits a new custom arrangement; leave the default view. If the
+      // pane was showing default at a non-custom position, also pin that position
+      // so the committed size lines up with where the handle actually was.
+      if (showDefault) setPos({ x: baseX, y: baseY });
+      setShowDefault(false);
       setSize(next);
-      if (persistKey) writeSize(persistKey, next);
+      if (persistKey) {
+        if (showDefault) writePos(persistKey, { x: baseX, y: baseY });
+        writeSize(persistKey, next);
+      }
     };
     const onMove = (ev: PointerEvent) => {
       if ((ev.buttons & 1) === 0) {
         onUp(ev);
         return;
       }
+      if (showDefault) setPos({ x: baseX, y: baseY });
+      setShowDefault(false);
       setSize(resolve(ev));
     };
     window.addEventListener("pointermove", onMove);
@@ -311,14 +349,35 @@ function usePanePlacement(
     };
   };
 
+  // Effective placement: while a `\` toggle shows the default, substitute the
+  // snapped-centre position and drop any custom size (so width falls back to the
+  // default and height to fill/content). Non-destructive — `pos`/`size` are
+  // untouched, so toggling back restores the custom arrangement verbatim.
+  const ePos = showDefault
+    ? {
+        x: clampN(centreX(maxWidth, vp.vw), 0, maxXFor(maxWidth, vp.vw)),
+        y: clampN(MARGIN * 2, 0, maxYFor(vp.vh)),
+      }
+    : pos;
+  const eSize = showDefault ? null : size;
+
   // Available on-screen height below the drop position; `--gh-h` and the pane's
   // own clamp both derive from it. Bounded above the nav row (usableH).
-  const maxHeight = usableH(vp.vh) - pos.y - MARGIN;
+  const maxHeight = usableH(vp.vh) - ePos.y - MARGIN;
   const effW = resizable
-    ? clampN(size?.w ?? widthFor(maxWidth, vp.vw), MIN_W, Math.max(MIN_W, vp.vw - pos.x - MARGIN))
+    ? clampN(eSize?.w ?? widthFor(maxWidth, vp.vw), MIN_W, Math.max(MIN_W, vp.vw - ePos.x - MARGIN))
     : widthFor(maxWidth, vp.vw);
-  // Explicit height only when resized vertically; otherwise content-driven (null).
-  const effH = resizable && size?.h != null ? Math.min(size.h, maxHeight) : null;
+  // Height precedence: an explicit resized height wins (respect the user's
+  // stretch, re-clamped on-screen); else `fillHeight` defaults the pane to the
+  // full available room (top gutter → the nav row) so a reading pane opens tall
+  // and immersive; else content-driven (null). `fillHeight` is only a DEFAULT —
+  // a persisted `size.h` (the user stretched smaller) always takes over.
+  const effH =
+    resizable && eSize?.h != null
+      ? Math.min(eSize.h, maxHeight)
+      : fillHeight
+        ? maxHeight
+        : null;
   const ghH = effH ?? maxHeight;
 
   // Full-screen sheet (mobile): the pane fills the viewport BELOW the persistent
@@ -337,18 +396,20 @@ function usePanePlacement(
       ghH: h,
       startDrag: null,
       startResize: null,
+      toggleDefault: null as (() => void) | null,
     };
   }
 
   return {
     paneRef,
-    x: pos.x,
-    y: pos.y,
+    x: ePos.x,
+    y: ePos.y,
     width: effW,
     height: effH,
     ghH,
     startDrag: startDrag as ((e: React.PointerEvent) => void) | null,
     startResize: resizable ? startResize : null,
+    toggleDefault: toggleDefault as (() => void) | null,
   };
 }
 
@@ -375,6 +436,11 @@ interface GlasshouseProps {
   /** Add a bottom-right stretch handle so the pane can be resized (the writers).
    *  `maxWidth` then seeds the default width but no longer caps it. */
   resizable?: boolean;
+  /** Default the pane to the full available height (top gutter → the nav row)
+   *  instead of sizing to its content — for immersive reading panes. Only a
+   *  default: a persisted resized height (the user stretched it smaller) still
+   *  wins. No effect on the mobile full-screen sheet. */
+  fillHeight?: boolean;
   /** When this Glasshouse was launched from a specific feed (reader / profile
    *  opened off a card), the feed's WALLS colour (`palette.walls`, a
    *  `var(--ah-…)` string). The pane then frames itself with an INVERTED, thinner
@@ -412,6 +478,7 @@ export function Glasshouse({
   ariaLabel,
   persistKey,
   resizable,
+  fillHeight,
   frameColor,
   frameTextColor,
   sideNav,
@@ -424,7 +491,13 @@ export function Glasshouse({
   // spatial affordances) don't render. Presentation only — callers are
   // untouched.
   const isMobile = useIsMobile();
-  const pane = usePanePlacement(maxWidth, persistKey, resizable, isMobile);
+  const pane = usePanePlacement(
+    maxWidth,
+    persistKey,
+    resizable,
+    isMobile,
+    fillHeight,
+  );
 
   // Mobile back-guard: on the full-screen sheet, a browser Back / OS edge-swipe
   // should close this sheet (same as the disc-X), not leave the site. URL-synced
@@ -513,6 +586,35 @@ export function Glasshouse({
       document.body.style.overflow = prevOverflow;
     };
   }, [onClose]);
+
+  // `\` toggles this pane between the user's custom arrangement and the default
+  // placement — the pane-scoped mirror of the workspace floor's regimented `\`
+  // (which WorkspaceView leaves inert while a Glasshouse is open, guarding on the
+  // presence registry, so the two never both fire). Desktop only: the mobile
+  // full-screen sheet has no movable placement (toggleDefault is null there).
+  // Guarded like the floor binding — no modifiers, not in an editable field, not
+  // while Explain or the lightbox (z-70, above the pane) owns the keyboard.
+  const toggleDefault = pane.toggleDefault;
+  useEffect(() => {
+    if (isMobile || !toggleDefault) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "\\") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t?.closest(
+          'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
+        )
+      )
+        return;
+      if (useExplain.getState().isActive) return;
+      if (useLightbox.getState().isOpen) return;
+      e.preventDefault();
+      toggleDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isMobile, toggleDefault]);
 
   return (
     <>

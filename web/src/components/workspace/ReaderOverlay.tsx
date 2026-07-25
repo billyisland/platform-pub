@@ -168,6 +168,7 @@ export function ReaderOverlay() {
       ariaLabel="Reader"
       persistKey="reader"
       resizable
+      fillHeight
       frameColor={frameColor}
       frameTextColor={frameTextColor}
       sideNav={sideNav}

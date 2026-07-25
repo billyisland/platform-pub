@@ -18,6 +18,7 @@ import {
   SLOT_MIN_W,
   SLOT_MIN_H,
   FACTORY_W,
+  REGIMENTED_MIN_W,
   EDGE_BAND,
   type WorkspaceLayout,
   type Viewport,
@@ -901,24 +902,29 @@ describe("regimentedLayout", () => {
   });
 
   it("scales widths down uniformly so n feeds fit on screen", () => {
-    const feeds = Array.from({ length: 4 }, (_, i) => ({
+    // On the 1440px viewport, 3 feeds still scale down (below factory) yet fit
+    // above REGIMENTED_MIN_W, so the floor stays exactly one viewport wide.
+    const feeds = Array.from({ length: 3 }, (_, i) => ({
       id: `f${i}`,
       sortRank: i,
     }));
     const layout = regimentedLayout(feeds, VP);
     const w = layout.columns[0].slots[0].w;
     expect(w).toBeLessThan(FACTORY_W);
+    expect(w).toBeGreaterThan(REGIMENTED_MIN_W);
     expect(new Set(layout.columns.map((c) => c.slots[0].w)).size).toBe(1);
     expect(deriveGeometry(layout, VP).floorWidth).toBe(VP.w);
   });
 
   it("admits horizontal scroll rather than render below the minimum width", () => {
+    // Enough feeds that even REGIMENTED_MIN_W overflows the viewport — the parade
+    // holds the readable minimum and scrolls instead of cramming narrower.
     const feeds = Array.from({ length: 12 }, (_, i) => ({
       id: `f${i}`,
       sortRank: i,
     }));
     const layout = regimentedLayout(feeds, VP);
-    expect(layout.columns[0].slots[0].w).toBe(SLOT_MIN_W);
+    expect(layout.columns[0].slots[0].w).toBe(REGIMENTED_MIN_W);
     expect(deriveGeometry(layout, VP).floorWidth).toBeGreaterThan(VP.w);
   });
 
