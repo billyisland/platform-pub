@@ -23,6 +23,45 @@ starts.
 
 ## Progress
 
+- **2026-07-25 (feed-items page load 7.2s → 78ms — the slow/failing-reload
+  incident)** — Feeds with follow-import-scale source sets (251–717
+  `feed_sources` rows) had become multi-second or failing to load. Measured on
+  dev (`EXPLAIN ANALYZE`, 34.7k `feed_items`): **7,246ms for one 20-row page**
+  of the 717-source feed. Three compounding causes, three fixes, all
+  page-output-identical (verified old-vs-new across all 6 dev feeds + the
+  page-2 cursor path):
+  **(1) The `matched` CTE was a cross product.** The five source-match arms
+  were OR'd inside one join condition, which has no hashable key — the planner
+  nested-looped `feed_items × feed_sources` and filtered **24.9M row-pairs per
+  page** (~4.5s). Rewritten as one UNION ALL branch per `source_type`, each an
+  index-friendly equijoin riding indexes that already existed
+  (`idx_feed_items_author`/`_source`/`_article`), then `GROUP BY fi_id`
+  (`MAX(weight)`/`bool_or` — same multi-source collapse). Work is now
+  O(matching items), not O(items × sources).
+  **(2) JIT compiled 334 functions per query (~2.5s)** — the inflated cost
+  estimate tripped Postgres's JIT threshold on every request. `jit=off` at the
+  shared pool's connection options (`shared/src/db/client.ts`) — all service
+  queries are OLTP-shaped, so JIT is pure per-query overhead; connection-level
+  means no per-environment postgresql.conf step and it ships with the deploy.
+  **(3) The heavy projection ran per candidate, not per winner.** The `scored`
+  CTE computed the full `FEED_SELECT`/`POST_SELECT` — correlated subqueries
+  (tag_names, reply/quote post-id derivation) + six LEFT JOINs — for all ~12k
+  matched rows to return 20. Restructured rank-then-project: a slim `ranked`
+  pass (id + effective_score + only the columns the visibility predicates
+  read) sorts and LIMITs first; the fat projection joins onto the ≤limit
+  winners (the same post-LIMIT move the dedup provenance lateral already made).
+  **Why it read as "fails to reload":** the shared pool's 10s
+  `statement_timeout` — a 7.2s query needs only mild concurrency (the
+  `/workspace/bootstrap` all-feeds fan-out, or one other reader) to blow past
+  10s, get killed, and 500. **Why it deteriorated abruptly:** both factors of
+  the quadratic grew together — follow-import feeds landed hundreds of sources
+  per feed while feed-ingest filled `feed_items` daily from 1,595 sources.
+  Live-verified after gateway rebuild: worst feed ~75–120ms, full bootstrap
+  (6 feeds concurrent) 279ms. Dev-DB note: `feed_items` had never been
+  analyzed (empty planner stats) — worth an `ANALYZE` + autovacuum check on
+  prod at next deploy. Files: `gateway/src/routes/feeds/items.ts`,
+  `shared/src/db/client.ts`.
+
 - **2026-07-24 (Jul 22–24 commit-audit fix batch — CONSOLIDATED-TODO §0m)** —
   Four-agent adversarial review of the window's 25 commits (`48913a2`…`d599d76`:
   columnar floor Slices 0–5 + follow-ups, owner dashboard, closed-beta Phases

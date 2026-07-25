@@ -22,6 +22,12 @@ export const pool = new Pool({
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
   statement_timeout: 10_000,
+  // JIT off for every service connection: our queries are OLTP-shaped (small
+  // result sets, cold each time), so JIT compilation is pure overhead — the
+  // feed items query was measured spending 2.5s compiling 334 functions to
+  // return a 20-row page (2026-07-25). Connection-level so it ships with the
+  // code and needs no per-environment postgresql.conf step.
+  options: '-c jit=off',
 })
 
 // Fatal pool errors mean the connection is broken — exit so the orchestrator restarts us

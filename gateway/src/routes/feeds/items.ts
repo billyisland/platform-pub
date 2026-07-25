@@ -256,101 +256,146 @@ async function sourceFilteredItems(
         ORDER BY COUNT(*) DESC, sampling_mode
         LIMIT 1
     ),
+    -- One UNION ALL branch per source_type, each an index-friendly equijoin,
+    -- then GROUP BY to collapse multi-source matches (MAX weight / bool_or
+    -- allow_replies — a writer subscribed via two sources gets the louder).
+    -- This used to be a single join whose ON was the OR of all five arms; an
+    -- OR-of-arms join has no hashable key, so the planner brute-forced
+    -- feed_items × feed_sources — 24.9M pair evaluations (~4.5s) for one page
+    -- of a 717-source follow-import feed (EXPLAIN'd 2026-07-25). The branches
+    -- ride idx_feed_items_author / idx_feed_items_source /
+    -- idx_feed_items_article and take the same page to milliseconds.
     matched AS (
-      SELECT fi.id AS fi_id, MAX(fs.weight)::float8 AS weight,
-             bool_or(NOT fs.exclude_replies) AS allow_replies
-        FROM feed_items fi
-        LEFT JOIN articles a ON a.id = fi.article_id
-        JOIN feed_sources fs
-          ON fs.feed_id = $2 AND fs.muted_at IS NULL
-         AND (
-           (fs.source_type = 'account' AND fs.account_id = fi.author_id)
-           OR (fs.source_type = 'publication' AND fs.publication_id = a.publication_id)
-           OR (fs.source_type = 'external_source' AND fs.external_source_id = fi.source_id)
-           OR (fs.source_type = 'tag' AND EXISTS (
-             SELECT 1 FROM article_tags at_join
-             JOIN tags t_join ON t_join.id = at_join.tag_id
-             WHERE at_join.article_id = fi.article_id AND t_join.name = fs.tag_name
-           ))
-           -- reach:following — the caller's native follow graph (people +
-           -- their own posts + followed publications). Mirrors the GET
-           -- /feed/:feedId following projector's NATIVE membership; external
-           -- subscriptions are NOT bundled in (they're composed as explicit
-           -- external_source rows — the whole point of the vessel model), a
-           -- deliberate scope choice, not a silent cap.
-           OR (fs.source_type = 'reach' AND fs.reach_kind = 'following' AND (
-             fi.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
-             OR fi.author_id = $1
-             OR a.publication_id IN (
-               SELECT publication_id FROM publication_follows WHERE follower_id = $1
-             )
-           ))
-           -- reach:explore — platform-wide recent top-level natives (same
-           -- membership as the legacy/explore projector: 48h window, article|
-           -- note, not the reader's own). Scoring/limit bound the scan.
-           OR (fs.source_type = 'reach' AND fs.reach_kind = 'explore' AND (
-             fi.published_at > now() - INTERVAL '48 hours'
-             AND fi.item_type IN ('article', 'note')
-             AND fi.author_id <> $1
-           ))
-         )
-        WHERE fi.deleted_at IS NULL
-        GROUP BY fi.id
+      SELECT fi_id, MAX(weight)::float8 AS weight, bool_or(allow) AS allow_replies
+      FROM (
+        SELECT fi.id AS fi_id, fs.weight, NOT fs.exclude_replies AS allow
+          FROM feed_sources fs
+          JOIN feed_items fi ON fi.author_id = fs.account_id
+         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL AND fs.source_type = 'account'
+           AND fi.deleted_at IS NULL
+        UNION ALL
+        SELECT fi.id, fs.weight, NOT fs.exclude_replies
+          FROM feed_sources fs
+          JOIN articles a ON a.publication_id = fs.publication_id
+          JOIN feed_items fi ON fi.article_id = a.id
+         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL AND fs.source_type = 'publication'
+           AND fi.deleted_at IS NULL
+        UNION ALL
+        SELECT fi.id, fs.weight, NOT fs.exclude_replies
+          FROM feed_sources fs
+          JOIN feed_items fi ON fi.source_id = fs.external_source_id
+         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL AND fs.source_type = 'external_source'
+           AND fi.deleted_at IS NULL
+        UNION ALL
+        SELECT fi.id, fs.weight, NOT fs.exclude_replies
+          FROM feed_sources fs
+          JOIN tags t_join ON t_join.name = fs.tag_name
+          JOIN article_tags at_join ON at_join.tag_id = t_join.id
+          JOIN feed_items fi ON fi.article_id = at_join.article_id
+         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL AND fs.source_type = 'tag'
+           AND fi.deleted_at IS NULL
+        UNION ALL
+        -- reach:following — the caller's native follow graph (people +
+        -- their own posts + followed publications). Mirrors the GET
+        -- /feed/:feedId following projector's NATIVE membership; external
+        -- subscriptions are NOT bundled in (they're composed as explicit
+        -- external_source rows — the whole point of the vessel model), a
+        -- deliberate scope choice, not a silent cap.
+        SELECT fi.id, fs.weight, NOT fs.exclude_replies
+          FROM feed_sources fs
+          JOIN feed_items fi ON (
+            fi.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
+            OR fi.author_id = $1
+            OR EXISTS (
+              SELECT 1 FROM articles a2
+              JOIN publication_follows pf ON pf.publication_id = a2.publication_id
+              WHERE a2.id = fi.article_id AND pf.follower_id = $1
+            )
+          )
+         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
+           AND fs.source_type = 'reach' AND fs.reach_kind = 'following'
+           AND fi.deleted_at IS NULL
+        UNION ALL
+        -- reach:explore — platform-wide recent top-level natives (same
+        -- membership as the legacy/explore projector: 48h window, article|
+        -- note, not the reader's own). Scoring/limit bound the scan.
+        SELECT fi.id, fs.weight, NOT fs.exclude_replies
+          FROM feed_sources fs
+          JOIN feed_items fi ON (
+            fi.published_at > now() - INTERVAL '48 hours'
+            AND fi.item_type IN ('article', 'note')
+            AND fi.author_id <> $1
+          )
+         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
+           AND fs.source_type = 'reach' AND fs.reach_kind = 'explore'
+           AND fi.deleted_at IS NULL
+      ) arms
+      GROUP BY fi_id
     ),
     -- ── Slice 8 P1: cross-source dedup ──────────────────────────────────────
     -- linked_sources / candidates / suppressed CTEs (page-independent winner +
     -- whole-candidate-set suppression). Factored into lib/dedup-sql.ts so the
     -- integration test runs the exact same SQL — see that module for the design.
     ${DEDUP_CTES},
-    scored AS (
-      SELECT ${FEED_SELECT}${POST_SELECT},
-        (CASE
-          WHEN (SELECT sampling_mode FROM feed_mode) = 'scored'
-            THEN ${scoredModeExpr}
-          WHEN (SELECT sampling_mode FROM feed_mode) = 'random'
-            THEN random() * m.weight
-          ELSE EXTRACT(EPOCH FROM fi.published_at)::float8 * m.weight
-        END)::float8 AS effective_score,
-        ei.dedup_fingerprint AS fp   -- carried for the provenance lateral below
-      FROM feed_items fi
-      JOIN matched m ON m.fi_id = fi.id
-      ${FEED_JOINS}${POST_JOINS}
-      WHERE fi.deleted_at IS NULL
-        -- No self-exclusion here (unlike the explore queries): membership in a
-        -- composable feed is explicit — nothing enters without a feed_sources
-        -- match — so the reader's own items appear iff a source they added
-        -- admits them (themselves as a source, their publication, a tag they
-        -- post under). The old "not self" clause was inherited from explore
-        -- semantics and silently overrode an explicit self-source.
-        AND NOT EXISTS (
-          SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = fi.author_id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM mutes WHERE muter_id = $1 AND muted_id = fi.author_id
-        )
-        AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
-        AND (fi.item_type != 'external' OR ei.is_context_only IS NOT TRUE)
-        -- Per-source "no replies": drop reply items unless at least one
-        -- matching source still admits replies (migration 107).
-        AND (fi.is_reply IS NOT TRUE OR m.allow_replies)
-        -- Slice 8 P1: drop the loser of a cross-source duplicate pair.
-        ${DEDUP_SUPPRESS_FILTER}
-    )
-    -- Provenance ("ALSO ON BLUESKY · MASTODON"): display-only on the returned
-    -- page, so compute it AFTER the cursor/ORDER/LIMIT — over the ≤$3 survivors
-    -- actually returned, not every survivor pre-LIMIT. (Pre-LIMIT it ran once per
-    -- survivor before the sort: O(survivors × candidates), the dominant cost at
-    -- high link density — EXPLAIN'd in scripts/explain-dedup.ts: ~1.8s to ~80ms
-    -- on the all-linked worst case. The page subquery is aliased scored so the
-    -- lateral (which references scored.source_id/fp/fi_id) is unchanged.)
-    -- effective_score/fi_id stay in scored.* for the JS cursor.
-    SELECT scored.*, prov.also_on
-    FROM (
-      SELECT scored.*
-      FROM scored
+    -- Rank-then-project: score, filter, sort and LIMIT over a SLIM row (id +
+    -- effective_score + the columns the visibility predicates need), then join
+    -- the heavy FEED_SELECT/POST_SELECT projection — with its correlated
+    -- subqueries (tag_names, reply/quote post-id derivation) and six LEFT
+    -- JOINs — onto the ≤$3 winners only. Before this split the full projection
+    -- ran per CANDIDATE (~12k rows on a large follow-import feed) to return 20
+    -- (the same shape of win as the provenance lateral's post-LIMIT move,
+    -- ~1.8s → ~80ms). The notes/external_items joins stay in the ranking pass
+    -- because its WHERE reads them.
+    ranked AS (
+      SELECT * FROM (
+        SELECT fi.id AS fi_id,
+          (CASE
+            WHEN (SELECT sampling_mode FROM feed_mode) = 'scored'
+              THEN ${scoredModeExpr}
+            WHEN (SELECT sampling_mode FROM feed_mode) = 'random'
+              THEN random() * m.weight
+            ELSE EXTRACT(EPOCH FROM fi.published_at)::float8 * m.weight
+          END)::float8 AS effective_score
+        FROM feed_items fi
+        JOIN matched m ON m.fi_id = fi.id
+        LEFT JOIN notes n ON n.id = fi.note_id
+        LEFT JOIN external_items ei ON ei.id = fi.external_item_id
+        WHERE fi.deleted_at IS NULL
+          -- No self-exclusion here (unlike the explore queries): membership in a
+          -- composable feed is explicit — nothing enters without a feed_sources
+          -- match — so the reader's own items appear iff a source they added
+          -- admits them (themselves as a source, their publication, a tag they
+          -- post under). The old "not self" clause was inherited from explore
+          -- semantics and silently overrode an explicit self-source.
+          AND NOT EXISTS (
+            SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = fi.author_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM mutes WHERE muter_id = $1 AND muted_id = fi.author_id
+          )
+          AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
+          AND (fi.item_type != 'external' OR ei.is_context_only IS NOT TRUE)
+          -- Per-source "no replies": drop reply items unless at least one
+          -- matching source still admits replies (migration 107).
+          AND (fi.is_reply IS NOT TRUE OR m.allow_replies)
+          -- Slice 8 P1: drop the loser of a cross-source duplicate pair.
+          ${DEDUP_SUPPRESS_FILTER}
+      ) s
       WHERE TRUE ${cursorClause}
       ORDER BY effective_score DESC, fi_id DESC
       LIMIT $3
+    )
+    -- Provenance ("ALSO ON BLUESKY · MASTODON"): display-only on the returned
+    -- page, so compute it AFTER the cursor/ORDER/LIMIT — over the ≤$3 survivors
+    -- actually returned, not every survivor pre-LIMIT (the lateral references
+    -- only scored.fi_id, which FEED_SELECT projects).
+    -- effective_score/fi_id stay in scored.* for the JS cursor.
+    SELECT scored.*, prov.also_on
+    FROM (
+      SELECT ${FEED_SELECT}${POST_SELECT}, r.effective_score
+      FROM ranked r
+      JOIN feed_items fi ON fi.id = r.fi_id
+      ${FEED_JOINS}${POST_JOINS}
     ) scored
     ${DEDUP_PROVENANCE_LATERAL}
     -- Re-impose order: the lateral join doesn't preserve the subquery's ORDER,

@@ -4,8 +4,10 @@
 // Factored out of feeds/items.ts so the integration test (gateway/tests/
 // dedup-integration.test.ts) exercises the *exact same* SQL the live feed query
 // runs — there is no second copy to drift. The host query is responsible for the
-// `matched` CTE (the feed's pre-LIMIT candidate item set) and a `scored` CTE; the
-// fragments below slot in between and after.
+// `matched` CTE (the feed's pre-LIMIT candidate item set, projecting `fi_id` +
+// `allow_replies`), a ranking pass whose WHERE takes DEDUP_SUPPRESS_FILTER, and
+// a final page relation aliased `scored` projecting `fi_id` (which the
+// provenance lateral keys on); the fragments below slot in between and after.
 //
 // Param contract: `$1` is the reader id (already threaded through
 // sourceFilteredItems). Owner-aware: a link applies when it is global
