@@ -55,6 +55,7 @@ import {
 import { useColorScheme } from "../../stores/colorScheme";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { NavRow, NAV_ROW_H } from "./NavRow";
+import { Muster } from "./Muster";
 import { useMobileActiveFeed } from "../../stores/mobileActiveFeed";
 import { useFeedArrivals } from "../../stores/feedArrivals";
 import { Composer, type ReplyTarget } from "./Composer";
@@ -605,6 +606,24 @@ export function WorkspaceView() {
     return ids;
   }, [geom, panOffset, viewport.w]);
 
+  // The muster's in-view test (NAV-ROW-MUSTER-ADR §IV, "Driving the state
+  // flip"). Deliberately NOT `visibleIds`: that is the three-viewport MOUNT band
+  // `[panOffset − w, panOffset + 2w]`, so reusing it would paint three screens
+  // of roundels as "in view" at once — the exact over-report §I defines "in
+  // view" against. This is the tighter real-viewport band `[panOffset,
+  // panOffset + w]`. It inherits the VIRT_QUANT hysteresis for free by reading
+  // the same quantised `panOffset`, so a roundel straddling the edge needs a
+  // genuine scroll to flip, not a jitter.
+  const musterInView = useMemo(() => {
+    const lo = panOffset;
+    const hi = panOffset + viewport.w;
+    const ids = new Set<string>();
+    for (const [id, r] of geom.rects) {
+      if (r.x + r.w > lo && r.x < hi) ids.add(id);
+    }
+    return ids;
+  }, [geom, panOffset, viewport.w]);
+
   /** Viewport pointer → floor coordinates, the space `geom.rects` live in. */
   const toFloorSpace = useCallback((pointer: { x: number; y: number }) => {
     const floor = floorRef.current;
@@ -917,6 +936,71 @@ export function WorkspaceView() {
   function handleRestoreHiddenFeed(feedId: string) {
     void handleSetFeedHidden(feedId, false);
   }
+
+  // ── Muster navigation (NAV-ROW-MUSTER-ADR §V) ─────────────────────────────
+  // One verb for all three roundel states: GO TO THIS FEED. In view → pan so it
+  // sits at the leading edge; panned off → smooth-scroll it in (same scroll,
+  // different starting distance); minimised → restore, then scroll once its rect
+  // exists. Every path first dismisses any open Glasshouse pane: the muster is
+  // clickable over a pane (z-58 > 56), and leaving a modal floating over the
+  // newly-scrolled floor is incoherent — this is the one place the muster
+  // "edits" (it edits nothing; it gets out of the way of the navigation).
+  //
+  // A restored feed re-enters as a new right-most column (§IV.5), so its rect
+  // does not exist until the next derivation. Rather than guess with a timer,
+  // stash the target and let a geom-keyed effect scroll the moment the rect
+  // appears — correct regardless of how many frames the restore takes.
+  const pendingScrollRef = useRef<string | null>(null);
+
+  const scrollFeedToLead = useCallback((feedId: string) => {
+    const r = geomRef.current.rects.get(feedId);
+    const floor = floorRef.current;
+    if (!r || !floor) return;
+    // Leading edge one GRID in from the viewport's left. rects are final canvas
+    // coords in the floor's own scroll space, so scrollLeft maps 1:1.
+    floor.scrollTo({
+      left: Math.max(0, r.x - GRID),
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
+  }, []);
+
+  const goToFeed = useCallback(
+    (feedId: string) => {
+      useGlasshousePresence.getState().close();
+      const feed = vessels.find((v) => v.feed.id === feedId)?.feed;
+      if (feed?.hidden) {
+        pendingScrollRef.current = feedId;
+        void handleSetFeedHidden(feedId, false);
+      } else {
+        scrollFeedToLead(feedId);
+      }
+    },
+    // handleSetFeedHidden is a stable module-scope closure over refs/setters;
+    // vessels is the only reactive read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [vessels, scrollFeedToLead],
+  );
+
+  useEffect(() => {
+    const id = pendingScrollRef.current;
+    if (!id) return;
+    if (!geom.rects.has(id)) return; // restored feed not laid out yet
+    pendingScrollRef.current = null;
+    scrollFeedToLead(id);
+  }, [geom, scrollFeedToLead]);
+
+  // The live feed list the muster renders (§IV): one roundel per feed in numeral
+  // order, hidden included, each tagged in-view / panned-off / minimised.
+  const musterFeeds = liveSorted.map((v) => ({
+    id: v.feed.id,
+    numeral: feedNumerals.get(v.feed.id) ?? 0,
+    name: v.feed.name.trim(),
+    state: v.feed.hidden
+      ? ("minimised" as const)
+      : musterInView.has(v.feed.id)
+        ? ("in" as const)
+        : ("off" as const),
+  }));
 
   // Bulk re-rank (MOBILE-LAYOUT-ADR §VII.3). Optimistic: stamp the new ranks
   // locally so the badges renumber instantly, then reconcile with the
@@ -1706,6 +1790,10 @@ export function WorkspaceView() {
           ForallMenu anchor="row" below. Desktop only: the mobile bar is
           top-anchored and carries its own wordmark. */}
       {!isMobile && <NavRow />}
+      {/* The muster (NAV-ROW-MUSTER-ADR §IV) — a separate fixed layer over the
+          row band, centred and clearing the lockup. Desktop only: the mobile
+          indicator strip is the pip strip in the top bar. */}
+      {!isMobile && <Muster feeds={musterFeeds} onGoTo={goToFeed} />}
       <ForallMenu
         onAction={handleForallAction}
         hiddenFeeds={hiddenFeeds}

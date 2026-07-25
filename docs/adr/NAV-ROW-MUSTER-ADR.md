@@ -2,7 +2,8 @@
 
 **all.haus Architectural Decision Record**
 **Status:** Proposed, 2026-07-25; **Phase 1 (stable numerals, §III) shipped
-2026-07-25** — Phases 2–4 (the muster, polish, arrival flags) remain. Revised
+2026-07-25; Phase 2 (the muster, §IV) shipped 2026-07-25** — Phases 3–4 (polish,
+arrival flags) remain. Revised
 2026-07-25 after a code review: the §IV
 state flip now drives off a genuine viewport-intersection test (not the wider
 `visibleIds` mount band), the roundel ring is 2px (a 1.5px ring broke the
@@ -299,9 +300,30 @@ muster is interactive, so:
    Four stale comments rewritten (the two the ADR named plus the FeedComposer
    header and the regimented "starts at Feed 1" scroll comment). No new UI;
    regimented code left untouched. → FIX-PROGRAMME 2026-07-25.
-2. **The muster.** §IV geometry and the three states, fixed cells, click-to-go.
-3. **Polish.** Overflow and centring rule, hover names, Explain label, the
-   accessibility pass in §VII.
+2. ~~**The muster.**~~ **SHIPPED 2026-07-25.** §IV — `web/src/components/
+   workspace/Muster.tsx`: fixed 32px cells, the three states (24px solid-ink
+   in-view / 18px 2px-ink-ring panned-off / 18px 2px-stone-350-ring minimised),
+   140ms ease-out on size+fill+ring+numeral, Jost numerals, centred track that
+   clears the lockup by a symmetric 200px side-reserve and scrolls in place
+   (`.scroll-silent`) past that. `WorkspaceView` gained the tighter in-view
+   selector `musterInView` (`[panOffset, panOffset + viewport.w]`, distinct from
+   the three-viewport `visibleIds` mount band and inheriting its VIRT_QUANT
+   hysteresis), the `musterFeeds` list over `liveSorted`, and `goToFeed` (close
+   any open pane → scroll the rect to one GRID from the leading edge; minimised
+   restores then a geom-keyed effect scrolls once the rect exists). Included some
+   of §IV's centring/overflow because it is structural (the track would run under
+   the lockup without it), not deferrable polish. **HOW divergence from §VII,
+   owned:** the muster is a **separate fixed z-58 layer** mounted beside NavRow
+   (state locality — geometry/pan/feeds live in WorkspaceView), not a child of
+   NavRow, so NavRow stays the pure `aria-hidden` band and the muster carries its
+   own `role="group"` + per-roundel `aria-label`; the row's `aria-hidden` is
+   therefore correct to keep (it is genuinely empty). The muster container is
+   marked `data-explain-chrome` as the conservative default pending the Phase-3
+   `data-explain="navRow.muster"` label. → FIX-PROGRAMME 2026-07-25.
+3. **Polish.** Overflow and centring rule (edge cases past the reserve), the §V
+   floating hover-name label (a `title` stands in now), the Explain
+   `navRow.muster` label + copy, the full §VII accessibility pass, and a
+   reduced-motion gate on the disc transition.
 4. **Later ADR.** Arrival flags, under the §VI constraints.
 
 ## IX. Decided by default (flag to reopen)

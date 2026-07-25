@@ -23,6 +23,46 @@ starts.
 
 ## Progress
 
+- **2026-07-25 (NAV-ROW-MUSTER-ADR Phase 2 — the muster)** — The nav row was a
+  56px silent reserved band with nothing but the ∀ lockup docked at its right
+  end, so the workspace had no persistent answer to "how many feeds do I have,
+  and where am I among them" — panned-off and minimised feeds were invisible
+  until you opened the ∀ menu. §IV adds the **muster**: a centred run of numbered
+  roundels in the row, one per **live** feed (hidden included, on Phase 1's
+  stable numerals), each reporting one of three states. New `web/src/components/
+  workspace/Muster.tsx` — **fixed 32px cells, discs that grow within them** (no
+  roundel moves during a pan; only which discs are large changes): 24px solid
+  `--ah-ink` with a bone numeral (in view), an 18px 2px-`--ah-ink`-ring hollow
+  disc (on floor, panned off), an 18px 2px-`--ah-stone-350`-ring hollow disc
+  (minimised); 140ms ease-out on size/fill/ring/numeral; Jost numerals (identity,
+  not metadata); the track centres and clears the lockup by a symmetric 200px
+  side-reserve, scrolling in place (`.scroll-silent`) past that. `WorkspaceView`
+  gained the tighter in-view selector `musterInView` — the **real** viewport band
+  `[panOffset, panOffset + viewport.w]`, deliberately NOT the three-viewport
+  `visibleIds` mount band (reusing it would paint three screens of roundels as
+  "in view"), inheriting VIRT_QUANT hysteresis for free off the same quantised
+  `panOffset` — the `musterFeeds` list over `liveSorted`, and `goToFeed`: one
+  verb (**go to this feed**) that first dismisses any open Glasshouse pane (the
+  muster is clickable over a pane at z-58; leaving a modal over the scrolled floor
+  is incoherent — §V), then scrolls the feed's rect to one GRID from the leading
+  edge; a minimised feed is **restored first**, and a `geom`-keyed effect scrolls
+  once its rect exists (restore re-enters as a new right-most column, so the rect
+  is absent until the next derivation — a stashed target beats a guessed timer).
+  **HOW divergence from §VII, owned:** built as a **separate fixed z-58 layer**
+  beside NavRow rather than a child of it (state locality), so NavRow stays the
+  pure `aria-hidden` band and the muster owns its own `role="group"` +
+  per-roundel `aria-label`; container marked `data-explain-chrome` pending the
+  Phase-3 Explain label. Included §IV's centring/overflow (structural — the track
+  runs under the lockup without it), deferring the §V floating hover-name label
+  (a `title` stands in), the `navRow.muster` Explain copy, the full §VII a11y
+  pass, and a reduced-motion gate to Phase 3. **Also fixed an unrelated build
+  blocker in the working tree**: `app/page.tsx`'s landing copy had a straight
+  apostrophe in `"You don't need"` inside a single-quoted string (curly `’`
+  everywhere around it), terminating the literal — corrected to `don’t`. `tsc`,
+  the hairline tripwire, root eslint (0 errors), and `next build` all clean; the
+  workspace `/reader` route compiled. Phases 3–4 remain. →
+  `docs/adr/NAV-ROW-MUSTER-ADR.md` §VIII.
+
 - **2026-07-25 (NAV-ROW-MUSTER-ADR Phase 1 — stable numerals)** — Feed numerals
   were assigned over the *visible* set (`WorkspaceView` `visibleSorted` →
   `feedNumerals`), so minimising a feed renumbered everything after it and the
