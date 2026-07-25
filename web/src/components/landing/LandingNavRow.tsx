@@ -18,18 +18,19 @@ import { ForallLockup } from '../brand/ForallLockup'
 // making, and the sitewide no-single-pixel-lines invariant forbids a thin one
 // in its place outright.
 //
-// The floor never reaches behind it — `/` reserves NAV_ROW_H + GRID of bottom
-// padding, the static mirror of `deriveGeometry`'s navRowH.
+// It is a FLEX CHILD at the foot of the app-shell column (page.tsx), not
+// `position: fixed` — the shell is a pinned `100dvh` column, so the row sits
+// below the vessel area with `flexShrink: 0` and never overlaps it. (The
+// workspace NavRow is fixed because the floor pans by native scroll behind it;
+// the landing has no document scroll, so a flex child is simpler and cannot be
+// overlapped.)
 // =============================================================================
 
 export function LandingNavRow() {
   return (
     <div
       style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 0,
+        flexShrink: 0,
         height: NAV_ROW_H,
         background: 'var(--ah-bone)',
         display: 'flex',
@@ -37,7 +38,6 @@ export function LandingNavRow() {
         justifyContent: 'space-between',
         paddingLeft: 16,
         paddingRight: 16,
-        zIndex: 58,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>

@@ -67,6 +67,18 @@ starts.
   funnel; `/auth?mode=signup` only redirects there) via `ForallLockup`'s `href`
   prop, so the mark doubles as the get-started CTA. `tsc`/`next build`/hairline
   all still clean.
+  **Follow-up 2 (the dvh patch wasn't enough — restructured to an app shell).**
+  The document-scroll layout still fought the mobile viewport. Rebuilt `/` as a
+  pinned `100dvh` flex column (`overflow: hidden`, no document scroll): the
+  vessel area fills the space above the nav row, `LandingVessel` fills that area
+  (`flex:1 / minHeight:0`) so it is always wholly on screen, and the CARD COLUMN
+  scrolls INSIDE the vessel — the same `flex:1 / minHeight:0 / overflowY:auto`
+  body the workspace `Vessel` scrolls, `.scroll-silent` to suppress the scrollbar
+  rule. `LandingNavRow` became a `flexShrink:0` flex child at the foot (was
+  `position: fixed`), so it can't be overlapped and needs no reserved padding.
+  Both ⊔ frames now `overflow: hidden` so the column reads as cards passing a
+  fixed mouth. Net: the vessel is fully visible and only its contents move —
+  no rubber-band possible. `tsc`/`next build` (`/` static)/hairline/lint clean.
 
 - **2026-07-25 (feed-items page load 7.2s → 78ms — the slow/failing-reload
   incident)** — Feeds with follow-import-scale source sets (251–717

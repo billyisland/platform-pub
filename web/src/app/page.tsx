@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import HomeRedirect from '../components/layout/HomeRedirect'
 import { LandingVessel } from '../components/landing/LandingVessel'
 import { LandingNavRow } from '../components/landing/LandingNavRow'
-import { NAV_ROW_H } from '../components/workspace/NavRow'
 
 const TITLE = 'all.haus — No one should own the public square.'
 const DESCRIPTION =
@@ -45,9 +44,17 @@ export default function HomePage() {
   return (
     // The logged-out register is retired on `/` (LayoutShell chromelessRoute):
     // no black topbar, no 60px main offset. A visitor meets the member grammar
-    // — bone floor, ⊔ walls at the 8px lattice, cards, the lockup docked at the
-    // right end of a nav row — with none of the feed furniture that grammar
+    // — bone floor, one ⊔ vessel at the 8px lattice, cards, the lockup docked at
+    // the right end of a nav row — with none of the feed furniture that grammar
     // usually carries. See LandingVessel for what is deliberately absent.
+    //
+    // AN APP SHELL, NOT A SCROLLING DOCUMENT. The page is a `100dvh` flex column
+    // pinned to the viewport (`overflow: hidden`): the vessel area fills the
+    // space above the nav row, the vessel fills that area, and the card column
+    // scrolls INSIDE the vessel. Nothing scrolls at the document level, so the
+    // whole vessel is always on screen and the mobile URL-bar rubber-band (which
+    // the earlier document-scroll layout suffered) cannot happen. dvh, not vh —
+    // `100vh` is the large (URL-bar-hidden) viewport on mobile.
     //
     // The floor is `--ah-bone`, a neutral slug, so it inverts with the global
     // toggle. It is also the vessel's own interior colour under `basic`, which
@@ -56,27 +63,40 @@ export default function HomePage() {
     <div
       style={{
         background: 'var(--ah-bone)',
-        // dvh, not vh — see LayoutShell: `100vh` is the large (URL-bar-hidden)
-        // viewport on mobile, which forces a phantom overflow that rubber-bands.
-        minHeight: '100dvh',
-        // Reserve the fixed nav row's band so the last line clears it at rest.
-        paddingBottom: NAV_ROW_H + GRID,
+        height: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
       <HomeRedirect />
 
+      {/* Vessel area — fills all space above the nav row and centres the column;
+          the GRID margins are the bone floor showing around the vessel. */}
       <div
         style={{
-          maxWidth: 720,
-          margin: '0 auto',
-          padding: `${GRID * 8}px ${GRID * 2}px 0`,
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          padding: `${GRID * 3}px ${GRID * 2}px ${GRID}px`,
         }}
       >
-        <LandingVessel
-          headline={HEADLINE}
-          propositions={PROPOSITIONS}
-          prose={PROSE}
-        />
+        <div
+          style={{
+            maxWidth: 720,
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
+          <LandingVessel
+            headline={HEADLINE}
+            propositions={PROPOSITIONS}
+            prose={PROSE}
+          />
+        </div>
       </div>
 
       <LandingNavRow />

@@ -8,13 +8,22 @@ import { useResolvedDark } from '../../stores/colorScheme'
 // LandingVessel — `/`'s chassis. An ABSTRACTION of the workspace vessel, not a
 // picture of one.
 //
+// IT FILLS THE SCREEN AND SCROLLS INSIDE, like a workspace feed. The vessel is
+// sized to the app-shell column (page.tsx: a `100dvh` flex column, vessel area
+// above, nav row below) via `flex: 1; minHeight: 0`, so it is always fully
+// visible on screen — walls, mouth and bottom all in frame — and the CARD
+// COLUMN scrolls within it (the innermost `overflowY: auto` region, the same
+// `flex:1 / minHeight:0 / overflowY:auto` body Vessel.tsx scrolls). There is no
+// document scroll on `/` at all, which is what killed the mobile rubber-band:
+// the shell is pinned to the viewport and only the card column moves.
+//
 // WHAT IT DELIBERATELY OMITS. A feed vessel carries a numeral in the reserved
 // bottom-left square, a descriptive-name roundel, and a 32px VesselBar that
 // REPLACES the bottom wall. All three are gone here, on purpose: they say "feed
 // n of m", which is a claim the landing page cannot make — there are no feeds
 // on it and the visitor has no account to hold any. What survives is the part
 // that is actually the house style: the ⊔ stance, the 8px wall, the 8px
-// lattice, square corners, cards on a continuous ground.
+// lattice, square corners, cards on a continuous ground that scroll as a column.
 //
 // SO THE BOTTOM IS A PLAIN WALL. The live workspace never shows that shape —
 // there the bar always occupies the bottom edge. This is the abstraction, not a
@@ -27,6 +36,8 @@ import { useResolvedDark } from '../../stores/colorScheme'
 // wall thickness, so wall/buffer/wall stripes evenly). A visitor meets the
 // measure before they ever meet a feed. Both frames open at the top: the mouth
 // is the arrival end, and closing it would make this a box rather than a vessel.
+// Both frames clip (`overflow: hidden`) so the scrolling column reads as feed
+// cards passing behind a fixed mouth, exactly as a workspace vessel does.
 //
 // NO CALL TO ACTION IN HERE. The waiting-list button lives once, in the nav
 // row, where it is on screen for the whole page rather than only at the foot of
@@ -38,8 +49,7 @@ import { useResolvedDark } from '../../stores/colorScheme'
 // THE PROPOSITIONS ARE A REAL <ol>. They are literally three numbered
 // propositions, so the list is the ordered list, not div-soup with a decorative
 // numeral — a screen reader announces "list, 3 items" and the count. The <ol>
-// is one flex child of the interior with the same GAP as its siblings and its
-// own internal GAP between <li> cards, so every card gap stays uniform; the
+// is one flex child of the scroll column with the same GAP as its siblings; the
 // crimson numeral is presentational (the <li> position already carries order).
 //
 // COLOUR. `basic` follows the global light/dark toggle — that is the whole
@@ -78,97 +88,108 @@ export function LandingVessel({
     borderBottom: `${WALL}px solid ${palette.walls}`,
   }
 
+  // A ⊔ frame that fills its flex parent and clips its overflow. Both walls use
+  // it — outer (with the GRID buffer) and inner (with the interior PAD).
+  const frame = {
+    ...wallStyle,
+    background: palette.interior,
+    flex: 1,
+    minHeight: 0,
+    display: 'flex' as const,
+    flexDirection: 'column' as const,
+    overflow: 'hidden' as const,
+  }
+
   const card = {
     background: palette.cardBg,
     padding: '18px 20px',
   }
 
   return (
-    <div
-      style={{
-        ...LIGHT_ISLAND_STYLE,
-        ...wallStyle,
-        background: palette.interior,
-        padding: GRID,
-      }}
-    >
-      <div
-        style={{
-          ...wallStyle,
-          background: palette.interior,
-          padding: PAD,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: GAP,
-        }}
-      >
-        <div style={card}>
-          <h1
-            className="font-serif font-medium tracking-tight"
-            style={{
-              fontSize: 30,
-              lineHeight: 1.2,
-              color: palette.cardTitle,
-              margin: 0,
-            }}
-          >
-            {headline}
-          </h1>
-        </div>
-
-        <ol
+    <div style={{ ...LIGHT_ISLAND_STYLE, ...frame, padding: GRID }}>
+      <div style={{ ...frame, padding: PAD }}>
+        {/* The scrolling card column — the one moving part. `.scroll-silent`
+            hides the native scrollbar (whose track would draw a banned vertical
+            rule); wheel / touch / keyboard scroll are unaffected. */}
+        <div
+          className="scroll-silent"
           style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
             gap: GAP,
-            listStyle: 'none',
-            margin: 0,
-            padding: 0,
           }}
         >
-          {propositions.map((proposition, i) => (
-            <li key={i} style={card}>
-              <div style={{ display: 'flex', gap: 16 }}>
-                <span
-                  aria-hidden="true"
-                  className="font-mono text-mono-sm"
-                  style={{ color: palette.crimson, paddingTop: 3 }}
-                >
-                  {i + 1}
-                </span>
-                <span
-                  className="font-serif"
-                  style={{
-                    fontSize: 22,
-                    lineHeight: 1.4,
-                    color: palette.cardTitle,
-                  }}
-                >
-                  {proposition}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ol>
+          <div style={card}>
+            <h1
+              className="font-serif font-medium tracking-tight"
+              style={{
+                fontSize: 30,
+                lineHeight: 1.2,
+                color: palette.cardTitle,
+                margin: 0,
+              }}
+            >
+              {headline}
+            </h1>
+          </div>
 
-        <div style={card}>
-          <div
-            className="font-mono"
+          <ol
             style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: 20,
-              fontSize: '1.0625rem',
-              lineHeight: 1.65,
-              letterSpacing: '0.01em',
-              color: palette.cardStandfirst,
+              gap: GAP,
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
             }}
           >
-            {prose.map((para, i) => (
-              <p key={i} style={{ margin: 0 }}>
-                {para}
-              </p>
+            {propositions.map((proposition, i) => (
+              <li key={i} style={card}>
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <span
+                    aria-hidden="true"
+                    className="font-mono text-mono-sm"
+                    style={{ color: palette.crimson, paddingTop: 3 }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span
+                    className="font-serif"
+                    style={{
+                      fontSize: 22,
+                      lineHeight: 1.4,
+                      color: palette.cardTitle,
+                    }}
+                  >
+                    {proposition}
+                  </span>
+                </div>
+              </li>
             ))}
+          </ol>
+
+          <div style={card}>
+            <div
+              className="font-mono"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 20,
+                fontSize: '1.0625rem',
+                lineHeight: 1.65,
+                letterSpacing: '0.01em',
+                color: palette.cardStandfirst,
+              }}
+            >
+              {prose.map((para, i) => (
+                <p key={i} style={{ margin: 0 }}>
+                  {para}
+                </p>
+              ))}
+            </div>
           </div>
         </div>
       </div>
