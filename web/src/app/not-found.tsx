@@ -10,7 +10,7 @@ import { PublicLink } from '../components/public/Field'
 // NEW 2026-07-25. There was no `not-found.tsx`, so every 404 — and there are
 // several routes that call `notFound()` deliberately, e.g. /read/:postId for a
 // native post id — fell through to the Next.js default: a centred sans-serif
-// "404 | This page could not be found" on white, with a hairline divider. That
+// "404 | This page could not be found" on white, with a hairline divider. That  hairline-ok (prose: describes the Next.js default this file replaces)
 // was the single most off-brand screen on the site and the easiest to reach.
 //
 // A 404 on a link-shared platform is usually a DEAD SHARE — someone followed a

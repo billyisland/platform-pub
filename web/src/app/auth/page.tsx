@@ -39,7 +39,7 @@ import {
 // per page, in the nav row, where it is also a link home.
 //
 // THE DEV-MODE BLOCK STAYS but is now a card like any other, marked by a label
-// rather than by a dashed border — the house has no dashed line weight, and
+// rather than by a dashed border — the house has no dashed line weight, and  hairline-ok (prose: describes the border this file REMOVED)
 // inventing one for a development affordance was how the register drifted in
 // the first place.
 export default function AuthPage() {

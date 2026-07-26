@@ -7,8 +7,8 @@ import { usePublicPalette, controlLine, SLAB } from './palette'
 // Public form primitives.
 //
 // WHAT THEY REPLACE. The retired auth register drew its inputs with
-// `1.5px solid var(--ah-grey-200)` — a hairline box, off-palette, and the only
-// place in the app where a border under 4px survived. The house has exactly
+// `1.5px solid var(--ah-grey-200)` — a hairline box, off-palette, and the only  hairline-ok (prose: quotes the rule these primitives exist to retire)
+// place in the app where a border under 4px survived. The house has exactly  hairline-ok (prose, same sentence as above)
 // three line weights: the 8px wall, the 6px slab (.slab-rule), the 4px slab
 // (.slab-rule-4). A field is a card with the 4px slab under it. Nothing is
 // boxed: the slab says "write here" the way a ruled line on paper does, and the
