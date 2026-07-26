@@ -1,10 +1,18 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '../../../stores/auth'
 import { tributesEnabled } from '../../../lib/api'
 import { TRIBUTE_CLAIM_KEY } from '../../../components/tribute/TributeClaimResumer'
+import { PublicShell } from '../../../components/public/PublicShell'
+import {
+  PublicVessel,
+  PublicCard,
+  PublicTitle,
+  PublicBody,
+} from '../../../components/public/PublicVessel'
+import { PublicButton, PublicLink } from '../../../components/public/Field'
 
 // =============================================================================
 // /tribute/claim?token=… — the landing for an external tribute-offer email.
@@ -13,8 +21,34 @@ import { TRIBUTE_CLAIM_KEY } from '../../../components/tribute/TributeClaimResum
 // (mounted in LayoutShell) redeems it as soon as auth resolves — so the claim
 // survives the signup round-trip. This page only routes: a logged-in invitee is
 // claimed in place (the resumer redirects to the piece); an anonymous one is
-// invited to create a free account, after which the resumer fires on /reader.
+// pointed at the waiting list, since account creation is closed during the beta
+// (CLOSED-BETA-ADR §IV).
+//
+// REDESIGNED 2026-07-25 (tranche 2) onto the public chassis. Its local `Card`
+// helper — `max-w-sm`, `py-28`, a centred ∀ dingbat, and a `text-2xl
+// font-medium` heading in the SANS face — is replaced by the shared vessel. The
+// heading face matters: this page's title was the only display heading in the
+// register set in Jost rather than the serif, which made it read as a system
+// notice rather than as the house speaking.
+//
+// THE STATES ARE A ROUTING TABLE, not a page with variants — hence one small
+// component per outcome and no shared body. Every one of them is a leaf a
+// stranger arrives at from an email, so each says what happened in one serif
+// line and what to do in one mono paragraph.
 // =============================================================================
+
+function Frame({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <PublicShell>
+      <PublicVessel>
+        <PublicCard>
+          <PublicTitle>{title}</PublicTitle>
+          <div style={{ marginTop: 10 }}>{children}</div>
+        </PublicCard>
+      </PublicVessel>
+    </PublicShell>
+  )
+}
 
 function ClaimInner() {
   const params = useSearchParams()
@@ -26,59 +60,91 @@ function ClaimInner() {
     const t = params.get('token')
     if (!t) return
     setToken(t)
-    try { sessionStorage.setItem(TRIBUTE_CLAIM_KEY, t) } catch { /* ignore */ }
+    try {
+      sessionStorage.setItem(TRIBUTE_CLAIM_KEY, t)
+    } catch {
+      /* ignore */
+    }
     // Strip the token from the URL once stashed — it binds money to an account,
     // so it must not linger in browser history, server access logs, or Referer.
     router.replace('/tribute/claim')
   }, [params, router])
 
   if (!tributesEnabled()) {
-    return <Card title="Not available">This feature isn’t available right now.</Card>
+    return (
+      <Frame title="Not available">
+        <PublicBody>This isn’t available right now.</PublicBody>
+      </Frame>
+    )
   }
+
   if (!token) {
-    return <Card title="Missing link">This claim link is incomplete. Please use the link from your email.</Card>
+    return (
+      <Frame title="This link is incomplete">
+        <PublicBody>
+          Use the link from your email — this one is missing the part that
+          identifies the offer.
+        </PublicBody>
+      </Frame>
+    )
   }
+
   if (loading) {
-    return <Card title="One moment…">Checking your session…</Card>
+    return (
+      <Frame title="One moment">
+        <PublicBody>Checking your session.</PublicBody>
+      </Frame>
+    )
   }
+
   if (user) {
     // The resumer claims the stashed token and redirects to the piece.
-    return <Card title="Claiming your tribute…">Taking you to the piece you inspired.</Card>
+    return (
+      <Frame title="Claiming your tribute">
+        <PublicBody>Taking you to the piece you inspired.</PublicBody>
+      </Frame>
+    )
   }
 
-  // Anonymous external invitee. Account creation is closed during the beta
-  // (CLOSED-BETA-ADR §IV) — this feature is itself dark, but keep the CTA
-  // honest: join the waiting list rather than a signup form that no longer
+  // Anonymous external invitee. Account creation is closed during the beta, so
+  // the CTA is the waiting list rather than a signup form that no longer
   // exists. Existing members can still log in and bind the offer.
   return (
-    <Card title="Someone wants to share their earnings with you">
-      <p className="mb-6">
-        A writer on all.haus has credited you as an inspiration for a piece and offered you a share
-        of what it earns. all.haus is in closed beta — join the waiting list and we’ll be in touch.
-      </p>
-      <button className="btn w-full" onClick={() => router.push('/waitlist')}>
-        Join the waiting list
-      </button>
-      <p className="mt-4 text-mono-xs text-grey-600">
-        Already on all.haus?{' '}
-        <button
-          className="text-black underline underline-offset-4 hover:text-grey-600"
-          onClick={() => router.push('/auth?mode=login')}
-        >
-          Log in
-        </button>{' '}
-        and we’ll bind the offer to your account.
-      </p>
-    </Card>
-  )
-}
+    <PublicShell>
+      <PublicVessel>
+        <PublicCard>
+          <PublicTitle>
+            Someone wants to share what their writing earns with you
+          </PublicTitle>
+          <div style={{ marginTop: 10 }}>
+            <PublicBody>
+              A writer on all.haus has credited you as an inspiration for a
+              piece, and offered you a share of what it earns.
+            </PublicBody>
+          </div>
+        </PublicCard>
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mx-auto max-w-sm px-4 sm:px-6 py-28">
-      <h1 className="text-2xl font-medium text-black mb-4 tracking-tight">{title}</h1>
-      <div className="text-ui-sm text-grey-600 leading-relaxed">{children}</div>
-    </div>
+        <PublicCard>
+          <div style={{ marginBottom: 16 }}>
+            <PublicBody>
+              all.haus is in closed beta. Join the waiting list and we’ll be in
+              touch — the offer will be waiting.
+            </PublicBody>
+          </div>
+          <PublicButton full onClick={() => router.push('/waitlist')}>
+            Join the waiting list
+          </PublicButton>
+        </PublicCard>
+
+        <PublicCard>
+          <PublicBody>
+            Already on all.haus?{' '}
+            <PublicLink href="/auth?mode=login">Log in</PublicLink> and we’ll
+            bind the offer to your account.
+          </PublicBody>
+        </PublicCard>
+      </PublicVessel>
+    </PublicShell>
   )
 }
 

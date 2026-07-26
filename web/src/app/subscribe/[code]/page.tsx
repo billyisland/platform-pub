@@ -2,22 +2,55 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { ProfileLink } from '../../../components/ui/ProfileLink'
 import { useAuth } from '../../../stores/auth'
-import { subscriptionOffers, subscribe, type OfferLookup } from '../../../lib/api'
+import {
+  subscriptionOffers,
+  subscribe,
+  type OfferLookup,
+} from '../../../lib/api'
+import { PublicShell } from '../../../components/public/PublicShell'
+import {
+  PublicVessel,
+  PublicCard,
+  PublicTitle,
+  PublicBody,
+} from '../../../components/public/PublicVessel'
+import {
+  PublicButton,
+  PublicLink,
+  FormError,
+  IndeterminateSlab,
+} from '../../../components/public/Field'
+import { usePublicPalette } from '../../../components/public/palette'
 
 // =============================================================================
-// Offer Redeem Page — /subscribe/:code
+// Offer redeem page — /subscribe/:code
 //
-// Public landing page for subscription offer codes. Shows the writer, discount,
-// and a subscribe button. Redirects to the writer's profile on success.
+// Public landing for a subscription offer code: who the writer is, what the
+// discount is, and a button. Redirects to the writer's profile on success.
+//
+// REDESIGNED 2026-07-25 (tranche 2) onto the public chassis. What went: three
+// `animate-pulse` skeleton bars, the `bg-red-50 / text-red-700` error box (the
+// only Tailwind-default red left in the register), and the serif ITALIC display
+// heading, which appears nowhere else in the app — the house's serif carries
+// claims upright.
+//
+// THE PRICE IS THE PAGE, so it gets its own card and the largest type on it.
+// The old-price strike-through stays, ranged beside the new one; the discount
+// percentage takes the crimson, which is the one thing on the page that is
+// genuinely an accent rather than a fact.
+//
+// MIXED REGISTER: a member can redeem in place; a visitor is sent to log in
+// with a redirect back. Account creation is closed during the beta
+// (CLOSED-BETA-ADR D1), so there is no signup path from here.
 // =============================================================================
 
 export default function RedeemOfferPage() {
   const params = useParams<{ code: string }>()
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
+  const palette = usePublicPalette()
 
   const [offer, setOffer] = useState<OfferLookup | null>(null)
   const [loading, setLoading] = useState(true)
@@ -32,7 +65,9 @@ export default function RedeemOfferPage() {
         const result = await subscriptionOffers.lookup(params.code)
         setOffer(result)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'This offer is not available.')
+        setError(
+          err instanceof Error ? err.message : 'This offer is not available.',
+        )
       } finally {
         setLoading(false)
       }
@@ -51,9 +86,13 @@ export default function RedeemOfferPage() {
       // 402 card_required: subscriptions charge the reading tab, which needs a
       // card on file to be collectable.
       const status = (err as { status?: number })?.status
-      setError(status === 402
-        ? 'Add a payment card in Settings before subscribing.'
-        : err instanceof Error ? err.message : 'Failed to subscribe. Please try again.')
+      setError(
+        status === 402
+          ? 'Add a payment card in Settings before subscribing.'
+          : err instanceof Error
+            ? err.message
+            : 'Failed to subscribe. Please try again.',
+      )
     } finally {
       setSubscribing(false)
     }
@@ -61,23 +100,33 @@ export default function RedeemOfferPage() {
 
   if (loading || authLoading) {
     return (
-      <div className="mx-auto max-w-article px-4 sm:px-6 py-20">
-        <div className="space-y-4">
-          <div className="h-8 w-64 animate-pulse bg-grey-100" />
-          <div className="h-4 w-48 animate-pulse bg-grey-100" />
-          <div className="h-12 w-40 animate-pulse bg-grey-100" />
-        </div>
-      </div>
+      <PublicShell>
+        <PublicVessel>
+          <PublicCard style={{ padding: 0 }}>
+            <IndeterminateSlab label="Loading offer" />
+          </PublicCard>
+        </PublicVessel>
+      </PublicShell>
     )
   }
 
   if (error && !offer) {
     return (
-      <div className="mx-auto max-w-article px-4 sm:px-6 py-20 text-center">
-        <h1 className="font-serif text-2xl italic mb-4">Offer unavailable</h1>
-        <p className="text-ui-sm text-grey-400 mb-6">{error}</p>
-        <Link href="/" className="btn-text underline underline-offset-4">Back to home</Link>
-      </div>
+      <PublicShell>
+        <PublicVessel>
+          <PublicCard>
+            <PublicTitle>This offer isn’t available</PublicTitle>
+            <div style={{ marginTop: 10 }}>
+              <PublicBody>{error}</PublicBody>
+            </div>
+          </PublicCard>
+          <PublicCard>
+            <PublicBody>
+              <PublicLink href="/">Back to the front</PublicLink>
+            </PublicBody>
+          </PublicCard>
+        </PublicVessel>
+      </PublicShell>
     )
   }
 
@@ -88,67 +137,109 @@ export default function RedeemOfferPage() {
   const isFree = offer.discountedPricePence === 0
   const writerName = offer.writerDisplayName ?? offer.writerUsername
 
+  if (success) {
+    return (
+      <PublicShell>
+        <PublicVessel>
+          <PublicCard>
+            <PublicTitle>Subscribed.</PublicTitle>
+            <div style={{ marginTop: 10 }}>
+              <PublicBody>
+                You’re subscribed to {writerName}. Taking you to their profile.
+              </PublicBody>
+            </div>
+          </PublicCard>
+        </PublicVessel>
+      </PublicShell>
+    )
+  }
+
   return (
-    <div className="mx-auto max-w-article px-4 sm:px-6 py-20">
-      {success ? (
-        <div className="text-center">
-          <h1 className="font-serif text-3xl italic mb-4">Subscribed!</h1>
-          <p className="text-ui-sm text-grey-400 mb-2">
-            You're now subscribed to {writerName}.
-          </p>
-          <p className="text-ui-xs text-grey-300">
-            Redirecting to their profile…
-          </p>
-        </div>
-      ) : (
-        <>
-          <p className="label-ui text-grey-400 mb-2">Subscription offer</p>
-          <h1 className="font-serif text-3xl italic mb-2">{offer.label}</h1>
-          <p className="text-ui-sm text-grey-600 mb-8">
-            Subscribe to <ProfileLink href={`/${offer.writerUsername}`} className="text-black underline underline-offset-4">{writerName}</ProfileLink>
-          </p>
-
-          <div className="bg-white px-6 py-6 mb-6 space-y-3">
-            <div className="flex items-baseline gap-3">
-              {!isFree && (
-                <span className="text-grey-300 line-through text-lg">{standardDisplay}/mo</span>
-              )}
-              <span className="text-black text-2xl font-medium">
-                {isFree ? 'Free' : `${discountedDisplay}/mo`}
-              </span>
-              <span className="label-ui text-crimson">{offer.discountPct}% off</span>
-            </div>
-            <p className="text-ui-xs text-grey-400">
-              {offer.durationMonths
-                ? `Discounted rate for ${offer.durationMonths} month${offer.durationMonths > 1 ? 's' : ''}, then ${standardDisplay}/mo`
-                : 'Permanent rate'}
-            </p>
+    <PublicShell>
+      <PublicVessel>
+        <PublicCard>
+          <div
+            className="label-ui"
+            style={{ color: palette.cardMeta, marginBottom: 12 }}
+          >
+            Subscription offer
           </div>
-
-          {error && (
-            <div className="bg-red-50 px-4 py-3 text-ui-xs text-red-700 mb-4">{error}</div>
-          )}
-
-          {!user ? (
-            <div>
-              <Link
-                href={`/auth?mode=login&redirect=${encodeURIComponent(`/subscribe/${params.code}`)}`}
-                className="btn inline-block"
+          <PublicTitle>{offer.label}</PublicTitle>
+          <div style={{ marginTop: 10 }}>
+            <PublicBody>
+              Subscribe to{' '}
+              <ProfileLink
+                href={`/${offer.writerUsername}`}
+                className="underline underline-offset-4"
+                style={{ color: palette.cardTitle }}
               >
-                Sign in to subscribe
-              </Link>
-            </div>
-          ) : (
-            <button
-              onClick={handleSubscribe}
-              disabled={subscribing}
-              className="btn disabled:opacity-50"
+                {writerName}
+              </ProfileLink>
+            </PublicBody>
+          </div>
+        </PublicCard>
+
+        <PublicCard>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            {!isFree && (
+              <span
+                className="font-mono"
+                style={{
+                  fontSize: 17,
+                  color: palette.cardMeta,
+                  textDecoration: 'line-through',
+                }}
+              >
+                {standardDisplay}/mo
+              </span>
+            )}
+            <span
+              className="font-serif font-medium tracking-tight"
+              style={{ fontSize: 34, lineHeight: 1, color: palette.cardTitle }}
             >
-              {subscribing ? 'Subscribing…' : isFree ? 'Subscribe for free' : `Subscribe for ${discountedDisplay}/mo`}
-            </button>
+              {isFree ? 'Free' : `${discountedDisplay}/mo`}
+            </span>
+            <span className="label-ui" style={{ color: palette.crimson }}>
+              {offer.discountPct}% off
+            </span>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <PublicBody>
+              {offer.durationMonths
+                ? `Discounted rate for ${offer.durationMonths} month${offer.durationMonths > 1 ? 's' : ''}, then ${standardDisplay}/mo.`
+                : 'Permanent rate.'}
+            </PublicBody>
+          </div>
+        </PublicCard>
+
+        {error && <FormError>{error}</FormError>}
+
+        <PublicCard>
+          {!user ? (
+            <PublicButton
+              full
+              href={`/auth?mode=login&redirect=${encodeURIComponent(`/subscribe/${params.code}`)}`}
+            >
+              Log in to subscribe
+            </PublicButton>
+          ) : (
+            <PublicButton full disabled={subscribing} onClick={handleSubscribe}>
+              {subscribing
+                ? 'Subscribing…'
+                : isFree
+                  ? 'Subscribe for free'
+                  : `Subscribe for ${discountedDisplay}/mo`}
+            </PublicButton>
           )}
-        </>
-      )}
-    </div>
+        </PublicCard>
+      </PublicVessel>
+    </PublicShell>
   )
 }

@@ -2,14 +2,54 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { useAuth } from '../../../stores/auth'
 import { publications as pubApi, type PublicationInvite } from '../../../lib/api'
+import { PublicShell } from '../../../components/public/PublicShell'
+import {
+  PublicVessel,
+  PublicCard,
+  PublicTitle,
+  PublicBody,
+} from '../../../components/public/PublicVessel'
+import {
+  PublicButton,
+  PublicLink,
+  FormError,
+  IndeterminateSlab,
+} from '../../../components/public/Field'
+import { usePublicPalette } from '../../../components/public/palette'
+
+// =============================================================================
+// Publication invite acceptance — /invite/:token
+//
+// REDESIGNED 2026-07-25 (tranche 2) onto the public chassis. What went: the
+// `animate-pulse rounded` skeleton bar (a guess at a layout, rendered at the
+// one moment you can't know it, carrying a border-radius the house doesn't
+// have), the `text-red-600` error line, and the single white slab of a card
+// doing centred-everything.
+//
+// IT IS NOT CENTRED ANY MORE. The retired version centred every line, which is
+// what a page does when it has one thing to say. This page has four: who is
+// inviting you, to what, in what role, and what they said. Ranged left, those
+// read as a sequence; centred, they read as a poster.
+//
+// THE PUBLICATION LOGO KEEPS ITS CIRCLE. `border-radius: 50%` on an avatar is
+// not a violation of the square-corner rule — the ∀ disc is a circle too. What
+// the rule forbids is softened rectangles.
+//
+// MIXED REGISTER: a member reaches this from their email, a visitor from a
+// forwarded one. Both get the public chassis; the row underneath adapts (see
+// PublicNavRow). During the closed beta a masthead can only recruit existing
+// members (CLOSED-BETA-ADR §IV, §VIII open item) — a token-scoped signup
+// exemption for outside writers is a deferred design call, so a logged-out
+// invitee is asked to log in rather than to sign up.
+// =============================================================================
 
 export default function InviteAcceptPage() {
   const { token } = useParams<{ token: string }>()
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
+  const palette = usePublicPalette()
 
   const [invite, setInvite] = useState<PublicationInvite | null>(null)
   const [loading, setLoading] = useState(true)
@@ -19,7 +59,8 @@ export default function InviteAcceptPage() {
 
   useEffect(() => {
     if (!token) return
-    pubApi.getInvite(token)
+    pubApi
+      .getInvite(token)
       .then(setInvite)
       .catch(() => setError('Invite not found or expired.'))
       .finally(() => setLoading(false))
@@ -30,12 +71,14 @@ export default function InviteAcceptPage() {
     setAccepting(true)
     setError(null)
     try {
-      // We need the publication ID — fetch it from the invite's slug
+      // We need the publication ID — fetch it from the invite's slug.
       const pub = await pubApi.get(invite.publication_slug)
       await pubApi.acceptInvite(pub.id, token)
       setAccepted(true)
       setTimeout(() => {
-        router.push(`/reader?overlay=dashboard&context=${invite.publication_slug}`)
+        router.push(
+          `/reader?overlay=dashboard&context=${invite.publication_slug}`,
+        )
       }, 1500)
     } catch {
       setError('Failed to accept invite.')
@@ -46,80 +89,133 @@ export default function InviteAcceptPage() {
 
   if (loading || authLoading) {
     return (
-      <div className="mx-auto max-w-article px-4 sm:px-6 pt-16 pb-16 text-center">
-        <div className="h-8 w-48 mx-auto animate-pulse rounded bg-grey-100" />
-      </div>
+      <PublicShell>
+        <PublicVessel>
+          <PublicCard style={{ padding: 0 }}>
+            <IndeterminateSlab label="Loading invitation" />
+          </PublicCard>
+        </PublicVessel>
+      </PublicShell>
     )
   }
 
   if (error && !invite) {
     return (
-      <div className="mx-auto max-w-article px-4 sm:px-6 pt-16 pb-16 text-center">
-        <p className="text-grey-600 mb-4">{error}</p>
-        <Link href="/" className="text-sm text-crimson hover:text-crimson-dark">
-          Go home
-        </Link>
-      </div>
+      <PublicShell>
+        <PublicVessel>
+          <PublicCard>
+            <PublicTitle>This invitation isn’t valid</PublicTitle>
+            <div style={{ marginTop: 10 }}>
+              <PublicBody>
+                {error} Invitations expire, and they can only be accepted once —
+                if someone forwarded you this link, ask them for a fresh one.
+              </PublicBody>
+            </div>
+          </PublicCard>
+          <PublicCard>
+            <PublicBody>
+              <PublicLink href="/">Back to the front</PublicLink>
+            </PublicBody>
+          </PublicCard>
+        </PublicVessel>
+      </PublicShell>
     )
   }
 
   if (!invite) return null
 
+  const role = invite.role.replace('_', ' ')
+
   return (
-    <div className="mx-auto max-w-article px-4 sm:px-6 pt-16 pb-16">
-      <div className="bg-white px-8 py-10 text-center">
-        {invite.publication_logo && (
-          <img src={invite.publication_logo} alt="" className="w-16 h-16 rounded-full mx-auto mb-4 object-cover" />
-        )}
-        <h1 className="font-serif text-2xl text-black mb-2">
-          Join {invite.publication_name}
-        </h1>
-        <p className="text-grey-600 text-sm mb-1">
-          {invite.inviter_name} invited you as <strong>{invite.role.replace('_', ' ')}</strong>
-        </p>
+    <PublicShell>
+      <PublicVessel>
+        <PublicCard>
+          {invite.publication_logo && (
+            <img
+              src={invite.publication_logo}
+              alt=""
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                objectFit: 'cover',
+                marginBottom: 16,
+                display: 'block',
+              }}
+            />
+          )}
+          <PublicTitle>Join {invite.publication_name}</PublicTitle>
+          <div style={{ marginTop: 10 }}>
+            <PublicBody>
+              {invite.inviter_name} has invited you as{' '}
+              <span style={{ color: palette.cardTitle }}>{role}</span>.
+            </PublicBody>
+          </div>
+        </PublicCard>
+
         {invite.message && (
-          <p className="text-grey-400 text-sm italic mt-3 mb-6">
-            &ldquo;{invite.message}&rdquo;
-          </p>
+          // The inviter's own words, set apart on the walls colour rather than
+          // in italics on the card — the quoted-post treatment (quoteBg /
+          // quoteText), which is the house's existing answer to "someone else
+          // said this".
+          <PublicCard
+            style={{ background: palette.quoteBg, padding: '18px 20px' }}
+          >
+            <p
+              className="font-mono"
+              style={{
+                fontSize: '1.0625rem',
+                lineHeight: 1.65,
+                color: palette.quoteText,
+                margin: 0,
+              }}
+            >
+              {invite.message}
+            </p>
+          </PublicCard>
         )}
+
+        {error && <FormError>{error}</FormError>}
 
         {accepted ? (
-          <p className="text-sm text-black mt-6">
-            Welcome! Redirecting to the dashboard...
-          </p>
+          <PublicCard>
+            <PublicBody>
+              You’re in. Taking you to the publication’s dashboard.
+            </PublicBody>
+          </PublicCard>
         ) : user ? (
-          <div className="mt-8 flex items-center justify-center gap-4">
-            <button
-              onClick={handleAccept}
-              disabled={accepting}
-              className="btn disabled:opacity-50"
-            >
-              {accepting ? 'Accepting...' : 'Accept'}
-            </button>
-            <Link href="/" className="text-sm text-grey-400 hover:text-black">
-              Decline
-            </Link>
-          </div>
+          <PublicCard>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <PublicButton full disabled={accepting} onClick={handleAccept}>
+                {accepting ? 'Accepting…' : 'Accept the invitation'}
+              </PublicButton>
+              {/* Declining is not an action, it is leaving. It gets a link, not
+                  a second button — two buttons of equal weight would make this
+                  a decision the page is pressing for. */}
+              <div style={{ textAlign: 'center' }}>
+                <PublicBody>
+                  <PublicLink href="/">No thanks</PublicLink>
+                </PublicBody>
+              </div>
+            </div>
+          </PublicCard>
         ) : (
-          <div className="mt-8">
-            {/* Closed beta (CLOSED-BETA-ADR §IV, §VIII open item): account
-                creation is closed, so during the beta a masthead recruits only
-                existing members — an invitee logs in to accept. A token-scoped
-                signup exemption for outside writers is a deferred design call. */}
-            <p className="text-sm text-grey-600 mb-4">
-              Log in to accept this invitation.
-            </p>
-            <Link
+          <PublicCard>
+            <div style={{ marginBottom: 16 }}>
+              <PublicBody>
+                Log in to accept. all.haus is in closed beta, so invitations can
+                only be accepted by people who already have an account.
+              </PublicBody>
+            </div>
+            <PublicButton
+              full
               href={`/auth?mode=login&redirect=/invite/${token}`}
-              className="btn"
             >
               Log in to accept
-            </Link>
-          </div>
+            </PublicButton>
+          </PublicCard>
         )}
-
-        {error && <p className="text-sm text-red-600 mt-4">{error}</p>}
-      </div>
-    </div>
+      </PublicVessel>
+    </PublicShell>
   )
 }
