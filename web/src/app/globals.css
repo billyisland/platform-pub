@@ -877,6 +877,68 @@ html.dark {
     padding-bottom: var(--ah-row-band, 0px);
   }
 
+  /* 1c. The landing vessel — `/`'s own chassis, and the ONE public surface that
+         changes shape between form factors. The desktop reading is in
+         components/landing/LandingVessel.tsx: a doubled wall (wall / 8px buffer
+         / wall) round a 720px column, floated off the bone floor by a 16px
+         margin. That is an argument about the lattice, and it is worth a frame's
+         weight on the one page whose job is to state the house's terms.
+
+         ON MOBILE IT IS NOT WORTH IT, and the reason is arithmetic. The desktop
+         chassis spends 16 (floor) + 8 (wall) + 8 (buffer) + 8 (wall) + 16 (pad)
+         = 56px per side. On a 390px phone that is 112px — 29% of the screen —
+         to make a point about an 8px square, leaving the prose 278px. So the
+         mobile rules below follow MOBILE-LAYOUT-ADR's actual grammar rather
+         than reflowing the desktop one: the mobile workspace drops the vessel
+         chassis entirely for a FULL-BLEED feed, because position / size /
+         orientation / merge are canvas properties that stay on the desktop.
+         Here the same instinct is applied one notch softer —
+
+           · the floor margin goes (the vessel spans the full viewport width);
+           · the DOUBLED wall collapses to a SINGLE wall (the outer frame
+             becomes a pass-through: no border, no buffer);
+           · the interior pad halves, 16 → 8, the lattice square itself.
+
+         — which is 16px per side instead of 56, so the prose gets 358px of 390.
+         The ⊔ still reads, at mobile weight; what goes is the doubled-wall
+         statement, which needs room to be a statement. This is the deliberate
+         one-rule-per-form-factor asymmetry, not a responsive reflow.
+
+         WHY CSS AND NOT `useIsMobile`: `/` is server-rendered for logged-out
+         visitors, and useIsMobile returns false on the server — a phone would
+         paint the 56px desktop chassis and snap to this one after hydration.
+         The wall COLOUR still comes in inline (it is palette-derived, and the
+         palette resolves in JS); only the geometry lives here, so the border
+         widths must be declared here too or the inline shorthand would win. */
+  .ah-landing-area {
+    padding: 24px 16px 0;
+  }
+  .ah-landing-frame {
+    border-left: 8px solid var(--ah-landing-wall);
+    border-right: 8px solid var(--ah-landing-wall);
+    border-bottom: 8px solid var(--ah-landing-wall);
+  }
+  .ah-landing-frame-outer {
+    padding: 8px;
+  }
+  .ah-landing-frame-inner {
+    padding: 16px;
+  }
+  @media (max-width: 767px) {
+    .ah-landing-area {
+      padding: 8px 0 0;
+    }
+    /* The outer frame stops being a frame: no wall, no buffer. It stays in the
+       tree as a plain flex pass-through so the component keeps one shape. */
+    .ah-landing-frame-outer {
+      padding: 0;
+      border: 0;
+    }
+    .ah-landing-frame-inner {
+      padding: 8px;
+    }
+  }
+
   /* 2. The vessel scroll body. A default scrollbar sitting inside a ⊔ a few
         pixels from an 8px wall is chrome the house never designed — on Windows
         a 17px light-grey trough that reads as a third wall of the wrong

@@ -603,6 +603,28 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    a dead no-op; `LandingNavRow` had made it the get-started target and the
    decision would otherwise have been lost with the file.
 
+7bis. **`/`'s doubled wall is desktop-only** (2026-07-26). Departure 1 calls `/`
+   "the only doubled wall", and that now holds at >767px only. On a phone the
+   desktop chassis spends 16 (floor) + 8 (wall) + 8 (buffer) + 8 (wall) + 16
+   (pad) = 56px **a side**: 112px of a 390px screen, 29%, to argue about an 8px
+   square, leaving the prose 278px. So at ≤767px the vessel goes full-bleed —
+   floor margin, outer wall and buffer all drop, interior pad halves 16 → 8 —
+   for 16px a side and a 358px column. The ⊔ still reads, at mobile weight; what
+   goes is the doubled-wall *statement*, which needs room to be one. This is
+   MOBILE-LAYOUT-ADR's own grammar (the mobile workspace drops the vessel
+   chassis outright for a full-bleed feed) applied one notch softer, not a
+   responsive reflow of the desktop reading.
+
+   The geometry moved to `globals.css` §1c (`.ah-landing-area`,
+   `.ah-landing-frame`/`-outer`/`-inner`) **because `/` is SSR'd**: `useIsMobile`
+   returns false on the server, so a JS breakpoint would paint the 56px desktop
+   chassis on a phone and snap to the mobile one after hydration. Only the
+   palette-derived wall colour crosses into the component, as `--ah-landing-wall`.
+   The outer frame stays in the tree on mobile as a plain flex pass-through
+   (`padding: 0; border: 0`) so the component keeps one shape in both modes.
+   Measured after the change: phone 390 → card x=16 w=358; desktop 1440 → card
+   x=400 w=640, i.e. desktop is unchanged to the pixel.
+
 7. **Three logged-in tool surfaces clear the band** — `/write`, `/admin/*`,
    `/traffology/*` — because the row mounts on every non-workspace route and
    they are the only real pages left there (every other platform route is a
@@ -621,11 +643,15 @@ and is rewritten; a "public register" section documents the new chassis.
 
 ### Still open
 
-1. **Nothing has been in a browser, in either mode.** §VIII's two judgement
-   calls are the ones to look at first: bone at 4px under a field, and the row's
-   band against the new floor — in dark the row is `--ah-bone` (20 19 17) under
-   a fitted page's `interior` floor (26 26 24), six points apart. It may read as
-   chrome distinguishing itself, or it may want to track the floor.
+1. **Almost nothing has been in a browser, in either mode.** The one exception
+   is `/`, rendered 2026-07-26 at 390×844 and 1440×900 in LIGHT mode only (the
+   mobile-chassis change, 7bis) — which immediately turned up the row bug in
+   item 6 below, so the rest of this is worth doing properly. §VIII's two
+   judgement calls are still the ones to look at first: bone at 4px under a
+   field, and the row's band against the new floor — in dark the row is
+   `--ah-bone` (20 19 17) under a fitted page's `interior` floor (26 26 24), six
+   points apart. It may read as chrome distinguishing itself, or it may want to
+   track the floor.
 2. **`/about` is fitted, so it scrolls inside its vessel on a laptop.** Four
    cards. Worth deciding whether About should be cut to one screen.
 3. **`/pub/[slug]/*`** — the §VI register decision, plus its missing subscribe
@@ -636,3 +662,21 @@ and is rewritten; a "public register" section documents the new chassis.
 5. **`/write`'s three `animate-pulse rounded` skeletons** — the last home of the
    pattern `IndeterminateSlab` replaces. A logged-in surface, so a workspace
    pass of its own.
+6. **`PublicNavRow` breaks below ~420px** (measured 2026-07-26 at 390, light,
+   logged out — the first time the row has been in a browser at phone width).
+   Three faults, one cause: the row lays out at its desktop measure and the
+   labels are too long for the width.
+   - The CTA is **65px tall inside a 56px row** — "Join the waiting list" wraps
+     to two lines, so the button overflows `NAV_ROW_H` top and bottom.
+   - "Log in" wraps to two lines too (35px tall, 44px wide).
+   - The CTA's right edge and the lockup's left edge are **both at x=243** —
+     touching, zero gap.
+
+   It affects every public route, not just `/`, since `LayoutShell` mounts the
+   row on all of them — so this is a register-wide fix, not a landing one, and
+   the shape of it is a design call: shorten the labels at mobile width
+   ("Join the list"? "Waiting list"?), drop the secondary "Log in" to the
+   lockup's menu, or let the row grow taller on mobile (which changes
+   `--ah-row-band` and every page's clearance with it). Not attempted here
+   because the landing brief was the vessel, and any of the three moves the
+   register's own furniture.

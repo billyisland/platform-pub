@@ -23,6 +23,52 @@ starts.
 
 ## Progress
 
+- **2026-07-26 (landing: real screengrabs, and the mobile vessel goes full-bleed)** —
+  A small follow-on to the register sweep below, on `/` only. Spec:
+  `LOGGED-OUT-REGISTER-ADR.md` §IX departure 7bis.
+
+  **The screengrabs are real, and the frame now fits THEM.** The three showcase
+  shots were replaced with current captures (light workspace / dark workspace
+  carrying via-RSS + via-Bluesky + via-Nostr side by side / the £0.75 "Keep
+  reading" gate). The previous set had been padded to fit a chosen 16:10 frame;
+  all three new captures are a full 1848×1056 viewport, so the **frame was cut to
+  the shots** instead — one `SHOT_RATIO` constant in `LandingVessel.tsx`, which
+  makes the existing `objectFit: cover` a genuine no-op. Nothing is padded to fit
+  the frame and nothing is cropped away by it. Alt text rewritten against what
+  the shots actually show.
+
+  **The mobile vessel is full-bleed, and the doubled wall is now desktop-only.**
+  The desktop chassis spends 16 (floor) + 8 (wall) + 8 (buffer) + 8 (wall) + 16
+  (pad) = 56px **a side** — 112px of a 390px phone, 29% of the screen, to argue
+  about an 8px square, leaving the prose 278px. At ≤767px the floor margin, outer
+  wall and buffer now all drop and the interior pad halves 16 → 8: 16px a side,
+  and a 358px column. This is MOBILE-LAYOUT-ADR's own grammar (the mobile
+  workspace drops the vessel chassis outright for a full-bleed feed) applied one
+  notch softer, not a responsive reflow of the desktop reading — the ⊔ still
+  reads at mobile weight; what goes is the doubled-wall *statement*, which needs
+  room to be one.
+
+  **The geometry had to leave the component.** It lives in `globals.css` §1c
+  (`.ah-landing-area`, `.ah-landing-frame`/`-outer`/`-inner`) rather than behind
+  a `useIsMobile` branch **because `/` is SSR'd**: `useIsMobile` returns false on
+  the server, so a JS breakpoint paints the 56px desktop chassis on a phone and
+  snaps to the mobile one after hydration. Only the palette-derived wall colour
+  crosses into the component, as `--ah-landing-wall`; the outer frame stays in
+  the tree on mobile as a plain flex pass-through (`padding: 0; border: 0`) so
+  the component keeps one shape in both modes.
+
+  **Verified in a browser, by measurement rather than eye** (the first time any
+  register surface has been — ADR §IX still-open 1 said nothing had): 390×844 and
+  1440×900 against the rebuilt container. Phone card x=16 w=358; desktop card
+  x=400 w=640, i.e. **desktop is unchanged to the pixel**. `tsc` clean, root lint
+  0 errors, `next build` compiles, hairline tripwire clean on both touched files.
+
+  **Found and NOT fixed: `PublicNavRow` breaks below ~420px.** The CTA is 65px
+  tall inside a 56px row, both labels wrap to two lines, and the CTA and lockup
+  touch at x=243 with zero gap. It is global chrome on every public route, so the
+  fix is register-wide and its shape is a design call — queued at
+  CONSOLIDATED-TODO §0m.11 / ADR §IX still-open 6 rather than decided here.
+
 - **2026-07-26 (the logged-out register — the black topbar is deleted)** — Eight
   commits (`34eb21b`…`335c363`) closing the whole logged-out sweep, tranches 1–3
   plus its dark-mode audit. Spec + as-built: `docs/adr/LOGGED-OUT-REGISTER-ADR.md`

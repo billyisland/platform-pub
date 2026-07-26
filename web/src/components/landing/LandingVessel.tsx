@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import Image from 'next/image'
 import { paletteFor } from '../workspace/tokens'
 import { LIGHT_ISLAND_STYLE } from '../../lib/palette/island'
@@ -33,14 +33,25 @@ import { ForallDisc } from '../brand/ForallDisc'
 // stale render: do NOT "fix" it by reinstating VesselBar. If the landing page
 // ever needs a control down there, it wants a new thing, not the feed's.
 //
-// THE DOUBLED WALL (the one addition). Wall, one GRID of interior, wall — so
-// the lattice reads as even stripes at the page's own edge, which is the
-// reading WORKSPACE-DESIGN-SPEC asks the grid square to have (grid square ≈
+// THE DOUBLED WALL (the one addition), ON DESKTOP. Wall, one GRID of interior,
+// wall — so the lattice reads as even stripes at the page's own edge, which is
+// the reading WORKSPACE-DESIGN-SPEC asks the grid square to have (grid square ≈
 // wall thickness, so wall/buffer/wall stripes evenly). A visitor meets the
 // measure before they ever meet a feed. Both frames open at the top: the mouth
 // is the arrival end, and closing it would make this a box rather than a vessel.
 // Both frames clip (`overflow: hidden`) so the scrolling column reads as feed
 // cards passing behind a fixed mouth, exactly as a workspace vessel does.
+//
+// ON MOBILE THE VESSEL GOES FULL-BLEED and the doubled wall collapses to a
+// single one — the floor margin, the outer wall and its buffer all drop, and the
+// interior pad halves. A phone cannot afford 56px a side to argue about an 8px
+// square, and the mobile workspace drops the vessel chassis outright for a
+// full-bleed feed, so this is the same instinct one notch softer. THE GEOMETRY
+// FOR BOTH FORM FACTORS LIVES IN globals.css §1c (`.ah-landing-area`,
+// `.ah-landing-frame*`), not in this file: `/` is SSR'd, so a JS breakpoint
+// would paint the desktop chassis on a phone and snap after hydration. Change
+// wall thickness or padding THERE. What stays here is the palette-derived wall
+// colour, handed to the CSS as `--ah-landing-wall`.
 //
 // NO CALL TO ACTION IN HERE. The waiting-list button lives once, in the nav
 // row, where it is on screen for the whole page rather than only at the foot of
@@ -53,8 +64,8 @@ import { ForallDisc } from '../brand/ForallDisc'
 // screengrabs (LandingShot — each a framed figure with a caption), then a
 // closing CODA (the ∀ disc + the motto ‘FOR ALL’, centred) that ends the
 // column. The screengrabs are real <img>s pointed at `/landing/*` in
-// web/public, pre-cropped to the frame's 16:10 (see page.tsx's SHOTS); if one
-// ever goes missing the frame shows a faint disc placeholder instead
+// web/public, and the FRAME takes ITS ratio from THEM (see SHOT_RATIO below);
+// if one ever goes missing the frame shows a faint disc placeholder instead
 // (LandingShot's onError), so the slot reads as intentional rather than as a
 // broken image. The coda is the one place the disc appears inside the vessel.
 //
@@ -75,10 +86,15 @@ import { ForallDisc } from '../brand/ForallDisc'
 // dark-mode visitor never paints the light vessel on the dark floor first.
 // =============================================================================
 
-const WALL = 8 // side-wall thickness (Vessel.tsx)
-const PAD = 16 // interior padding
 const GAP = 12 // inter-card gap
-const GRID = 8 // the workspace lattice square — here, the wall buffer
+
+// The shot frame's aspect ratio, and it is the SHOTS' OWN ratio, not a chosen
+// one: every screengrab is a full 1848×1056 viewport capture, so the frame is
+// cut to fit them rather than the other way round. That is what makes the
+// `objectFit: cover` below a no-op — nothing is padded to fit the frame and
+// nothing is cropped away by it. If the shots are ever recaptured at another
+// size, change this number to match; do not letterbox the images into it.
+const SHOT_RATIO = '1848 / 1056'
 
 export interface Shot {
   /** Path under web/public, e.g. `/landing/workspace.webp`. */
@@ -94,9 +110,10 @@ interface LandingVesselProps {
   shots: Shot[]
 }
 
-// A single screengrab card body: a 16:10 framed figure with a caption. Until the
-// image at `shot.src` exists it falls back to a faint disc placeholder, so the
-// slot always looks deliberate and never shows a broken-image glyph.
+// A single screengrab card body: a framed figure at the shots' own ratio, with a
+// caption. Until the image at `shot.src` exists it falls back to a faint disc
+// placeholder, so the slot always looks deliberate and never shows a
+// broken-image glyph.
 function LandingShot({
   shot,
   frameBg,
@@ -113,7 +130,7 @@ function LandingShot({
       <div
         style={{
           position: 'relative',
-          aspectRatio: '16 / 10',
+          aspectRatio: SHOT_RATIO,
           background: frameBg,
           overflow: 'hidden',
           display: 'flex',
@@ -155,16 +172,14 @@ export function LandingVessel({
   const globalDark = useResolvedDark()
   const palette = paletteFor('basic', globalDark)
 
-  const wallStyle = {
-    borderLeft: `${WALL}px solid ${palette.walls}`,
-    borderRight: `${WALL}px solid ${palette.walls}`,
-    borderBottom: `${WALL}px solid ${palette.walls}`,
-  }
-
-  // A ⊔ frame that fills its flex parent and clips its overflow. Both walls use
-  // it — outer (with the GRID buffer) and inner (with the interior PAD).
+  // A ⊔ frame that fills its flex parent and clips its overflow. Both frames use
+  // it — outer and inner. The WALL THICKNESS AND PADDING ARE NOT HERE: they are
+  // `.ah-landing-frame*` in globals.css, because mobile collapses the doubled
+  // wall to a single one and only a media query can do that without a
+  // post-hydration snap on this SSR'd page (see the CSS comment). What stays
+  // inline is what CSS cannot know: the palette-derived wall colour, handed over
+  // as `--ah-landing-wall`, and the interior.
   const frame = {
-    ...wallStyle,
     background: palette.interior,
     flex: 1,
     minHeight: 0,
@@ -179,8 +194,20 @@ export function LandingVessel({
   }
 
   return (
-    <div style={{ ...LIGHT_ISLAND_STYLE, ...frame, padding: GRID }}>
-      <div style={{ ...frame, padding: PAD }}>
+    <div
+      className="ah-landing-frame ah-landing-frame-outer"
+      style={
+        {
+          ...LIGHT_ISLAND_STYLE,
+          ...frame,
+          '--ah-landing-wall': palette.walls,
+        } as CSSProperties
+      }
+    >
+      <div
+        className="ah-landing-frame ah-landing-frame-inner"
+        style={frame}
+      >
         {/* The scrolling card column — the one moving part. `.scroll-silent`
             hides the native scrollbar (whose track would draw a banned vertical
             rule); wheel / touch / keyboard scroll are unaffected. */}

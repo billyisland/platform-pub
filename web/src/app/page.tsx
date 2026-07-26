@@ -22,8 +22,6 @@ export const metadata: Metadata = {
   },
 }
 
-const GRID = 8
-
 const HEADLINE =
   'all.haus is a writing platform dedicated to three radical propositions:'
 
@@ -40,25 +38,26 @@ const PROSE = [
 ]
 
 // Live-site screengrabs shown as cards below the sell text. Real images live at
-// these paths under web/public, pre-cropped to the frame's 16:10 (LandingShot
-// paints them `objectFit: cover`, so shipping any other aspect just throws
-// pixels away); if one ever goes missing the frame falls back to a faint-disc
-// placeholder rather than a broken-image glyph. Keep alt text descriptive, and
-// keep it honest about what the shot actually shows.
+// these paths under web/public, shipped at their CAPTURE size (full 1848×1056
+// viewport grabs) — the frame is cut to that ratio rather than the images being
+// padded or cropped to a chosen frame; see LandingVessel's SHOT_RATIO. If one
+// ever goes missing the frame falls back to a faint-disc placeholder rather than
+// a broken-image glyph. Keep alt text descriptive, and keep it honest about what
+// the shot actually shows.
 const SHOTS = [
   {
     src: '/landing/workspace.webp',
-    alt: 'The all.haus workspace: four feeds open side by side as columns, each numbered, on a pale floor.',
+    alt: 'The all.haus workspace in light mode: four numbered feeds open side by side as columns on a pale floor, each with its own wall colour and an “add source” bar along the bottom.',
     caption: 'Your feeds, side by side',
   },
   {
     src: '/landing/omnivore.webp',
-    alt: 'The same workspace in dark mode, its feeds carrying posts marked via Bluesky, via Nostr and via RSS.',
+    alt: 'The same workspace in dark mode: four feeds whose posts are marked via Bluesky, via Nostr and via RSS — a Guardian headline column beside Substack essays beside Bluesky replies.',
     caption: 'Bluesky, Nostr, RSS — read together',
   },
   {
     src: '/landing/reader.webp',
-    alt: 'Reading an article on all.haus: the prose breaks at a “Keep reading” panel offering to continue for a few pence from your reading credit.',
+    alt: 'Reading an article on all.haus: the prose breaks at a “Keep reading” panel offering to continue for £0.75, with a subscription offered as the alternative.',
     caption: 'Read it — pay a few pence',
   },
 ]
@@ -111,15 +110,19 @@ export default function HomePage() {
       <HomeRedirect />
 
       {/* Vessel area — fills all space above the nav row's reserved band and
-          centres the column; the GRID margins are the bone floor showing around
-          the vessel. No bottom padding: the band on the parent carries it. */}
+          centres the column. On desktop its side padding is the bone floor
+          showing around the vessel; ON MOBILE THAT MARGIN GOES and the vessel
+          runs the full viewport width, which is why the padding lives in
+          `.ah-landing-area` (globals.css §1c) rather than inline: the page is
+          SSR'd, so the switch has to be a media query. No bottom padding
+          either way — the band on the parent carries it. */}
       <div
+        className="ah-landing-area"
         style={{
           flex: 1,
           minHeight: 0,
           display: 'flex',
           justifyContent: 'center',
-          padding: `${GRID * 3}px ${GRID * 2}px 0`,
         }}
       >
         <div
