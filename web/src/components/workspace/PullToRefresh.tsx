@@ -44,6 +44,14 @@ function findScrollParent(el: HTMLElement, axis: Axis): HTMLElement {
   return el;
 }
 
+// NOTE: a horizontal feed's scroller sets `overscroll-behavior-x: contain`
+// (Vessel.tsx), so a toward-mouth scroll at the mouth no longer chains out to
+// the floor pan or on to the browser's back gesture. That removes the ambiguity
+// this component used to arbitrate with a `floorCanConsume` guard — which, kept,
+// would now simply refuse to refresh whenever the floor happened to be panned.
+// The arm-after-idle rule below is the whole guard: come to rest at the mouth,
+// then scroll toward it again.
+
 export function PullToRefresh({
   onRefresh,
   children,
@@ -73,23 +81,6 @@ export function PullToRefresh({
     [horizontal],
   );
 
-  // Horizontal only: whether the next scrollable ancestor ABOVE the vessel's
-  // scroller (the workspace floor) can still consume a leftward scroll. At the
-  // vessel's mouth a leftward wheel scroll-chains to the floor pan — the very
-  // gesture users repeat to pan a wide floor — so while the floor has room to
-  // pan, toward-mouth deltas are navigation, not a pull, and must not arm or
-  // accumulate a refresh. (Vertical never has this ambiguity: the floor has no
-  // vertical scroll.) Once the floor rests at its far left the gesture is
-  // unambiguous again and the normal arm-after-idle rules apply.
-  const floorCanConsume = useCallback(
-    (scroller: HTMLElement) => {
-      if (!horizontal) return false;
-      const floor = findScrollParent(scroller, "horizontal");
-      return floor !== scroller && floor.scrollLeft > 0;
-    },
-    [horizontal],
-  );
-
   const doRefresh = useCallback(() => {
     armed.current = false;
     if (armTimer.current) {
@@ -113,12 +104,11 @@ export function PullToRefresh({
       if (!el) return;
       const scroller = scrollRef?.current ?? findScrollParent(el, axis);
       if (scrollOffsetOf(scroller) > 0) return;
-      if (floorCanConsume(scroller)) return;
       const t = e.touches[0];
       startPos.current = horizontal ? t.clientX : t.clientY;
       active.current = true;
     },
-    [refreshing, scrollRef, axis, horizontal, scrollOffsetOf, floorCanConsume],
+    [refreshing, scrollRef, axis, horizontal, scrollOffsetOf],
   );
 
   const onTouchMove = useCallback(
@@ -161,7 +151,7 @@ export function PullToRefresh({
       // overflow-x scroller emits deltaY that the browser applies horizontally —
       // accept either, preferring the axis-native one.
       const delta = horizontal ? e.deltaX || e.deltaY : e.deltaY;
-      if (scrollOffsetOf(scroller) > 0 || delta >= 0 || floorCanConsume(scroller)) {
+      if (scrollOffsetOf(scroller) > 0 || delta >= 0) {
         // Scrolling through content or away from the mouth: disarm. Reaching the
         // mouth via this gesture must not count toward a refresh.
         wheelAccum.current = 0;
@@ -209,7 +199,7 @@ export function PullToRefresh({
         setPulling(dampened >= THRESHOLD * 0.8);
       }
     },
-    [refreshing, pullDistance, doRefresh, scrollRef, axis, horizontal, scrollOffsetOf, floorCanConsume],
+    [refreshing, pullDistance, doRefresh, scrollRef, axis, horizontal, scrollOffsetOf],
   );
 
   useEffect(() => {

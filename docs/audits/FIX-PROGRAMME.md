@@ -23,6 +23,82 @@ starts.
 
 ## Progress
 
+- **2026-07-26 (feed feel: the horizontal axis gets one owner, and the card gets
+  a handle)** — Two reported feel bugs in the workspace, both with the same
+  shape: an affordance that existed but had no way to be found, or had three
+  meanings at once. Spec: `WORKSPACE-COLUMN-LAYOUT-ADR.md` §X (amended).
+
+  **A horizontal feed now OWNS the sideways axis inside its walls.** Reported as
+  "scrolling a horizontal feed is flukey, and scrolling right usually acts like
+  the browser back button". It did: three consumers shared one gesture, and which
+  one got it depended on scroll state the user cannot see — the feed scrolled to
+  its mouth, then the gesture **scroll-chained** out to pan the floor, then, once
+  the floor had also run out, the browser claimed it as a back/forward swipe. The
+  fix is containment at the innermost consumer: the horizontal vessel's scroll
+  body sets `overscroll-behavior-x: contain` (`Vessel.tsx`), so a swipe means
+  exactly one thing — scroll the cards, and at the mouth, pull to refresh (which
+  on a ⊐ vessel is a swipe RIGHT, the mouth being the left where newest arrives:
+  precisely the gesture the browser was stealing). Pan the floor from the floor,
+  the muster, or Ctrl+←/→.
+
+  **The floor's own `contain` was not enough, and the reason is worth recording.**
+  `Floor` has declared `overscroll-behavior-x: contain` since Slice 3, but
+  browsers only honour it on an element that is **actually scrollable** — and a
+  taut floor narrower than the viewport (two or three feeds on a wide screen: the
+  common case) is not one, so the declaration was silently inert and the document
+  got the gesture. `WorkspaceView`'s `Floor` now also pins
+  `overscroll-behavior-x: none` on `<html>` for as long as the workspace is
+  mounted, restoring the previous value on unmount so the rest of the site keeps
+  its back-swipe. Nothing in the workspace scrolls the document sideways, so a
+  horizontal document overscroll there can only ever be the nav gesture.
+
+  **This SUPERSEDES the 2026-07-24 `floorCanConsume` guard** (below, MEDIUM (2)),
+  which is deleted from `PullToRefresh.tsx`. That guard arbitrated the
+  pull-vs-pan ambiguity by disarming the refresh while the floor still had room
+  to pan — the right call while the chain existed, but containment removes the
+  ambiguity at its source, and kept, the guard would now simply refuse to refresh
+  whenever the floor happened to be panned (a state with no visible relationship
+  to the feed you are pulling). The arm-after-idle rule is the whole guard now:
+  come to rest at the mouth, scroll toward it again.
+
+  **The card gets a declared grab handle — a regression from `82274a8`.** Reported
+  as "very difficult to drag a card from one feed to another; the dropzone may be
+  too small". The dropzone was in fact the whole vessel; the **grab** was the
+  problem. Before `82274a8` (selectable card text, 13 Jul) the card pinned
+  `draggable`; after it, drag arms only where `isDragSurface` says "bare chrome",
+  which on a card is the 16px padding ring and the gaps between rows — correct,
+  invisible, and unfindable. `isDragSurface` now takes an optional handle
+  selector (a nominated region grabs even though it holds its own text; controls
+  inside it still win, since the walk hits `NO_DRAG_SELECTOR` first), and the
+  **byline row** is that handle, carrying `cursor: grab` — the only thing on the
+  card that says so. It is the honest choice of handle: the gesture moves the
+  SOURCE, and the byline is what names it. Scoped to `level="feed"`, so thread
+  ancestors/replies (which share the host item's `dragData`) don't advertise a
+  handle that would move the wrong source. The standard-density-only gate is
+  dropped: it existed because a tightened card has no bare chrome left to grab,
+  and a condensed/headline feed is exactly where source curation happens.
+
+  **And the drop side stops lying.** `dataTransfer` is deliberately unreadable
+  during `dragover`, so a vessel could not tell a card dragged out of itself from
+  one dragged in — every vessel armed, including the origin, which is the
+  feedback that makes real targets hard to pick out. New
+  `web/src/lib/workspace/cardDrag.ts` publishes the origin feed for the gesture's
+  lifetime (module-level: a drag is singular by construction, and its two ends
+  live in different component trees) and owns the `CARD_DRAG_MIME` constant both
+  ends were spelling by hand. The origin feed now stays unarmed (no
+  `preventDefault`, so the cursor reads "no drop"); real targets ring in
+  **crimson**, distinct from the merge-armed wall colour — which, drawn at
+  `outline-offset: -4` over an 8px wall, was painting the wall its own colour on
+  two of four sides and answering nothing.
+
+  **Residual, deliberate:** panning the floor by scrolling *over* a horizontal
+  feed is gone. If that proves a real loss, the fix is an explicit modifier
+  (Shift+scroll chaining through), not reopening the implicit chain.
+
+  Pre-flight: `check-hairlines.sh` clean on all touched files, `tsc --noEmit`
+  clean, `next build` green, root eslint 0 errors, 77 workspace tests
+  (`layout.test.ts` + `workspace.test.ts`) pass.
+
 - **2026-07-26 (landing: real screengrabs, and the mobile vessel goes full-bleed)** —
   A small follow-on to the register sweep below, on `/` only. Spec:
   `LOGGED-OUT-REGISTER-ADR.md` §IX departure 7bis.

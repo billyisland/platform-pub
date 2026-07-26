@@ -60,6 +60,7 @@ export function PostByline({
   trailing,
   replyingTo,
   feedId,
+  dragHandle,
 }: {
   post: Post;
   palette: VesselPalette;
@@ -73,6 +74,9 @@ export function PostByline({
   // thread it) but unused — the pip no longer opens a panel. See pipNode below.
   onPipOpen?: PipOpen;
   feedId?: string;
+  // The card this byline heads can be dragged into another feed, so the byline
+  // is its grab handle (Byline.tsx::dragHandle).
+  dragHandle?: boolean;
 }) {
   // The glyph belongs to the metadata cluster, so it rides the trailing slot
   // immediately after the timestamp and ahead of any caller-supplied trailing
@@ -95,6 +99,7 @@ export function PostByline({
         trailing={merged}
         replyingTo={replyingTo}
         feedId={feedId}
+        dragHandle={dragHandle}
       />
     );
   }
@@ -106,6 +111,7 @@ export function PostByline({
       trailing={merged}
       replyingTo={replyingTo}
       feedId={feedId}
+      dragHandle={dragHandle}
     />
   );
 }
@@ -125,6 +131,7 @@ function NativeByline({
   trailing,
   replyingTo,
   feedId,
+  dragHandle,
 }: {
   post: Post;
   palette: VesselPalette;
@@ -132,6 +139,7 @@ function NativeByline({
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
   feedId?: string;
+  dragHandle?: boolean;
 }) {
   const writer = useWriterName(post.author.pubkey!);
   const name = writer?.displayName ?? post.author.pubkey!.slice(0, 12) + "…";
@@ -157,6 +165,7 @@ function NativeByline({
         onNameMouseEnter={hover.onMouseEnter}
         onNameMouseLeave={hover.onMouseLeave}
         dataExplain="card.byline"
+        dragHandle={dragHandle}
       />
       {hover.open && hover.id && (
         <AuthorModal
@@ -182,6 +191,7 @@ function ExternalByline({
   trailing,
   replyingTo,
   feedId,
+  dragHandle,
 }: {
   post: Post;
   palette: VesselPalette;
@@ -189,6 +199,7 @@ function ExternalByline({
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
   feedId?: string;
+  dragHandle?: boolean;
 }) {
   const name =
     post.author.displayName ??
@@ -214,6 +225,7 @@ function ExternalByline({
         onNameMouseEnter={hover.onMouseEnter}
         onNameMouseLeave={hover.onMouseLeave}
         dataExplain="card.byline"
+        dragHandle={dragHandle}
       />
       {hover.open && hover.id && (
         <AuthorModal

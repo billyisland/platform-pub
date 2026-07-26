@@ -2093,6 +2093,24 @@ function Floor({
   // Register the floor as an explainable root (EXPLAIN-ADR D4). Inert outside an
   // ExplainProvider (the loading/redirect Floor), so this is a no-op there.
   const ref = useExplainable("floor", { ref: floorRef });
+
+  // The floor's own `overscroll-behavior-x: contain` only bites while the floor
+  // is ACTUALLY scrollable — a taut floor narrower than the viewport (two or
+  // three feeds on a wide screen: the common case) is not, so the browser
+  // ignores it and hands a sideways swipe to its back/forward gesture. On a
+  // surface where sideways is how both the feeds and the floor move, that reads
+  // as the workspace randomly navigating away. Nothing here scrolls the
+  // DOCUMENT sideways, so the document's horizontal overscroll can only ever be
+  // that gesture; refuse it for as long as the workspace is mounted, and hand it
+  // back on the way out so the rest of the site keeps it.
+  useEffect(() => {
+    const html = document.documentElement;
+    const prev = html.style.overscrollBehaviorX;
+    html.style.overscrollBehaviorX = "none";
+    return () => {
+      html.style.overscrollBehaviorX = prev;
+    };
+  }, []);
   return (
     <div
       ref={ref}

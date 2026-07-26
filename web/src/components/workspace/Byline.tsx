@@ -27,6 +27,7 @@ export function Byline({
   onNameMouseEnter,
   onNameMouseLeave,
   dataExplain,
+  dragHandle,
 }: {
   pipNode?: React.ReactNode;
   name: string;
@@ -43,6 +44,12 @@ export function Byline({
   // Explain-engine leaf tag (EXPLAIN-ADR D4). Only PostByline passes it, so the
   // shared Byline stays untagged in its other (thread / playscript) contexts.
   dataExplain?: string;
+  // This byline is the card's grab handle for drag-a-source-into-another-feed
+  // (post/chassis.tsx::CARD_DRAG_HANDLE_SELECTOR). It reads as the right handle
+  // because the gesture moves the SOURCE and the byline is what names it — and
+  // `cursor: grab` is the only thing on the card that says so, which is why the
+  // affordance lives here rather than on bare chrome the user has to discover.
+  dragHandle?: boolean;
 }) {
   const nameHover = {
     onMouseEnter: onNameMouseEnter,
@@ -51,8 +58,9 @@ export function Byline({
   return (
     <div
       className={`flex items-center gap-2 label-ui ${className}`}
-      style={{ color: palette.cardMeta }}
+      style={{ color: palette.cardMeta, cursor: dragHandle ? "grab" : undefined }}
       data-explain={dataExplain}
+      data-card-drag-handle={dragHandle ? "" : undefined}
     >
       {replyingTo && (
         <>

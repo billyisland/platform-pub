@@ -25,15 +25,26 @@ export function hasOwnText(el: Element): boolean {
   return false;
 }
 
+/**
+ * `handleSelector` — an OPT-IN declared grab handle. Bare-chrome-only is an
+ * honest default for a pane, but on a feed card it leaves a target the user has
+ * to hunt for: nearly every pixel of a card is text, so the drag surface is the
+ * padding ring and the gaps between rows, with nothing saying so. A caller can
+ * therefore nominate a region (the byline row) that grabs even though it holds
+ * its own text. Controls INSIDE the handle still win — the walk hits
+ * NO_DRAG_SELECTOR first — so a linked author name stays a link.
+ */
 export function isDragSurface(
   target: Element,
   boundary: Element,
   clientX: number,
   clientY: number,
+  handleSelector?: string,
 ): boolean {
   let el: Element | null = target;
   while (el && el !== boundary) {
     if (el.matches?.(NO_DRAG_SELECTOR)) return false;
+    if (handleSelector && el.matches?.(handleSelector)) return true;
     el = el.parentElement;
   }
   if (hasOwnText(target)) return false;

@@ -4,6 +4,16 @@ import React from "react";
 import type { Density, VesselPalette } from "../workspace/tokens";
 import type { PipStatus } from "../../lib/ndk";
 import { isDragSurface } from "../../lib/dragSurface";
+import {
+  CARD_DRAG_MIME,
+  beginCardDrag,
+  endCardDrag,
+} from "../../lib/workspace/cardDrag";
+
+// The card's declared grab handle (see CARD_DRAG_HANDLE_ATTR's consumer,
+// Byline.tsx). Bare card chrome grabs too, but it is only the padding ring and
+// the gaps between rows — findable once you know, invisible until then.
+export const CARD_DRAG_HANDLE_SELECTOR = "[data-card-drag-handle]";
 
 // =============================================================================
 // PostCard chassis — the shared shell + context for the unified card family.
@@ -53,16 +63,21 @@ export function PostCardShell({
   children: React.ReactNode;
 }) {
   const padding = ctx.density !== "standard" ? "8px 12px" : "16px";
-  const canDrag = !!ctx.dragData && ctx.density === "standard";
+  // Every density can be dragged. The old standard-only gate existed because a
+  // tightened card has almost no bare chrome left to grab by — but the byline
+  // handle below is present at every density, and a condensed / headline feed is
+  // exactly where source curation happens.
+  const canDrag = !!ctx.dragData;
   const rootRef = React.useRef<HTMLDivElement>(null);
 
   // `draggable` and text selection are mutually exclusive: a draggable element
   // swallows the mousedown that would otherwise begin a selection. So instead of
-  // pinning `draggable` on, we resolve it per pointerdown — land on bare card
-  // chrome (padding / margins) and the HTML5 drag-to-another-feed is armed; land
-  // on the body text, a link, or a control and we disarm it so the browser is
-  // free to select or click. Set imperatively (not via state) so it lands before
-  // the same gesture's dragstart, with no re-render race.
+  // pinning `draggable` on, we resolve it per pointerdown — land on the byline
+  // handle or on bare card chrome (padding / margins) and the HTML5
+  // drag-to-another-feed is armed; land on the body text, a link, or a control
+  // and we disarm it so the browser is free to select or click. Set imperatively
+  // (not via state) so it lands before the same gesture's dragstart, with no
+  // re-render race.
   const onPointerDown = canDrag
     ? (e: React.PointerEvent) => {
         const el = rootRef.current;
@@ -72,6 +87,7 @@ export function PostCardShell({
           el,
           e.clientX,
           e.clientY,
+          CARD_DRAG_HANDLE_SELECTOR,
         );
       }
     : undefined;
@@ -114,14 +130,16 @@ export function PostCardShell({
       onDragStart={
         canDrag
           ? (e) => {
-              e.dataTransfer.setData(
-                "application/x-vessel-card",
-                ctx.dragData!,
-              );
+              e.dataTransfer.setData(CARD_DRAG_MIME, ctx.dragData!);
               e.dataTransfer.effectAllowed = "move";
+              // dataTransfer is unreadable during dragover, so publish the
+              // origin feed for the gesture's lifetime — that is what lets the
+              // OTHER vessels light up and this one stay quiet.
+              beginCardDrag(ctx.feedId);
             }
           : undefined
       }
+      onDragEnd={canDrag ? () => endCardDrag() : undefined}
       style={{
         background: ctx.palette.cardBg,
         padding,

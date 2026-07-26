@@ -29,6 +29,7 @@ import {
   AUTOPAN_MAX_SPEED,
   FACTORY_W,
 } from "../../lib/workspace/layout";
+import { CARD_DRAG_MIME, cardDragOrigin } from "../../lib/workspace/cardDrag";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 import {
   paletteFor,
@@ -636,7 +637,11 @@ export function Vessel({
 
   function handleChassisDragOver(e: React.DragEvent) {
     if (!onCardDrop) return;
-    if (!e.dataTransfer.types.includes("application/x-vessel-card")) return;
+    if (!e.dataTransfer.types.includes(CARD_DRAG_MIME)) return;
+    // The feed the card came from is not a destination: leaving it unarmed (no
+    // preventDefault, so the cursor reads "no drop") is what makes the real
+    // targets legible — every vessel lighting up says nothing.
+    if (cardDragOrigin() === feedId) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     if (!isDragTarget) setIsDragTarget(true);
@@ -651,7 +656,7 @@ export function Vessel({
   function handleChassisDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragTarget(false);
-    const raw = e.dataTransfer.getData("application/x-vessel-card");
+    const raw = e.dataTransfer.getData(CARD_DRAG_MIME);
     if (!raw || !onCardDrop) return;
     onCardDrop(raw);
   }
@@ -751,8 +756,15 @@ export function Vessel({
           height: chassisH,
           display: "flex",
           flexDirection: "column",
-          outline:
-            isDragTarget || armed ? `4px solid ${palette.walls}` : undefined,
+          // A merge-armed vessel answers in its own wall colour (the feed it is
+          // about to absorb becomes part of it). A card-drop target answers in
+          // crimson: the wall colour would be painting the wall its own colour
+          // on two of the four sides, which is no answer at all.
+          outline: isDragTarget
+            ? `4px solid ${palette.crimson}`
+            : armed
+              ? `4px solid ${palette.walls}`
+              : undefined,
           outlineOffset: -4,
           transition: "outline-color 120ms ease-out",
         }}
@@ -816,6 +828,15 @@ export function Vessel({
             minHeight: 0,
             overflowY: heightSet && !isHorizontal ? "auto" : undefined,
             overflowX: isHorizontal ? "auto" : undefined,
+            // A horizontal feed OWNS the sideways axis inside its walls. Left to
+            // chain, a swipe toward the mouth ran the feed to its start, then
+            // panned the floor, then — once the floor was also at its end — was
+            // handed to the browser as a back-navigation gesture, so the one
+            // gesture meant three things depending on scroll state you cannot
+            // see. Contained, it means one: scroll the feed, and at the mouth,
+            // pull to refresh. Pan the floor from the floor, the muster, or
+            // Ctrl+←/→.
+            overscrollBehaviorX: isHorizontal ? "contain" : undefined,
             cursor: "default",
           }}
         >

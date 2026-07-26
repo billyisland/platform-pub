@@ -823,7 +823,25 @@ all fixed the same day (FIX-PROGRAMME 2026-07-22):
   cycle — a §VII violation), and horizontal pull-to-refresh disarms while the
   floor can still pan left under the cursor (`floorCanConsume` in
   PullToRefresh.tsx — a leftward wheel at the mouth scroll-chains into the
-  floor pan, which must not walk toward a refresh).
+  floor pan, which must not walk toward a refresh). **`floorCanConsume` was
+  SUPERSEDED and deleted 2026-07-26** — see the next note.
+- **A horizontal feed owns the sideways axis inside its walls; the floor does
+  not reach into it** (2026-07-26). Scroll-chaining gave one gesture three
+  meanings in sequence — scroll the feed, pan the floor, then the browser's
+  back/forward swipe — selected by scroll state the user cannot see, which read
+  as the workspace navigating away at random. The horizontal vessel's scroll
+  body now sets `overscroll-behavior-x: contain`, so the gesture means one
+  thing and pull-to-refresh at the mouth is reachable; `floorCanConsume`, which
+  arbitrated the old ambiguity, is deleted (kept, it would refuse to refresh
+  whenever the floor happened to be panned). **The floor's own `contain` was
+  inert in the common case and this is a browser rule worth knowing:
+  `overscroll-behavior` is only honoured on an element that is actually
+  scrollable, and a taut floor narrower than the viewport is not** — so `Floor`
+  additionally pins `overscroll-behavior-x: none` on `<html>` while the
+  workspace is mounted, restoring it on unmount. Consequence, accepted: the
+  floor no longer pans by scrolling over a horizontal feed (it still pans from
+  the floor, the muster, and Ctrl+←/→). If that is a real loss the answer is an
+  explicit modifier, not the implicit chain.
 - **Rule 1 hit-tests the slot's own rect, not the column span.** A slot
   narrower than its column left-aligns; the empty band beside it used to
   count as "over the feed" and could arm a merge from visually empty ground.
