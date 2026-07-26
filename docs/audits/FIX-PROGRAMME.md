@@ -23,6 +23,81 @@ starts.
 
 ## Progress
 
+- **2026-07-26 (the logged-out register — the black topbar is deleted)** — Eight
+  commits (`34eb21b`…`335c363`) closing the whole logged-out sweep, tranches 1–3
+  plus its dark-mode audit. Spec + as-built: `docs/adr/LOGGED-OUT-REGISTER-ADR.md`
+  (§IX is the as-built record — read it before touching the register).
+
+  **The finding.** `/`, `/about` and `/admin/*` had already left the 60px black
+  topbar via a `chromelessRoute` allow-list; everything else logged-out still ran
+  the retired marketing/auth register. So the site shipped two houses at once — a
+  visitor landing on `/` met the bone floor and the ⊔ walls; a visitor following a
+  shared article link, which is how most people arrive at a platform like this,
+  met a black beam. An allow-list that grows every time a page is redesigned is a
+  migration in progress, not a design.
+
+  **What shipped.** `Nav.tsx` and `LandingNavRow.tsx` are deleted and nothing
+  mounts a topbar: every route is chromeless, and the sole chrome off the
+  workspace is one fixed bottom `PublicNavRow`, mounted once by `LayoutShell` for
+  any non-workspace route with no pane overlay open. It serves **members too** —
+  the retired `Nav` rendered a bare wordmark beam for them precisely because
+  standalone routes sit outside the workspace, so the row's *left end* varies by
+  auth (the two CTAs for a visitor, each page showing the one it is not; nothing
+  but the lockup for a member, pointing at `/reader`) rather than its mounting.
+  New chassis in `web/src/components/public/`: `palette.ts` (`usePublicPalette` +
+  the register's constants + the derived `controlLine`/`scrollThumb`),
+  `PublicVessel` (single-wall ⊔, fitted, scroll body), `PublicShell` (fitted),
+  `PublicPage` (scrolling, for the share/SEO surfaces), `PublicNavRow`, and
+  `Field.tsx`. Rewritten: `/auth`, `/waitlist`, `/auth/verify`,
+  `/auth/google/callback`, `/about` (+ metadata, readers-first), `error.tsx`,
+  `/invite/[token]`, `/subscribe/[code]`, `/tribute/claim`. New: `not-found.tsx`
+  — there was none, so every 404 fell through to the Next.js default.
+  Wrapper-only on the six share/SEO routes, deliberately: each delegates to a
+  component *also* mounted in a workspace overlay, so restyling from there would
+  silently redesign the member surface.
+
+  **Three real bugs found on the way, all verified in source before fixing.**
+  (1) **`.btn-accent` rendered crimson-on-near-black in dark, sitewide** — `color:
+  var(--ah-white)`, and `white` is a `DARK_SLUG` that inverts to 30 29 26 while
+  crimson (an accent) holds. 11 call sites across 8 files; `::selection` had it
+  too. Fixed at source with a slug for the ROLE — `on-crimson`, outside
+  `DARK_SLUGS`, because the ground it sits on never inverts either. (2)
+  **`bg-grey-50` on `/read/[postId]` does not exist** — the theme defines `grey`
+  at 100/200/300/400/600 only, so the page has never had a background and the
+  white reading column has been floating on the browser default; the `shadow-sm`
+  was compensating for it. (3) **`Footer.tsx` was orphaned** and pointed at
+  `/community-guidelines`, `/privacy` and `/terms`, none of which exist as
+  routes. Deleting it removes the dead links, not the requirement.
+
+  **Corrections to the sweep as drafted**, each because applying it as-written
+  would have been wrong: `/` keeps its own chassis (the drafted rewrite was cut
+  against an 11:39 snapshot and would have reverted the screengrab showcase, the
+  `'FOR ALL'` coda and the tightened copy); the row's band is padding INSIDE a
+  full-viewport box rather than subtracted from the height (subtracted, the GRID
+  of clearance fell through to `body` and drew a stripe of the wrong colour); the
+  band is reserved from first paint with only the row waiting on auth (gating
+  both meant a 64px reflow when `fetchMe` returned); `ground={false}` drops
+  `PublicPage`'s `minHeight` too (`/article` otherwise carried the band's worth
+  of dead scroll); and the drafted `palette.ts` did not compile (`VesselPalette`
+  imported twice — `TS2300`, plus `no-duplicate-imports` once merged).
+
+  **And the machinery the topbar was hiding behind.** `usePaneRedirect`, and the
+  entire `ah:session` no-FOUC apparatus — the localStorage breadcrumb, the
+  `html.ah-session` class, the blocking `<head>` script, and the CSS that hid
+  `.site-topbar`/`.site-footer` and zeroed `pt-[60px]`. All of it existed to stop
+  a member painting logged-out chrome before auth resolved; there is none left.
+  Three logged-in tool surfaces now clear the row's band instead (`/write`,
+  `/admin/*`, `/traffology/*` — every other platform route is a redirect shim
+  into the workspace), and `/write` loses the `top-[53px]` sticky offset that
+  existed to clear the topbar's mobile height. CLAUDE.md's escape invariant
+  described all of it as standing rule and is rewritten; a new "public register"
+  section documents the chassis.
+
+  **Gates:** `next build` green, root lint 0 errors, `tsc` clean, hairline count
+  back to the pre-sweep 25 (the four new matches are comment prose quoting the
+  hairlines these files removed, marked `hairline-ok` with reasons). **NOT
+  browser-verified — see §11.**
+
 - **2026-07-25 (NAV-ROW-MUSTER-ADR Phase 3 — polish)** — Closed out the muster's
   deferred §VIII.3 polish. (1) **Floating hover-name label** (§V): the `title`
   stand-in is replaced by the vessel roundel's own `ROUNDEL_TOKENS` treatment
