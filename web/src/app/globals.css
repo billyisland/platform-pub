@@ -139,6 +139,15 @@
   --ah-winter-interior-lt: rgb(var(--ah-winter-interior-lt-rgb));
   --ah-winter-card-lt-rgb: 239 242 248;
   --ah-winter-card-lt: rgb(var(--ah-winter-card-lt-rgb));
+
+  /* Foreground on a crimson ground. Deliberately NOT `white`: `white` is a
+     DARK_SLUG, so html.dark takes it to 30 29 26 — while `crimson` is an accent
+     and holds at 181 36 42. Anything painting white-on-crimson through
+     `--ah-white` therefore rendered crimson-with-near-black-text under dark
+     mode (`.btn-accent` sitewide, and ::selection). This slug never inverts,
+     which is the whole point of it. */
+  --ah-on-crimson-rgb: 255 255 255;
+  --ah-on-crimson: rgb(var(--ah-on-crimson-rgb));
 }
 
 /* ── Global dark mode ────────────────────────────────────────────────────────
@@ -269,7 +278,8 @@ html.ah-session main {
 
   ::selection {
     background-color: var(--ah-crimson);
-    color: var(--ah-white);
+    /* `on-crimson`, not `white` — see the slug's note in :root. */
+    color: var(--ah-on-crimson);
   }
 
   /* No hairline hrs — use slab-rule classes instead */
@@ -471,7 +481,10 @@ html.ah-session main {
 
   .btn-accent {
     background: var(--ah-crimson);
-    color: var(--ah-white);
+    /* `on-crimson`, not `white`: `white` is a DARK_SLUG and inverts to 30 29 26
+       under html.dark, while crimson (an accent) holds — so this rendered
+       crimson-on-near-black on every .btn-accent in the app. See :root. */
+    color: var(--ah-on-crimson);
     font-family: 'Jost', system-ui, sans-serif;
     font-size: 0.9375rem;
     font-weight: 600;

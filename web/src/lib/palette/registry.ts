@@ -116,6 +116,10 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   { slug: 'winter-walls-lt', hex: '#2B3756', label: 'Feed scheme Winter (light) — walls & bar (deep slate indigo frame)' },
   { slug: 'winter-interior-lt', hex: '#D8DDEA', label: 'Feed scheme Winter (light) — interior (cool blue-grey ground)' },
   { slug: 'winter-card-lt', hex: '#EFF2F8', label: 'Feed scheme Winter (light) — card surface (clean cool white)' },
+  // Appended, not inserted next to `crimson`: position in this list is
+  // canonical (see the header — "colour 07" must keep meaning the same thing),
+  // so a new slug goes on the end.
+  { slug: 'on-crimson', hex: '#FFFFFF', label: 'Text/icon ON a crimson ground (.btn-accent, ::selection). NEVER inverts — crimson holds in dark, so its foreground must too' },
 ]
 
 export const PALETTE_STORAGE_KEY = 'ah:palette-overrides'
