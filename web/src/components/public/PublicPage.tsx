@@ -33,9 +33,14 @@ import type { ReactNode } from 'react'
 //
 // `ground` IS OPTIONAL because some of these surfaces bring their own.
 // ArticleReader's root is `min-h-screen bg-white` — it is a reading surface and
-// owns its ground. Painting bone behind it would be a layer nobody sees, and
-// `min-h-screen` inside a `calc(100dvh - band)` parent would push the page past
-// the fold for no reason. Pass `ground={false}` and let the child do it.
+// owns its ground. Painting bone behind it would be a layer nobody sees.
+//
+// AND `ground={false}` DROPS THE `minHeight` TOO — a child that owns its ground
+// owns its height, because in practice it says so with `min-h-screen`. Keeping
+// both would stack a full viewport inside a full viewport and leave the band's
+// worth of dead scroll at the foot of every short article. So the two cases are:
+// ground -> a 100dvh box with the band as padding inside it; no ground -> the
+// band alone, and the child decides how tall the page is.
 //
 // WHAT THIS COMPONENT MUST NOT DO IS TOUCH THE BODIES. Every one of these
 // routes renders a component that is ALSO mounted inside a workspace overlay —
@@ -50,7 +55,8 @@ import type { ReactNode } from 'react'
 
 interface PublicPageProps {
   children: ReactNode
-  /** Paint the bone floor. Pass false when the child supplies its own ground. */
+  /** Paint the bone floor AND stand a full viewport tall. Pass false when the
+   *  child supplies both (e.g. ArticleReader's `min-h-screen bg-white`). */
   ground?: boolean
   /** Centre the body at a pixel measure. Omit for full-bleed. */
   measure?: number
@@ -65,7 +71,7 @@ export function PublicPage({
     <div
       style={{
         background: ground ? 'var(--ah-bone)' : undefined,
-        minHeight: '100dvh',
+        minHeight: ground ? '100dvh' : undefined,
         paddingBottom: 'var(--ah-row-band, 0px)',
       }}
     >

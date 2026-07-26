@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { TagBrowser } from './TagBrowser'
 import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
+import { PublicPage } from '../../../components/public/PublicPage'
 import type { Post } from '../../../lib/post/types'
 
 // =============================================================================
@@ -68,8 +69,11 @@ export async function generateMetadata({ params }: { params: { tag: string } }):
 export default async function TagPage({ params }: { params: { tag: string } }) {
   const tagName = params.tag.toLowerCase()
   const data = await getTagPosts(tagName)
+  // Wrapper only. TagBrowser is also mounted by SurfaceOverlay inside the
+  // workspace, so its internals are a member-surface question, not a
+  // logged-out one.
   return (
-    <>
+    <PublicPage>
       <WorkspacePaneRedirect overlay="surface" params={{ surface: `/tag/${tagName}` }} />
       <TagBrowser
         tagName={tagName}
@@ -77,6 +81,6 @@ export default async function TagPage({ params }: { params: { tag: string } }) {
         initialTotal={data?.total}
         initialCursor={data?.nextCursor}
       />
-    </>
+    </PublicPage>
   )
 }

@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { WriterActivity } from '../../components/profile/WriterActivity'
 import WorkspacePaneRedirect from '../../components/layout/WorkspacePaneRedirect'
+import { PublicPage } from '../../components/public/PublicPage'
 import { Avatar } from '../../components/ui/Avatar'
 import type { WriterProfile } from '../../lib/api'
 
@@ -61,21 +62,34 @@ export default async function WriterProfilePage({ params }: { params: { username
   const writer = await getWriter(params.username)
   if (!writer) return notFound()
 
+  // The header below is written inline here rather than in a shared component,
+  // so unlike the other tranche-3 routes its type IS in scope — see the two
+  // corrections marked below. `WriterActivity` is not: ProfileOverlay mounts it
+  // too, and restyling it from here would redesign the member surface.
   return (
-    <div className="mx-auto max-w-article-frame px-4 sm:px-6 py-12">
+    <PublicPage>
+      <div className="mx-auto max-w-article-frame px-4 sm:px-6 py-12">
       <WorkspacePaneRedirect overlay="profile" params={{ user: params.username }} />
       {/* Static profile header — arrives as HTML */}
       <div className="mb-12">
         <div className="flex items-center gap-4 mb-4">
           <Avatar src={writer.avatar} name={writer.displayName ?? params.username} size={56} lazy={false} enlargeable />
           <div className="flex-1">
+            {/* `font-medium`, not `font-light`: the house's serif display weight
+                is medium everywhere else — `/`, `/about`, PublicTitle, every card
+                title — so a light serif at 3xl–4xl was a fourth weight the type
+                scale doesn't have. */}
             <h1
-              className="font-serif text-3xl sm:text-4xl font-light text-black"
+              className="font-serif text-3xl sm:text-4xl font-medium text-black"
               style={{ letterSpacing: '-0.02em' }}
             >
               {writer.displayName ?? params.username}
             </h1>
-            <p className="text-ui-xs text-grey-300 mt-0.5">@{params.username}</p>
+            {/* `grey-600`, not `grey-300`. grey-300 (185 183 175) is the
+                disabled/placeholder wash; it was carrying the handle, the counts
+                and the RSS link, which are facts rather than hints — and at
+                text-ui-xs on white it sits close to the AA floor. */}
+            <p className="text-ui-xs text-grey-600 mt-0.5">@{params.username}</p>
           </div>
         </div>
 
@@ -87,7 +101,7 @@ export default async function WriterProfilePage({ params }: { params: { username
             {writer.bio}
           </p>
         )}
-        <p className="mt-4 text-ui-xs text-grey-300">
+        <p className="mt-4 text-ui-xs text-grey-600">
           {writer.articleCount} article{writer.articleCount !== 1 ? 's' : ''}
           {' · '}
           {writer.followerCount} follower{writer.followerCount !== 1 ? 's' : ''}
@@ -96,7 +110,7 @@ export default async function WriterProfilePage({ params }: { params: { username
           {' · '}
           <a
             href={`/rss/${params.username}`}
-            className="label-ui text-grey-300 hover:text-black"
+            className="label-ui text-grey-600 hover:text-black"
           >
             RSS
           </a>
@@ -110,6 +124,7 @@ export default async function WriterProfilePage({ params }: { params: { username
         username={params.username}
         writer={writer}
       />
-    </div>
+      </div>
+    </PublicPage>
   )
 }

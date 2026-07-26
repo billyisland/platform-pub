@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { ExternalArticleReader } from '../../../components/article/ExternalArticleReader'
 import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
+import { PublicPage } from '../../../components/public/PublicPage'
 
 // =============================================================================
 // Reader Page — /read/:postId  (Server Component) — UNIVERSAL-POST-ADR Phase R
@@ -69,11 +70,18 @@ export default async function ReaderPage({ params }: { params: { postId: string 
   if (!target) return notFound()
 
   return (
-    <div className="min-h-screen bg-grey-50 py-8">
+    <PublicPage>
       <WorkspacePaneRedirect overlay="reader" params={{ read: params.postId }} />
+      {/* The reading column sits on the bone floor with no shadow. The house has
+          no elevation: a card is distinguished from its ground by being a
+          different colour, which is what every card in the workspace does. The
+          shadow was compensating for a ground that never rendered — the wrapper
+          was `bg-grey-50`, and the Tailwind theme defines `grey` at
+          100/200/300/400/600 only, so that class has always resolved to nothing
+          and the white column has been floating on the browser default. */}
       <div
-        className="mx-auto w-full bg-white shadow-sm"
-        style={{ maxWidth: 640 }}
+        className="mx-auto w-full"
+        style={{ maxWidth: 640, background: 'var(--ah-white)', marginTop: 32 }}
       >
         <ExternalArticleReader
           url={target.url}
@@ -81,6 +89,6 @@ export default async function ReaderPage({ params }: { params: { postId: string 
           siteName={target.sourceName}
         />
       </div>
-    </div>
+    </PublicPage>
   )
 }

@@ -5,6 +5,7 @@ import { renderMarkdown } from '../../../lib/markdown'
 import { ArticleReader } from '../../../components/article/ArticleReader'
 import { TraffologyMeta } from '../../../components/traffology/TraffologyMeta'
 import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
+import { PublicPage } from '../../../components/public/PublicPage'
 import { traffologyEnabled } from '../../../lib/featureFlags'
 import type { ArticleMetadata } from '../../../lib/api'
 
@@ -85,8 +86,11 @@ export default async function ArticlePage({ params }: { params: { dTag: string }
   // web/src/lib/traffology.ts, so not loading the <Script> is what stops it.
   const traffologyOn = traffologyEnabled()
 
+  // `ground={false}`: ArticleReader's root is `min-h-screen bg-white` — it is
+  // the reading surface and owns both its ground and its height. PublicPage
+  // contributes only the nav row's bottom band.
   return (
-    <>
+    <PublicPage ground={false}>
     <WorkspacePaneRedirect overlay="reader" params={{ article: params.dTag }} />
     {traffologyOn && <TraffologyMeta articleId={article.id} />}
     <ArticleReader
@@ -119,6 +123,6 @@ export default async function ArticlePage({ params }: { params: { dTag: string }
       publicationSlug={article.publication?.slug ?? undefined}
     />
     {traffologyOn && <Script src="/traffology.js" strategy="afterInteractive" />}
-    </>
+    </PublicPage>
   )
 }
