@@ -1,0 +1,228 @@
+'use client'
+
+import { paletteFor } from '../workspace/tokens'
+import { LIGHT_ISLAND_STYLE } from '../../lib/palette/island'
+import { useResolvedDark } from '../../stores/colorScheme'
+
+// =============================================================================
+// LandingVessel — `/`'s chassis. An ABSTRACTION of the workspace vessel, not a
+// picture of one.
+//
+// WHAT IT DELIBERATELY OMITS. A feed vessel carries a numeral in the reserved
+// bottom-left square, a descriptive-name roundel, and a 32px VesselBar that
+// REPLACES the bottom wall. All three are gone here, on purpose: they say "feed
+// n of m", which is a claim the landing page cannot make — there are no feeds
+// on it and the visitor has no account to hold any. What survives is the part
+// that is actually the house style: the ⊔ stance, the 8px wall, the 8px
+// lattice, square corners, cards on a continuous ground.
+//
+// SO THE BOTTOM IS A PLAIN WALL. The live workspace never shows that shape —
+// there the bar always occupies the bottom edge. This is the abstraction, not a
+// stale render: do NOT "fix" it by reinstating VesselBar. If the landing page
+// ever needs a control down there, it wants a new thing, not the feed's.
+//
+// THE DOUBLED WALL (the one addition). Wall, one GRID of interior, wall — so
+// the lattice reads as even stripes at the page's own edge, which is the
+// reading WORKSPACE-DESIGN-SPEC asks the grid square to have (grid square ≈
+// wall thickness, so wall/buffer/wall stripes evenly). A visitor meets the
+// measure before they ever meet a feed. Both frames open at the top: the mouth
+// is the arrival end, and closing it would make this a box rather than a vessel.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// THE VESSEL IS ALWAYS WHOLLY ON SCREEN; THE PROSE SCROLLS INSIDE IT
+// (amended 2026-07-25, from building this page). It first shipped growing to
+// its content, so on a laptop the bottom wall sat below the fold and you had to
+// scroll the page to find it. A ⊔ whose closing wall is off-screen isn't a
+// vessel — it's a left-and-right pair of rules, and the visitor has to scroll
+// to discover the shape they were meant to meet on arrival. It also
+// contradicted the workspace, where a feed is always wholly on screen and its
+// cards move inside it.
+//
+// So both frames are now fixed-height flex columns fed by PublicShell's fitted
+// height, and the INNERMOST element is the scroll body — `flex: 1 1 0`,
+// `minHeight: 0`, `overflowY: auto`, with PAD on the scroll body itself rather
+// than on the frame. That last detail is copied from Vessel.tsx: padding on the
+// scrolling element travels with the cards, so the first card starts at the
+// mouth and the last ends at the wall. Padding on the frame would leave a dead
+// band that content slides under, which looks like a bug.
+//
+// THE OUTER FRAME'S `padding: GRID` IS NOT CONTENT PADDING and does not move —
+// it IS the doubled wall's buffer, the whole point of the construction.
+//
+// SAME REASONING, SAME MECHANICS AS PublicVessel (the single-wall chassis every
+// other public page uses). If you change the scroll behaviour here, change it
+// there; they are one decision wearing two frames.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// NO CALL TO ACTION IN HERE. The waiting-list button lives once, in the nav
+// row, where it is on screen for the whole page rather than only at the foot of
+// it. A second copy at the end of the prose said the same words to the same
+// destination — on a page this short that reads as nagging, not as closing the
+// argument. If it ever comes back it belongs in a card of its own, not tacked
+// onto the bottom of the prose card.
+//
+// THE PROPOSITIONS ARE A REAL <ol>. They are literally three numbered
+// propositions, so the list is the ordered list, not div-soup with a decorative
+// numeral — a screen reader announces "list, 3 items" and the count. The <ol>
+// is one flex child of the scroll body with the same GAP as its siblings and
+// its own internal GAP between <li> cards, so every card gap stays uniform; the
+// crimson numeral is presentational (the <li> position already carries order).
+//
+// COLOUR. `basic` follows the global light/dark toggle — that is the whole
+// point of the neutral colourway, and unlike a seasonal scheme it has nothing
+// to preserve against it. So the palette is resolved with the resolved dark flag
+// exactly as Vessel.tsx resolves its own, and LIGHT_ISLAND_STYLE then pins the
+// derived neutral slugs so BASIC_DARK's explicit values aren't inverted a second
+// time by html.dark. Copy the pair or neither; the island alone would freeze the
+// page light, the flag alone would double-invert it. The flag is useResolvedDark
+// (the DOM class the pre-paint script set), not the store's lagging `dark`, so a
+// dark-mode visitor never paints the light vessel on the dark floor first.
+// =============================================================================
+
+const WALL = 8 // side-wall thickness (Vessel.tsx)
+const PAD = 16 // interior padding — lives on the scroll body
+const GAP = 12 // inter-card gap
+const GRID = 8 // the workspace lattice square — here, the wall buffer
+
+interface LandingVesselProps {
+  headline: string
+  propositions: string[]
+  prose: string[]
+}
+
+export function LandingVessel({
+  headline,
+  propositions,
+  prose,
+}: LandingVesselProps) {
+  const globalDark = useResolvedDark()
+  const palette = paletteFor('basic', globalDark)
+
+  const wallStyle = {
+    borderLeft: `${WALL}px solid ${palette.walls}`,
+    borderRight: `${WALL}px solid ${palette.walls}`,
+    borderBottom: `${WALL}px solid ${palette.walls}`,
+  }
+
+  // Every frame in the stack must be a shrinkable flex column, or the fitted
+  // height stops propagating at the first one that isn't and the scroll body
+  // never gets a scrollbar.
+  const frame = {
+    flex: '1 1 0',
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+  } as const
+
+  const card = {
+    background: palette.cardBg,
+    padding: '18px 20px',
+    flexShrink: 0,
+  }
+
+  return (
+    <div
+      style={{
+        ...LIGHT_ISLAND_STYLE,
+        ...wallStyle,
+        ...frame,
+        background: palette.interior,
+        // The doubled wall's buffer. Structural — not content padding.
+        padding: GRID,
+      }}
+    >
+      <div
+        style={{
+          ...wallStyle,
+          ...frame,
+          background: palette.interior,
+        }}
+      >
+        <div
+          data-vessel-scroll=""
+          className="ah-vessel-scroll"
+          style={{
+            padding: PAD,
+            flex: '1 1 0',
+            minHeight: 0,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: GAP,
+          }}
+        >
+          <div style={card}>
+            <h1
+              className="font-serif font-medium tracking-tight"
+              style={{
+                fontSize: 30,
+                lineHeight: 1.2,
+                color: palette.cardTitle,
+                margin: 0,
+              }}
+            >
+              {headline}
+            </h1>
+          </div>
+
+          <ol
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: GAP,
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            {propositions.map((proposition, i) => (
+              <li key={i} style={card}>
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <span
+                    aria-hidden="true"
+                    className="font-mono text-mono-sm"
+                    style={{ color: palette.crimson, paddingTop: 3 }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span
+                    className="font-serif"
+                    style={{
+                      fontSize: 22,
+                      lineHeight: 1.4,
+                      color: palette.cardTitle,
+                    }}
+                  >
+                    {proposition}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div style={card}>
+            <div
+              className="font-mono"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 20,
+                fontSize: '1.0625rem',
+                lineHeight: 1.65,
+                letterSpacing: '0.01em',
+                color: palette.cardStandfirst,
+              }}
+            >
+              {prose.map((para, i) => (
+                <p key={i} style={{ margin: 0 }}>
+                  {para}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

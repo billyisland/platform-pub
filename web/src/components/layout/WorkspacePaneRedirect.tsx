@@ -3,7 +3,6 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../stores/auth'
-import { usePaneRedirect } from '../../stores/paneRedirect'
 
 // =============================================================================
 // WorkspacePaneRedirect
@@ -13,13 +12,14 @@ import { usePaneRedirect } from '../../stores/paneRedirect'
 //   profile  → /<username>     · /author/<id>
 //   surface  → /source/<id> · /tag/<name> · /pub/<slug>[/sub-view]
 // — are real, addressable, SEO/share/new-tab destinations, so they SSR full-page
-// for logged-out visitors (the marketing/share register, black topbar and all).
+// for logged-out visitors (the public share register: the page body under the
+// one nav row).
 //
 // But the overlay puts that same canonical URL in the address bar, so a reload
 // (or a shared link opened by a member) lands a *logged-in* user on the
-// standalone page — escaping the workspace to the retired black topbar. This
-// bounces them back in: replace the URL with /reader?overlay=<name>&<seed> so
-// the workspace reopens the matching pane on that target (overlays.ts dispatcher).
+// standalone page rather than in the workspace. This bounces them back in:
+// replace the URL with /reader?overlay=<name>&<seed> so the workspace reopens
+// the matching pane on that target (overlays.ts dispatcher).
 //
 // Mirrors HomeRedirect: mounted inside the SSR'd page so logged-out first paint
 // is untouched; only authenticated sessions are redirected. `replace` (not
@@ -37,14 +37,12 @@ export default function WorkspacePaneRedirect({
   const router = useRouter()
   const user = useAuth((s) => s.user)
   const loading = useAuth((s) => s.loading)
-  const setRedirectActive = usePaneRedirect((s) => s.setActive)
-
-  // Tell LayoutShell this page will redirect a logged-in visitor, so it holds
-  // the black topbar through the auth-resolve window instead of flashing it.
-  useEffect(() => {
-    setRedirectActive(true)
-    return () => setRedirectActive(false)
-  }, [setRedirectActive])
+  // NO LONGER SIGNALS THE SHELL. This used to flip a `usePaneRedirect` bit so
+  // LayoutShell could hold the black topbar through the auth-resolve window and
+  // spare a member the flash of chrome they were about to leave. There is no
+  // topbar to hold: every route is chromeless, the one nav row is the same for
+  // members and visitors, and it waits for auth to resolve before it renders at
+  // all. The store is deleted.
 
   useEffect(() => {
     if (loading || !user) return

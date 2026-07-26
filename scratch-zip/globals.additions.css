@@ -1,0 +1,114 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPEND TO web/src/app/globals.css, inside the same @layer components block
+   as the other utility classes (next to the slab rules).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ── 1. The fitted public page ──────────────────────────────────────────────
+   PublicShell's chassis. The vessel is wholly on screen and its CONTENTS
+   scroll; the page itself does not. See PublicShell for the reasoning.
+
+   The height math lives here rather than in the component because the
+   short-viewport fallback is a media query. Above 480px tall the column is
+   fitted; below it (landscape phones, split-screen, a browser window dragged
+   short) the remainder would be too little to hold a card, so the fit is
+   abandoned and the page scrolls with the row's band reserved as padding
+   instead. `--ah-row-band` is published by LayoutShell — NAV_ROW_H + GRID when
+   the public nav row is mounted, 0 when it isn't.
+
+   `dvh`, not `vh`: on mobile Safari `100vh` is the tallest the viewport ever
+   gets, so a `vh`-fitted vessel hides its bottom wall behind the browser
+   chrome — the exact bug the fitted layout exists to fix. The `vh` line is a
+   fallback for anything that doesn't know `dvh` and is overridden immediately
+   below it.
+
+   The top padding yields on short screens: `min(64px, 8vh)` keeps the 64px
+   headroom the landing page was designed with on a laptop, and gives it back
+   to the vessel on a phone, where 64px of empty floor is 15% of the screen. */
+
+.ah-public-fit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: min(64px, 8vh) 16px 0;
+}
+
+@media (min-height: 480px) {
+  .ah-public-fit {
+    height: calc(100vh - var(--ah-row-band, 0px));
+    height: calc(100dvh - var(--ah-row-band, 0px));
+  }
+}
+
+@media (max-height: 479px) {
+  .ah-public-fit {
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-bottom: var(--ah-row-band, 0px);
+  }
+}
+
+
+/* ── 2. The vessel scroll body ──────────────────────────────────────────────
+   A default scrollbar sitting inside a ⊔, a few pixels from an 8px ink wall,
+   is chrome the house never designed — and on Windows it is a 17px light-grey
+   trough that reads as a third wall of the wrong weight. `currentColor` takes
+   the walls colour because the scroll body inherits it from the frame, so the
+   thumb tracks the palette (including the dark variant) without a second
+   declaration.
+
+   `overlay` where supported, so the thumb floats over the interior rather than
+   stealing width from the measure and reflowing the cards when content grows
+   past the fold. */
+
+.ah-vessel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: currentColor transparent;
+  overflow-y: overlay;
+}
+
+.ah-vessel-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ah-vessel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ah-vessel-scroll::-webkit-scrollbar-thumb {
+  background: currentColor;
+  border-radius: 0;
+}
+
+
+/* ── 3. The indeterminate slab ──────────────────────────────────────────────
+   The one animation the public register needs: an indeterminate progress slab
+   for /auth/verify, replacing the `border-2` spinning ring it used to draw.
+   The house has no spinner and does not want one — a spinning ring is a radius,
+   an animation and a borrowed idiom at once. This is the 4px slab weight moving
+   across the field it already occupies.
+
+   `prefers-reduced-motion` pins it at full width and lets the heading carry the
+   state, rather than merely slowing it down: an indeterminate bar that never
+   resolves is exactly the kind of ambient motion that setting exists to stop. */
+
+.ah-indeterminate-slab {
+  width: 40%;
+  animation: ah-slab-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes ah-slab-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ah-indeterminate-slab {
+    width: 100%;
+    animation: none;
+  }
+}
