@@ -303,11 +303,11 @@ export function ForallMenu({
     id: hf.id,
     label: hf.name,
   }));
-  // Sign-out is the terminal action, in its own group at the very bottom. The
-  // workspace is the only logged-in surface that renders no black topbar (the
-  // ∀ is its sole nav), so the topbar's avatar-dropdown "Log out" is
-  // unreachable here — the menu has to carry it. logout() clears the session;
-  // WorkspaceView's `!user` guard then bounces to /auth.
+  // Sign-out is the terminal action, in its own group at the very bottom. It
+  // lives here because the retired black topbar's avatar dropdown used to carry
+  // it and there is no topbar anywhere any more — the ∀ is the member's sole
+  // nav. logout() clears the session; WorkspaceView's `!user` guard then
+  // bounces to /auth.
   const accountRows: FocusRow[] = [
     {
       kind: "overlay",

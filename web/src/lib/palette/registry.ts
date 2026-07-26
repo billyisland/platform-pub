@@ -39,7 +39,7 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   { slug: 'grey-300', hex: '#B9B7AF', label: 'External card bar, disabled states, blockquote rule' },
   { slug: 'grey-400', hex: '#999999', label: 'Placeholders, muted text links, section-label text' },
   { slug: 'grey-600', hex: '#666666', label: 'Secondary text on light & glasshouse surfaces' },
-  { slug: 'nav-grey', hex: '#333333', label: 'Black-topbar dropdown 4px rules' },
+  { slug: 'nav-grey', hex: '#333333', label: 'UNUSED since the black topbar was deleted (2026-07-25) — it drew that dropdown\'s 4px rules. Kept: removing it would renumber every slug after it, and position in this list is canonical' },
   { slug: 'crimson', hex: '#B5242A', label: 'Accent — paid bar, selection, votes, errors, focus rings' },
   { slug: 'crimson-dark', hex: '#921D22', label: 'Crimson dark step (token crimson-dark)' },
   { slug: 'crimson-deep', hex: '#8B1B1F', label: 'Danger text-link hover' },

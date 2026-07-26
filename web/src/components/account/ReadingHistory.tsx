@@ -12,8 +12,8 @@ const PAGE_SIZE = 20
 
 // `inOverlay` is set when ReadingHistory renders inside the workspace Library
 // overlay: article titles open the reader in place (useReader.openNative)
-// instead of routing to the article page, which would mount the black topbar
-// and escape the workspace (CLAUDE.md: no workspace escapes).
+// instead of routing to the article page, which would leave the workspace for a
+// standalone surface (CLAUDE.md: no workspace escapes).
 export function ReadingHistory({ inOverlay = false }: { inOverlay?: boolean }) {
   const [items, setItems] = useState<ReadingHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
