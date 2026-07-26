@@ -4,24 +4,49 @@ import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { auth } from '../../../lib/api'
 import { useAuth } from '../../../stores/auth'
+import { PublicShell } from '../../../components/public/PublicShell'
+import {
+  PublicVessel,
+  PublicCard,
+  PublicTitle,
+  PublicBody,
+} from '../../../components/public/PublicVessel'
+import {
+  PublicButton,
+  IndeterminateSlab,
+} from '../../../components/public/Field'
 
 // =============================================================================
-// Magic Link Verification Page
+// Magic Link Verification — /auth/verify?token=<token>
 //
-// URL: /auth/verify?token=<token>
+// On mount: extract the token, POST /auth/verify, and on success hydrate the
+// session and push /reader. On failure, offer a fresh link.
 //
-// The email magic link points here. On mount:
-//   1. Extract token from URL
-//   2. POST /auth/verify with the token
-//   3. If valid: session cookie set, redirect to /feed
-//   4. If invalid/expired: show error with retry option
+// REDESIGNED 2026-07-25. This page had drifted furthest of any in the register:
+// `font-sans text-xl font-bold` headings (a type role that exists nowhere else
+// in the app — the house is serif for claims, mono for prose), a `border-2`
+// spinning ring, and a `bg-green-100 / text-green-600` tick lifted straight
+// from Tailwind's default palette. All three are gone.
+//
+// THERE IS NO SPINNER. The house has no spinner and does not want one: a
+// spinning ring is a radius, an animation and a borrowed idiom all at once. The
+// waiting state is a crimson slab that grows across the card — the same 4px
+// weight as every other line here, doing the one thing a progress indicator
+// actually has to do. It is indeterminate, so it loops; `prefers-reduced-motion`
+// holds it still at full width and lets the text carry the state.
+//
+// SUCCESS IS NOT A TICK. It is the word, in the serif, and the redirect. A tick
+// glyph in a coloured disc was the only iconographic state badge in the app and
+// it had no siblings to be consistent with.
 // =============================================================================
 
 export default function VerifyPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { fetchMe } = useAuth()
-  const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying')
+  const [status, setStatus] = useState<'verifying' | 'success' | 'error'>(
+    'verifying',
+  )
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
@@ -36,14 +61,13 @@ export default function VerifyPage() {
       try {
         await auth.verify(token!)
         setStatus('success')
-        // Hydrate auth store with the new session
         await fetchMe()
-        // Short delay so the success message is visible
+        // Short delay so the success message is visible.
         setTimeout(() => router.push('/reader'), 800)
       } catch (err: any) {
         setStatus('error')
         if (err.status === 401) {
-          setErrorMessage('This login link has expired or already been used.')
+          setErrorMessage('This login link has expired, or has already been used.')
         } else {
           setErrorMessage('Something went wrong. Please try again.')
         }
@@ -54,47 +78,47 @@ export default function VerifyPage() {
   }, [searchParams, router, fetchMe])
 
   return (
-    <div className="mx-auto max-w-sm px-4 sm:px-6 py-24 text-center">
-      {status === 'verifying' && (
-        <>
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin  border-2 border-grey-200 border-t-grey-600" />
-          <h1 className="font-sans text-xl font-bold text-black mb-2">
-            Logging you in...
-          </h1>
-          <p className="text-sm text-grey-400">Verifying your login link.</p>
-        </>
-      )}
+    <PublicShell>
+      <PublicVessel>
+        {status === 'verifying' && (
+          <>
+            <PublicCard>
+              <PublicTitle>Logging you in</PublicTitle>
+              <div style={{ marginTop: 10 }}>
+                <PublicBody>Checking your login link.</PublicBody>
+              </div>
+            </PublicCard>
+            <PublicCard style={{ padding: 0 }}>
+              <IndeterminateSlab label="Verifying your login link" />
+            </PublicCard>
+          </>
+        )}
 
-      {status === 'success' && (
-        <>
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center  bg-green-100 text-green-600">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="font-sans text-xl font-bold text-black mb-2">
-            You're in
-          </h1>
-          <p className="text-sm text-grey-400">Redirecting to your feed...</p>
-        </>
-      )}
+        {status === 'success' && (
+          <PublicCard>
+            <PublicTitle>You’re in.</PublicTitle>
+            <div style={{ marginTop: 10 }}>
+              <PublicBody>Taking you to your workspace.</PublicBody>
+            </div>
+          </PublicCard>
+        )}
 
-      {status === 'error' && (
-        <>
-          <h1 className="font-sans text-xl font-bold text-black mb-2">
-            Login link didn't work
-          </h1>
-          <p className="text-sm text-grey-400 mb-6 leading-relaxed">
-            {errorMessage}
-          </p>
-          <a
-            href="/auth?mode=login"
-            className="btn px-6 py-2.5 text-sm font-medium inline-block"
-          >
-            Request a new link
-          </a>
-        </>
-      )}
-    </div>
+        {status === 'error' && (
+          <>
+            <PublicCard>
+              <PublicTitle>That link didn’t work</PublicTitle>
+              <div style={{ marginTop: 10 }}>
+                <PublicBody>{errorMessage}</PublicBody>
+              </div>
+            </PublicCard>
+            <PublicCard>
+              <PublicButton full href="/auth?mode=login">
+                Request a new link
+              </PublicButton>
+            </PublicCard>
+          </>
+        )}
+      </PublicVessel>
+    </PublicShell>
   )
 }

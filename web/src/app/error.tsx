@@ -1,5 +1,19 @@
 'use client'
 
+import { PublicShell } from '../components/public/PublicShell'
+import {
+  PublicVessel,
+  PublicCard,
+  PublicTitle,
+  PublicBody,
+} from '../components/public/PublicVessel'
+import { PublicButton } from '../components/public/Field'
+
+// The error boundary is the one page whose visitor is definitionally having a
+// bad time, so it gets the same room as everything else rather than a stub. It
+// uses the public chassis regardless of whether the visitor is logged in: a
+// member seeing this has, by definition, lost the surface they were on, and a
+// half-rendered workspace behind an error is worse than a clean floor.
 export default function GlobalError({
   error,
   reset,
@@ -8,14 +22,33 @@ export default function GlobalError({
   reset: () => void
 }) {
   return (
-    <div className="mx-auto max-w-article px-4 sm:px-6 py-20 text-center">
-      <h1 className="font-serif text-2xl font-medium text-black mb-4">Something went wrong</h1>
-      <p className="text-sm text-grey-400 mb-6">
-        An unexpected error occurred. Please try again.
-      </p>
-      <button onClick={reset} className="btn py-2 px-5 text-ui-xs">
-        Try again
-      </button>
-    </div>
+    <PublicShell>
+      <PublicVessel>
+        <PublicCard>
+          <PublicTitle>Something went wrong.</PublicTitle>
+          <div style={{ marginTop: 10 }}>
+            <PublicBody>
+              That’s on us, not on you. Trying again often works; if it doesn’t,
+              the problem is at our end and we can see it.
+            </PublicBody>
+          </div>
+        </PublicCard>
+        <PublicCard>
+          <PublicButton full onClick={reset}>
+            Try again
+          </PublicButton>
+        </PublicCard>
+        {error.digest && (
+          <PublicCard>
+            {/* The digest is the only thread between a visitor's report and the
+                server log, so it is shown rather than swallowed — quietly, in
+                the label register, where it reads as a reference number. */}
+            <span className="label-ui" style={{ opacity: 0.7 }}>
+              Reference {error.digest}
+            </span>
+          </PublicCard>
+        )}
+      </PublicVessel>
+    </PublicShell>
   )
 }

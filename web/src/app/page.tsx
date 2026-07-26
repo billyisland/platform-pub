@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import HomeRedirect from '../components/layout/HomeRedirect'
 import { LandingVessel } from '../components/landing/LandingVessel'
-import { LandingNavRow } from '../components/landing/LandingNavRow'
 
 const TITLE = 'all.haus — No one should own the public square.'
 const DESCRIPTION =
@@ -66,10 +65,10 @@ const SHOTS = [
 
 export default function HomePage() {
   return (
-    // The logged-out register is retired on `/` (LayoutShell chromelessRoute):
-    // no black topbar, no 60px main offset. A visitor meets the member grammar
-    // — bone floor, one ⊔ vessel at the 8px lattice, cards, the lockup docked at
-    // the right end of a nav row — with none of the feed furniture that grammar
+    // No topbar: every route is chromeless now, and the one piece of chrome a
+    // visitor meets is the nav row LayoutShell mounts at the foot of the
+    // viewport. A visitor meets the member grammar — bone floor, one ⊔ vessel
+    // at the 8px lattice, cards — with none of the feed furniture that grammar
     // usually carries. See LandingVessel for what is deliberately absent.
     //
     // AN APP SHELL, NOT A SCROLLING DOCUMENT. The page is a `100dvh` flex column
@@ -80,14 +79,30 @@ export default function HomePage() {
     // the earlier document-scroll layout suffered) cannot happen. dvh, not vh —
     // `100vh` is the large (URL-bar-hidden) viewport on mobile.
     //
+    // `/` KEEPS ITS OWN CHASSIS rather than moving onto PublicShell, and this is
+    // the same exception that gives it the doubled wall: it is the only public
+    // page whose vessel IS the page, at the prose measure, tuned to its own
+    // headroom. PublicShell serves the pages that ask the visitor for something.
+    // What `/` no longer owns is the ROW — that was `LandingNavRow`, an in-flow
+    // 56px band at the end of this column, now superseded by the fixed
+    // `PublicNavRow` LayoutShell mounts on every non-workspace route. The space
+    // it used to occupy in the flow is reserved here instead, as
+    // `--ah-row-band` (NAV_ROW_H + GRID) of bottom padding — which comes to
+    // exactly what the in-flow row plus the vessel area's old 8px bottom
+    // padding did, so nothing moves.
+    //
     // The floor is `--ah-bone`, a neutral slug, so it inverts with the global
     // toggle. It is also the vessel's own interior colour under `basic`, which
     // is the point of choosing that colourway here: the walls read as ink rules
     // laid on a continuous ground rather than as a box drawn around content.
+    // Painting it on THIS element — the full 100dvh, with the band inside as
+    // padding — is what keeps the band's clearance above the row bone rather
+    // than letting `body` show through it.
     <div
       style={{
         background: 'var(--ah-bone)',
         height: '100dvh',
+        paddingBottom: 'var(--ah-row-band, 0px)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -95,15 +110,16 @@ export default function HomePage() {
     >
       <HomeRedirect />
 
-      {/* Vessel area — fills all space above the nav row and centres the column;
-          the GRID margins are the bone floor showing around the vessel. */}
+      {/* Vessel area — fills all space above the nav row's reserved band and
+          centres the column; the GRID margins are the bone floor showing around
+          the vessel. No bottom padding: the band on the parent carries it. */}
       <div
         style={{
           flex: 1,
           minHeight: 0,
           display: 'flex',
           justifyContent: 'center',
-          padding: `${GRID * 3}px ${GRID * 2}px ${GRID}px`,
+          padding: `${GRID * 3}px ${GRID * 2}px 0`,
         }}
       >
         <div
@@ -123,8 +139,6 @@ export default function HomePage() {
           />
         </div>
       </div>
-
-      <LandingNavRow />
     </div>
   )
 }

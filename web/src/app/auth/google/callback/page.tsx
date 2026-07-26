@@ -3,18 +3,31 @@
 import { useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '../../../../stores/auth'
+import { PublicShell } from '../../../../components/public/PublicShell'
+import {
+  PublicVessel,
+  PublicCard,
+  PublicTitle,
+  PublicBody,
+} from '../../../../components/public/PublicVessel'
 
 // =============================================================================
-// Google OAuth callback page
+// Google OAuth callback.
 //
-// Google redirects here after the user approves (or denies) consent.
-// We POST the code + state to the gateway exchange endpoint, which validates
-// the state cookie, exchanges the code, and sets the session cookie in its
-// response. We then call /auth/me to hydrate the store and navigate to /feed.
+// Google redirects here after the visitor approves (or denies) consent. We POST
+// the code + state to the gateway exchange endpoint, which validates the state
+// cookie, exchanges the code, and sets the session cookie in its response. We
+// then call /auth/me to hydrate the store and navigate.
 //
 // Doing the exchange via a regular fetch (not a gateway redirect) ensures
 // Set-Cookie is in a normal response body, not a redirect — Next.js rewrite
 // proxies reliably forward cookies in regular responses.
+//
+// REDESIGNED 2026-07-25. It was a bare grey mono line vertically centred on
+// nothing, under the black topbar. It is a transient frame — typically well
+// under a second — so it stays deliberately quiet, but quiet is not the same as
+// unhoused: it now sits in the same vessel as every other step of the sign-in,
+// so the visitor's screen doesn't change shape underneath them mid-flow.
 // =============================================================================
 
 export default function GoogleCallbackPage() {
@@ -62,11 +75,18 @@ export default function GoogleCallbackPage() {
       .catch(() => {
         router.replace('/auth?mode=login&error=google_failed')
       })
-  }, [])  
+  }, [])
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <p className="text-mono-xs text-grey-600">Signing in…</p>
-    </div>
+    <PublicShell>
+      <PublicVessel>
+        <PublicCard>
+          <PublicTitle>Signing you in</PublicTitle>
+          <div style={{ marginTop: 10 }}>
+            <PublicBody>One moment.</PublicBody>
+          </div>
+        </PublicCard>
+      </PublicVessel>
+    </PublicShell>
   )
 }

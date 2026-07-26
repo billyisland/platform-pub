@@ -833,6 +833,116 @@ html.ah-session main {
     margin: 0 auto;
     width: 100%;
   }
+
+  /* ── The public register ──────────────────────────────────────────────────
+     Three rules for the logged-out chassis (components/public/). See
+     LOGGED-OUT-REGISTER-SWEEP.md §V and §VIII. */
+
+  /* 1. The fitted public page — PublicShell's chassis. The vessel is wholly on
+        screen and its CONTENTS scroll; the page itself does not. A ⊔ whose
+        closing wall is below the fold isn't a vessel, it's a left-and-right
+        pair of rules.
+
+        The height math lives here rather than in the component because the
+        short-viewport fallback is a media query. Above 480px tall the column
+        is fitted to the viewport; below it (landscape phones, split-screen, a
+        window dragged short) the remainder is too little to hold a card, so
+        the fit is abandoned and the page scrolls normally. Either way the
+        BOTTOM PADDING is the nav row's band, so the vessel clears the row.
+
+        The box is a full `100dvh` with the band as padding INSIDE it, not
+        `calc(100dvh - band)` with the band outside: the band is NAV_ROW_H +
+        GRID while the row is only NAV_ROW_H tall, so the GRID of deliberate
+        clearance has to be painted by something. Outside the box it fell
+        through to `body` and drew a stripe of the wrong colour between the
+        floor and the row. `--ah-row-band` is published by LayoutShell and is
+        0 when no row is mounted.
+
+        `dvh`, not `vh`: on mobile Safari `100vh` is the tallest the viewport
+        ever gets, so a `vh`-fitted vessel hides its bottom wall behind the
+        browser chrome — the exact bug the fitted layout exists to fix. The
+        `vh` line is the fallback for anything that doesn't know `dvh`.
+
+        The top padding yields on short screens: `min(64px, 8vh)` keeps the
+        64px headroom on a laptop and gives it back to the vessel on a phone,
+        where 64px of empty floor is 15% of the screen. */
+  .ah-public-fit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: min(64px, 8vh) 16px var(--ah-row-band, 0px);
+  }
+  @media (min-height: 480px) {
+    .ah-public-fit {
+      height: 100vh;
+      height: 100dvh;
+    }
+  }
+  @media (max-height: 479px) {
+    .ah-public-fit {
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+  }
+
+  /* 1b. Clear the row from an ordinary scrolling page. The utility form of the
+         same reservation, for surfaces that aren't part of the public register
+         but still sit under the fixed row — the standalone /write editor, and
+         (as an inline style, since they wrap a shared PageShell) /admin/* and
+         /traffology/*. NOT on PageShell itself: PageShell is also the body of
+         five Glasshouse overlay panels, where there is no row to clear. */
+  .ah-clear-row-band {
+    padding-bottom: var(--ah-row-band, 0px);
+  }
+
+  /* 2. The vessel scroll body. A default scrollbar sitting inside a ⊔ a few
+        pixels from an 8px wall is chrome the house never designed — on Windows
+        a 17px light-grey trough that reads as a third wall of the wrong
+        weight. The thumb colour comes in as `--ah-scroll-thumb`, set inline by
+        the vessel to `cardMeta` (outside DARK_SLUGS, so the same quiet grey
+        against either interior). NOT the wall colour, which in dark is
+        true-black on ink-925 — invisible. */
+  .ah-vessel-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ah-scroll-thumb, currentColor) transparent;
+  }
+  .ah-vessel-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+  .ah-vessel-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .ah-vessel-scroll::-webkit-scrollbar-thumb {
+    background: var(--ah-scroll-thumb, currentColor);
+    border-radius: 0;
+  }
+
+  /* 3. The indeterminate slab — the register's only animation, replacing the
+        `border-2` spinning ring /auth/verify used to draw. The house has no
+        spinner: a spinning ring is a radius, an animation and a borrowed idiom
+        at once. This is the 4px slab weight moving across the field it already
+        occupies. `prefers-reduced-motion` pins it full-width and lets the
+        heading carry the state, rather than merely slowing it — an
+        indeterminate bar that never resolves is exactly the ambient motion
+        that setting exists to stop. */
+  .ah-indeterminate-slab {
+    width: 40%;
+    animation: ah-slab-sweep 1.1s ease-in-out infinite;
+  }
+  @keyframes ah-slab-sweep {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(250%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ah-indeterminate-slab {
+      width: 100%;
+      animation: none;
+    }
+  }
 }
 
 /* ── Print ───────────────────────────────────────────────────────────────────── */

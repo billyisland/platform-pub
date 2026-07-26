@@ -47,8 +47,8 @@ interface EditorProps {
   initialPublicationId?: string | null
   onPublish?: (data: PublishData) => void | Promise<void>
   onSchedule?: (data: PublishData, scheduledAt: string) => Promise<void>
-  /** 'page' = standalone /write (full-page frame + topbar-offset sticky bar);
-   *  'overlay' = inside the EditorOverlay Glasshouse pane (no frame/offset). */
+  /** 'page' = standalone /write (full-page frame, clearing the nav row's band);
+   *  'overlay' = inside the EditorOverlay Glasshouse pane (no frame/band). */
   chrome?: 'page' | 'overlay'
 }
 
@@ -464,13 +464,17 @@ export function ArticleEditor({
     // data-explain: the editor's Explain base kind (C2) — answers any interior
     // hover a more specific leaf doesn't. Inert on the standalone /write page
     // (Explain only runs in the workspace).
-    <div data-explain="editor" className={isOverlay ? 'px-6 sm:px-10 py-12 flex-1 flex flex-col' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8 bg-glasshouse min-h-screen'}>
-      {/* Sticky title + toolbar — stays visible while scrolling the body.
-          Overlay: sticks to the Glasshouse pane top (no black topbar to offset).
+    <div data-explain="editor" className={isOverlay ? 'px-6 sm:px-10 py-12 flex-1 flex flex-col' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-8 pb-8 bg-glasshouse min-h-screen ah-clear-row-band'}>
+      {/* Sticky title + toolbar — stays visible while scrolling the body. It
+          sticks to `top-0` in BOTH chromes now: the overlay to the Glasshouse
+          pane's top, and the page to the viewport's. The page branch used to
+          carry `top-[53px] lg:top-0`, offsetting the black topbar's mobile
+          height — there is no topbar anywhere any more, so the offset was
+          53px of dead space pushing the bar down the screen on a phone.
           The cards span the full width (matching the body editor below); only the
           title card — the row that pins under the floating ✕ when scrolled — gets
           its own right inset (pr-12) so a long title still clears it. */}
-      <div className={isOverlay ? 'sticky top-0 z-20 bg-glasshouse pb-4 mb-6' : 'sticky top-[53px] lg:top-0 z-20 bg-glasshouse pb-4 mb-6'}>
+      <div className="sticky top-0 z-20 bg-glasshouse pb-4 mb-6">
       {/* Title card */}
       <div className={`bg-glasshouse-well py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
         <input
