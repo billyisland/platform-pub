@@ -206,6 +206,11 @@ meet on arrival. It also contradicted the workspace, where a feed is always
 wholly on screen and its cards move inside it. The public register was
 borrowing the workspace's grammar and then breaking its central behaviour.
 
+*(Amended by §IX 7quinquies, 2026-07-27: the bound stated here — never taller
+than the viewport — stands, and a second one joins it: never taller than the
+content either. `flex: 1 1 0` below is now `flex: 0 1 auto`, i.e. the same
+shrink, no grow. Read the two together before changing either.)*
+
 **Mechanics, copied from `Vessel.tsx` rather than invented:** every frame in the
 stack is a shrinkable flex column (`flex: 1 1 0; min-height: 0`), and the
 innermost element is the scroll body — `overflow-y: auto`, with `PAD` **on the
@@ -623,7 +628,8 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    The outer frame stays in the tree on mobile as a plain flex pass-through
    (`padding: 0; border: 0`) so the component keeps one shape in both modes.
    Measured after the change: phone 390 → card x=16 w=358; desktop 1440 → card
-   x=400 w=640, i.e. desktop is unchanged to the pixel.
+   x=400 w=640, i.e. desktop is unchanged to the pixel. *(The surviving single
+   wall went too — **7quinquies**. Everything else here stands.)*
 
 7ter. **`/`'s showcase is live markup, not screengrabs** (2026-07-27). 7bis's
    companion, and it retires the three `.webp` captures that shipped the day
@@ -754,6 +760,56 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    as a patch bundle for this page gets checked against 7ter's paragraph and
    against `check-hairlines.sh` before it is read for design — both regressions
    came back in the same delivery.
+
+7quinquies. **No vessel on a phone, and no vessel taller than what it holds**
+   (2026-07-27). Two changes to the chassis, from the same instinct: a container
+   should be doing a container's job or not be there.
+
+   **Mobile: the ⊔ goes entirely, on every logged-out page.** 7bis took `/` from
+   56px a side to 16 and kept one wall, reasoning that "the ⊔ still reads, at
+   mobile weight". It does read — the question that dodged is what the ⊔ is FOR.
+   It says *this is one object among several*, which is true of a feed on a
+   workspace floor and false of the only column on a phone screen, where it is
+   ink spent framing the one thing already occupying the whole viewport.
+   MOBILE-LAYOUT-ADR reached that conclusion first and dropped the mobile
+   workspace's vessel chassis outright; the public register now matches it rather
+   than sitting one notch softer. At ≤767px: `/`'s inner frame keeps its 8px pad
+   and draws no wall (8px a side, a 374px column on a 390px phone), and
+   `PublicVessel` — `/auth`, `/waitlist`, `/about`, `/invite`, `/subscribe`,
+   `/tribute/claim`, `/auth/verify`, the Google callback, 404 and the error page
+   — loses all three walls. Both frames stay in the tree as plain flex columns so
+   the components keep one shape across form factors. The share/SEO surfaces
+   (`PublicPage`) never had a vessel and are untouched.
+
+   The wall widths had to MOVE OUT OF THE COMPONENT for this, exactly as 7bis
+   moved `/`'s: `.ah-public-vessel` in `globals.css` §1a-bis, with only the
+   palette-derived colour crossing in as `--ah-public-wall`. These pages are
+   SSR'd, so a `useIsMobile` branch would paint the walled chassis on a phone and
+   snap after hydration — and an inline border shorthand would beat the media
+   query outright.
+
+   **Desktop: the vessel hugs its content and is centred on both axes.** §V's
+   amendment made the vessel take the shell's whole fitted height, so `/auth`'s
+   four fields sat in a ⊔ as tall as the screen — a frame drawn around a great
+   deal of nothing, and worse the taller the monitor. Now every link of the chain
+   (shell measure column → vessel frame → scroll body) is `flex: 0 1 auto`, so
+   the ⊔ is exactly as tall as what it holds, and `.ah-public-fit` gained
+   `justify-content: center` beside the `align-items: center` it always had. A
+   roughly square card sits in a roughly square vessel, in the middle of the
+   screen. The two paddings happen to make that centring true to the viewport
+   rather than merely to the box: top is `min(64px, 8vh)` and the bottom band is
+   `NAV_ROW_H + GRID` = 64.
+
+   **This does NOT revert §V, and the distinction is the whole design.** §V says
+   the vessel may never be TALLER than the viewport — its bottom wall has to be
+   on screen, or it is a left-and-right pair of rules rather than a vessel. This
+   says it may never be taller than its CONTENT either. Both bounds are live at
+   once, which is why `flex-shrink: 1` and `min-height: 0` survive on every link:
+   a page with more content than room still shrinks to the remainder and scrolls
+   inside its walls, bottom wall on screen, exactly as before. What went is only
+   the stretching of a short one. `/` is unaffected on desktop — its content is
+   always longer than the viewport, so hugging would be a no-op — and keeps its
+   own chassis per departure 1.
 
 7. **Three logged-in tool surfaces clear the band** — `/write`, `/admin/*`,
    `/traffology/*` — because the row mounts on every non-workspace route and

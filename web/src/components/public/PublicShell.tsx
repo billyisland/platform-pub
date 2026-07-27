@@ -15,10 +15,21 @@ import { usePublicPalette } from './palette'
 // workspace, where a feed vessel is always wholly on screen and its cards move
 // inside it.
 //
-// So the shell is a fixed-height flex column and the vessel takes the
-// remainder. See PublicVessel for the scroll body, which mirrors Vessel.tsx's
-// (`flex: 1 1 0`, `minHeight: 0`, `overflowY: auto`, PAD on the scroll body so
+// So the shell is a fixed-height flex column, and the vessel may never be
+// taller than it. See PublicVessel for the scroll body, which mirrors
+// Vessel.tsx's (`minHeight: 0`, `overflowY: auto`, PAD on the scroll body so
 // the interior padding scrolls with the cards rather than framing them).
+//
+// BUT THE VESSEL NO LONGER TAKES THE REMAINDER (amended 2026-07-27). It hugs
+// its content and this shell CENTRES it, on both axes — `justify-content:
+// center` in `.ah-public-fit` beside the `align-items: center` that was always
+// there. The first cut stretched it, so `/auth`'s four fields sat in a ⊔ as
+// tall as the screen: a frame around a great deal of nothing, worse the taller
+// the monitor. A roughly square card should sit in a roughly square vessel, in
+// the middle of the screen. The fitted height is what stops the vessel
+// exceeding the viewport; the hug is what stops it exceeding its content. Both
+// bounds are live at once, which is why `flex-shrink` and `minHeight: 0` stay
+// on every link of the chain (this column → frame → scroll body).
 //
 // THE HEIGHT MATH LIVES IN CSS, in `.ah-public-fit` (globals.css), because the
 // short-viewport fallback is a media query and belongs there rather than in a
@@ -86,10 +97,13 @@ export function PublicShell({ children, measure = 'form' }: PublicShellProps) {
         style={{
           width: '100%',
           maxWidth: WIDTH[measure],
-          // The vessel is the only child and takes the remainder. `minHeight: 0`
-          // is load-bearing: without it this flex child refuses to shrink below
-          // its content and the scroll body inside never gets a scrollbar.
-          flex: '1 1 0',
+          // The vessel is the only child, and this column is now sized BY it
+          // rather than handing it the remainder: `0 1 auto` so a short page's
+          // vessel keeps its own height and the shell's centring can act on it.
+          // `minHeight: 0` is still load-bearing — without it this flex child
+          // refuses to shrink below its content when there IS more content than
+          // room, and the scroll body inside never gets a scrollbar.
+          flex: '0 1 auto',
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',

@@ -163,6 +163,54 @@ starts.
   scenarios and left clean. **Not driven on prod** — the three real rows there
   will produce one digest on the next deploy, and that email is the check.
 
+- **2026-07-27 (public register: no vessel on a phone, and none taller than what
+  it holds)** — Two chassis changes from one instinct: a container should be
+  doing a container's job or not be there. Spec: `LOGGED-OUT-REGISTER-ADR.md`
+  §IX departure 7quinquies (amending §V and 7bis).
+
+  **Mobile drops the ⊔ on every logged-out page.** 7bis took `/` from 56px a
+  side to 16 and kept one wall, on the reasoning that "the ⊔ still reads, at
+  mobile weight". It does read; what that dodged is what the ⊔ is FOR — it says
+  *this is one object among several*, which is true of a feed on a workspace
+  floor and false of the only column on a phone, where it is ink spent framing
+  the one thing already filling the screen. The mobile workspace reached that
+  conclusion first and dropped its vessel chassis outright, so the register now
+  matches it instead of sitting a notch softer. At ≤767px `/`'s inner frame
+  keeps its 8px pad and draws no wall (374px of a 390px phone, up from 358), and
+  `PublicVessel` loses all three — `/auth`, `/waitlist`, `/about`, `/invite`,
+  `/subscribe`, `/tribute/claim`, `/auth/verify`, the Google callback, 404 and
+  the error page. `PublicPage` (the share/SEO surfaces) never had a vessel.
+
+  The wall widths had to leave the component for this, exactly as 7bis moved
+  `/`'s: `.ah-public-vessel` in `globals.css` §1a-bis, colour crossing in as
+  `--ah-public-wall`. These pages are SSR'd, so a `useIsMobile` branch would
+  paint the walled chassis on a phone and snap after hydration — and an inline
+  border shorthand would beat the media query outright, which is the trap that
+  makes this a CSS change rather than a component one.
+
+  **Desktop: the vessel hugs its content, centred on both axes.** §V's fitted
+  amendment had it take the shell's whole height, so `/auth`'s four fields sat
+  in a ⊔ as tall as the screen — a frame around a great deal of nothing, worse
+  the taller the monitor. Every link of the chain (shell measure column → frame
+  → scroll body) is now `flex: 0 1 auto`, and `.ah-public-fit` gained
+  `justify-content: center` beside the `align-items: center` it always had. The
+  paddings make that centring true to the viewport rather than just to the box:
+  top `min(64px, 8vh)`, bottom band `NAV_ROW_H + GRID` = 64.
+
+  **It is not a revert of §V, and the distinction is the design.** §V bounds the
+  vessel at the viewport (bottom wall on screen or it isn't a vessel); this
+  bounds it at its content. Both are live at once — `flex-shrink: 1` and
+  `minHeight: 0` survive on every link, so a page with more content than room
+  still shrinks to the remainder and scrolls inside its walls exactly as before.
+  Only the stretching of a short page went. `/` is unaffected on desktop: its
+  content is always longer than the viewport, so the hug is a no-op there.
+
+  Pre-flight: `tsc --noEmit` clean, root eslint 0 errors, `next build` green (41
+  pages), emitted CSS checked for both rules and their cascade order (base then
+  mobile override, equal specificity so source order decides). **Not in a
+  browser** — the phone reading is the point of the change and is exactly what
+  is unverified.
+
 - **2026-07-27 (landing: the demos become a canvas and a reading pane)** — A
   second bundle the same day, revising the one below. Reviewed, corrected in
   four places, applied. Spec: `LOGGED-OUT-REGISTER-ADR.md` §IX departure 7quater.

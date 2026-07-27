@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from 'react'
 import { LIGHT_ISLAND_STYLE } from '../../lib/palette/island'
-import { usePublicPalette, scrollThumb, WALL, PAD, GAP } from './palette'
+import { usePublicPalette, scrollThumb, PAD, GAP } from './palette'
 
 // =============================================================================
 // PublicVessel — the SINGLE-WALL ⊔. Chassis for every logged-out page except
@@ -15,18 +15,31 @@ import { usePublicPalette, scrollThumb, WALL, PAD, GAP } from './palette'
 // It is not worth it around a login form — there the vessel is holding four
 // fields, and a doubled frame would make the page look like it is announcing
 // something when it is only asking for an email. One wall, same 8px, same
-// stance.
+// stance. (On a PHONE even one wall is too much, and there are none: the same
+// argument, applied to a screen where the form is the only thing on it.)
 //
 // THE VESSEL IS ALWAYS WHOLLY ON SCREEN; ITS CONTENTS SCROLL (amended
-// 2026-07-25 after the landing-page build). The frame is a fixed-height flex
-// column that takes the remainder of PublicShell's fitted height, and the
-// interior is a scroll body — `flex: 1 1 0`, `minHeight: 0`, `overflowY: auto`,
-// with PAD on the scroll body itself. That last detail is deliberate and is
-// copied from Vessel.tsx: putting the padding on the scrolling element means
-// the interior padding TRAVELS WITH THE CARDS rather than framing them, so the
-// first card starts at the mouth and the last one ends at the wall. Padding on
-// the frame instead would leave a dead band at top and bottom that content
-// slides under, which looks like a bug.
+// 2026-07-25 after the landing-page build). The interior is a scroll body —
+// `minHeight: 0`, `overflowY: auto`, with PAD on the scroll body itself. That
+// last detail is deliberate and is copied from Vessel.tsx: putting the padding
+// on the scrolling element means the interior padding TRAVELS WITH THE CARDS
+// rather than framing them, so the first card starts at the mouth and the last
+// one ends at the wall. Padding on the frame instead would leave a dead band at
+// top and bottom that content slides under, which looks like a bug.
+//
+// AND IT IS NO TALLER THAN WHAT IT HOLDS (2026-07-27). Both the frame and the
+// scroll body are `flex: 0 1 auto`, so a page with four fields gets a ⊔ four
+// fields tall, centred in the viewport by PublicShell, instead of one stretched
+// to the full fitted remainder — which on a tall monitor was a frame drawn
+// around a great deal of nothing. Read the two amendments together: the 2026-07-25
+// one says the vessel must never be TALLER than the viewport (its bottom wall
+// has to be on screen, or it isn't a vessel), and this one says it must never be
+// taller than its CONTENT either. Both are the same instinct — the ⊔ is a
+// container, and a container should fit what is in it.
+//
+// ON MOBILE THERE ARE NO WALLS AT ALL — see `.ah-public-vessel` in globals.css
+// §1a-bis, which is also where the wall widths live, because an SSR'd page
+// cannot pick its form factor in JS.
 //
 // `data-vessel-scroll` is carried for parity with the workspace's scroll bodies
 // — anything that queries for a scrollable vessel region finds this one too.
@@ -64,20 +77,28 @@ export function PublicVessel({ children, style }: PublicVesselProps) {
 
   return (
     <div
-      style={{
-        ...LIGHT_ISLAND_STYLE,
-        borderLeft: `${WALL}px solid ${palette.walls}`,
-        borderRight: `${WALL}px solid ${palette.walls}`,
-        borderBottom: `${WALL}px solid ${palette.walls}`,
-        background: palette.interior,
-        // The frame takes the remainder of the shell's fitted height and holds
-        // its own children to it. No padding here — see the note above.
-        flex: '1 1 0',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        ...style,
-      }}
+      className="ah-public-vessel"
+      style={
+        {
+          ...LIGHT_ISLAND_STYLE,
+          // The walls are `.ah-public-vessel` in globals.css §1a-bis, not here:
+          // they have to disappear on mobile, and an SSR'd page cannot pick that
+          // in JS. What stays inline is what CSS cannot know — the palette-
+          // derived wall colour, handed over as a custom property.
+          '--ah-public-wall': palette.walls,
+          background: palette.interior,
+          // HUGS ITS CONTENT, then shrinks if there is more of it than room.
+          // `0 1 auto` (not `1 1 0`): no growing, so a short page's ⊔ is exactly
+          // as tall as what it holds and the shell centres it; shrink stays on,
+          // with `minHeight: 0`, so a long page still gives its scroll body a
+          // scrollbar rather than pushing the bottom wall off screen.
+          flex: '0 1 auto',
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          ...style,
+        } as CSSProperties
+      }
     >
       <div
         data-vessel-scroll=""
@@ -92,7 +113,10 @@ export function PublicVessel({ children, style }: PublicVesselProps) {
           // dark (see the note in palette.ts).
           ['--ah-scroll-thumb' as string]: scrollThumb(palette),
           padding: PAD,
-          flex: '1 1 0',
+          // Matches the frame: hug the cards, shrink and scroll when there are
+          // more of them than fit. `1 1 0` here would have re-stretched the
+          // vessel the frame just stopped stretching.
+          flex: '0 1 auto',
           minHeight: 0,
           overflowY: 'auto',
           display: 'flex',

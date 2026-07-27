@@ -852,6 +852,14 @@ html.dark {
     display: flex;
     flex-direction: column;
     align-items: center;
+    /* CENTRED ON BOTH AXES (2026-07-27). `align-items` was always here; this is
+       its vertical twin, and it is what makes a short page's vessel sit in the
+       middle of the screen rather than hang from the top padding. It only has
+       an effect because the vessel now HUGS ITS CONTENT — see the note on
+       `.ah-public-vessel` below. The padding stays a minimum clearance: with
+       `justify-content: center` it is what the box may not centre content
+       into, which is the behaviour we want at both ends. */
+    justify-content: center;
     padding: min(64px, 8vh) 16px var(--ah-row-band, 0px);
   }
   @media (min-height: 480px) {
@@ -864,6 +872,50 @@ html.dark {
     .ah-public-fit {
       min-height: 100vh;
       min-height: 100dvh;
+    }
+  }
+
+  /* 1a-bis. The public ⊔ itself — the walls, and the two places they change.
+             Geometry here, colour inline (`--ah-public-wall`, palette-derived
+             and resolved in JS), for §1c's SSR reason: these pages are
+             server-rendered for logged-out visitors, so a `useIsMobile` branch
+             would paint the walled desktop chassis on a phone and snap after
+             hydration. Border WIDTHS must be declared here too, or the inline
+             shorthand would win over this rule.
+
+             THE VESSEL HUGS ITS CONTENT (2026-07-27). It used to take the
+             shell's whole fitted remainder, so `/auth`'s four fields sat in a
+             ⊔ as tall as the screen — a frame around a great deal of nothing,
+             and the taller the monitor the worse it read. `flex: 0 1 auto` on
+             the frame and its scroll body means the ⊔ is exactly as tall as
+             what it holds, and `.ah-public-fit`'s centring then puts it in the
+             middle of the screen. What has NOT changed is the fitted amendment
+             it looks like it reverses: the vessel is still never taller than
+             the viewport, because `flex-shrink: 1` and `min-height: 0` survive
+             — a page with more content than room still shrinks to the
+             remainder and scrolls INSIDE its walls, bottom wall on screen. So
+             "the vessel is always wholly visible" holds in both directions;
+             what went is only the stretching of a short one.
+
+             ON MOBILE THERE IS NO VESSEL AT ALL (2026-07-27). Same arithmetic
+             and the same conclusion as §1c reached for `/`, taken one notch
+             further: at ≤767px the walls go entirely and the content runs
+             full-bleed on the floor. The ⊔ is the house's way of saying "this
+             is one object among several" — true on a workspace floor holding
+             many feeds, and false on a phone showing a single login form,
+             where it is 16px of ink per side spent framing the only thing on
+             the screen. The mobile workspace made this call first by dropping
+             the vessel chassis outright; the public register now matches it.
+             The frame element stays in the tree as a plain flex column so the
+             component keeps one shape in both form factors. */
+  .ah-public-vessel {
+    border-left: 8px solid var(--ah-public-wall);
+    border-right: 8px solid var(--ah-public-wall);
+    border-bottom: 8px solid var(--ah-public-wall);
+  }
+  @media (max-width: 767px) {
+    .ah-public-vessel {
+      border: 0;
     }
   }
 
@@ -892,16 +944,24 @@ html.dark {
          than reflowing the desktop one: the mobile workspace drops the vessel
          chassis entirely for a FULL-BLEED feed, because position / size /
          orientation / merge are canvas properties that stay on the desktop.
-         Here the same instinct is applied one notch softer —
+         Here the same instinct is applied — and as of 2026-07-27 it is applied
+         in full rather than one notch softer:
 
            · the floor margin goes (the vessel spans the full viewport width);
            · the DOUBLED wall collapses to a SINGLE wall (the outer frame
              becomes a pass-through: no border, no buffer);
-           · the interior pad halves, 16 → 8, the lattice square itself.
+           · and then the single wall goes too — the inner frame keeps its 8px
+             of interior pad and draws no ⊔ at all.
 
-         — which is 16px per side instead of 56, so the prose gets 358px of 390.
-         The ⊔ still reads, at mobile weight; what goes is the doubled-wall
-         statement, which needs room to be a statement. This is the deliberate
+         — which is 8px per side instead of 56, so the prose gets 374px of 390.
+         The first cut kept one wall on the reasoning that "the ⊔ still reads,
+         at mobile weight". It does read; the question it dodged is what the ⊔
+         is FOR. It says "this is one object among several" — true on a
+         workspace floor holding many feeds, and false on a phone showing one
+         column that is the whole page, where it is ink spent framing the only
+         thing on the screen. The mobile workspace reached that conclusion first
+         and dropped its vessel chassis outright; `/` and the rest of the public
+         register (§1a-bis) now match it. This is the deliberate
          one-rule-per-form-factor asymmetry, not a responsive reflow.
 
          WHY CSS AND NOT `useIsMobile`: `/` is server-rendered for logged-out
@@ -928,14 +988,17 @@ html.dark {
     .ah-landing-area {
       padding: 8px 0 0;
     }
-    /* The outer frame stops being a frame: no wall, no buffer. It stays in the
-       tree as a plain flex pass-through so the component keeps one shape. */
+    /* NEITHER frame is a frame here: no walls, no buffer. Both stay in the tree
+       as plain flex pass-throughs so the component keeps one shape across form
+       factors — only the inner one still carries the interior pad, which is
+       what keeps the cards off the screen edge now that no wall does. */
     .ah-landing-frame-outer {
       padding: 0;
       border: 0;
     }
     .ah-landing-frame-inner {
       padding: 8px;
+      border: 0;
     }
   }
 

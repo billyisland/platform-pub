@@ -45,8 +45,13 @@ import { ReaderDemo } from './demos/ReaderDemo'
 // Both frames clip (`overflow: hidden`) so the scrolling column reads as feed
 // cards passing behind a fixed mouth, exactly as a workspace vessel does.
 //
-// ON MOBILE THE VESSEL GOES FULL-BLEED and the doubled wall collapses to a
-// single one. THE GEOMETRY FOR BOTH FORM FACTORS LIVES IN globals.css §1c
+// ON MOBILE THERE IS NO VESSEL. It goes full-bleed, the doubled wall collapses
+// to a single one, and (2026-07-27) that one goes too: the column runs on the
+// bare floor with 8px of pad and no ⊔ anywhere. The ⊔ says "one object among
+// several", which is true of a feed on a workspace floor and false of the only
+// column on a phone screen — the same conclusion the mobile workspace reached
+// when it dropped the vessel chassis outright. THE GEOMETRY FOR BOTH FORM
+// FACTORS LIVES IN globals.css §1c
 // (`.ah-landing-area`, `.ah-landing-frame*`), not in this file: `/` is SSR'd, so
 // a JS breakpoint would paint the desktop chassis on a phone and snap after
 // hydration. Change wall thickness or padding THERE. What stays here is the
