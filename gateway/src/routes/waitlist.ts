@@ -5,9 +5,17 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import { zodValidationError } from "@platform-pub/shared/lib/validation.js";
 
 // =============================================================================
-// Waitlist Routes — closed-beta waiting list (CLOSED-BETA-ADR Phase 2, D2/D3)
+// Waitlist Routes — closed-beta waiting list (CLOSED-BETA-ADR Phase 2, D2)
 //
 // POST /waitlist — capture a prospective user's interest.
+//
+// AN EMAIL IS THE WHOLE PAYLOAD (2026-07-27). D3's "I'd also like to publish"
+// opt-in was removed from the page, this schema, and the two places that
+// reported it (the digest email and the admin panel). The answer implied
+// nothing about what anyone would be given, and there is no larger interest
+// here looking for hints about revenue. Someone joining a waiting list is owed
+// a way to be told when it opens, not a survey — so don't reinstate it, and
+// don't add another field in its place.
 //
 // Capture, not a mailto (D2): the stored list is the launch-cohort recruitment
 // pipeline. Admitting a waitlister is a manual/next-phase action — this route
@@ -32,9 +40,11 @@ export async function waitlistRoutes(app: FastifyInstance) {
     // length, and this route WRITES the value (a multi-KB "email" would insert
     // a junk row).
     email: z.string().trim().max(254).email(),
-    // D3 — reader is the default identity; publishing is a single soft opt-in.
-    // Optional so a stale/minimal client that omits it defaults to reader.
-    publishInterest: z.boolean().optional(),
+    // AN EMAIL IS THE WHOLE PAYLOAD. D3's `publishInterest` was removed
+    // 2026-07-27 with the tickbox that set it — see the header note. The schema
+    // is not `.strict()`, so a cached client still POSTing the old field is
+    // accepted and the field ignored, which is what we want during a rollout;
+    // the column simply takes its `false` default.
   });
 
   app.post(
@@ -47,20 +57,22 @@ export async function waitlistRoutes(app: FastifyInstance) {
       }
 
       const email = parsed.data.email.toLowerCase().trim();
-      const publishInterest = parsed.data.publishInterest ?? false;
 
       try {
         // Upsert. ON CONFLICT DO NOTHING keeps the endpoint enumeration-safe:
-        // a repeat email is a silent no-op and returns the same ack. We do NOT
-        // update publish_interest on conflict — the first expressed intent
-        // stands, and flipping it on a repeat POST would leak (via a later
-        // export) that the row already existed. A prospect who changes their
-        // mind can write to the contact line (D2 mailto fallback).
+        // a repeat email is a silent no-op and returns the same ack, so a
+        // second POST never reveals that the row was already there.
+        //
+        // `publish_interest` is not written and takes its `false` default. The
+        // column is deliberately left in place rather than dropped: the rows
+        // that already carry a `true` were answers people actually gave, and
+        // deleting an answer is not the same as ceasing to ask. Nothing reads
+        // it any more.
         await pool.query(
-          `INSERT INTO waitlist (email, publish_interest)
-           VALUES ($1, $2)
+          `INSERT INTO waitlist (email)
+           VALUES ($1)
            ON CONFLICT (email) DO NOTHING`,
-          [email, publishInterest],
+          [email],
         );
       } catch (err) {
         // A storage failure must not reveal itself as different from success in
@@ -76,7 +88,7 @@ export async function waitlistRoutes(app: FastifyInstance) {
       // Always the same acknowledgement — new or already present.
       return reply.status(200).send({
         ok: true,
-        message: "You're on the list. We'll be in touch when there's room.",
+        message: "You're on the list. We'll be in touch when we're ready for you.",
       });
     },
   );

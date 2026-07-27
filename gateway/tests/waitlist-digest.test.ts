@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // reproduce the failure this worker exists to fix (a prospect sitting unseen):
 //
 //   · it sends when the list has moved, to the ADMIN accounts' addresses, and
-//     the body names every new joiner and their publish-interest flag;
+//     the body names every new joiner (and nothing else about them — the
+//     publish-interest breakdown went with the question, 2026-07-27);
 //   · the watermark advances to the NEWEST REPORTED ROW's created_at, never to
 //     now() — a row arriving mid-run must be in the next digest, not lost;
 //   · nothing new → no send AND no watermark write (the window stays open);
@@ -27,7 +28,6 @@ interface Q {
 let queries: Q[] = [];
 let waitlistRows: Array<{
   email: string;
-  publish_interest: boolean;
   created_at: Date;
   /** Postgres renders microseconds; a JS Date cannot hold them. The mock keeps
    *  the extra digits so the truncation bug is REPRESENTABLE here. */
@@ -46,14 +46,7 @@ function query(sql: string, params: unknown[] = []) {
   }
   if (sql.includes("FROM waitlist") && sql.includes("count(*)")) {
     return Promise.resolve({
-      rows: [
-        {
-          total: String(waitlistRows.length),
-          publishers: String(
-            waitlistRows.filter((r) => r.publish_interest).length,
-          ),
-        },
-      ],
+      rows: [{ total: String(waitlistRows.length) }],
       rowCount: 1,
     });
   }
@@ -117,9 +110,9 @@ beforeEach(() => {
   adminEmails = ["owner@all.haus"];
   configRows = [];
   waitlistRows = [
-    { email: "one@example.com", publish_interest: true, created_at: OLD, created_at_exact: OLD_EXACT },
-    { email: "two@example.com", publish_interest: false, created_at: MID, created_at_exact: MID_EXACT },
-    { email: "three@example.com", publish_interest: true, created_at: NEW, created_at_exact: NEW_EXACT },
+    { email: "one@example.com", created_at: OLD, created_at_exact: OLD_EXACT },
+    { email: "two@example.com", created_at: MID, created_at_exact: MID_EXACT },
+    { email: "three@example.com", created_at: NEW, created_at_exact: NEW_EXACT },
   ];
 });
 
@@ -134,11 +127,14 @@ describe("waitlist operator digest", () => {
     for (const r of waitlistRows) {
       expect(sent[0].textBody).toContain(r.email);
     }
-    // The publish-interest flag is the cohort signal D2 promised — it has to
-    // survive into the body, or the digest is just a count.
-    expect(sent[0].textBody).toContain("wants to publish");
-    // ...and the running totals, which is how "the list is growing" reads.
+    // ...and the running total, which is how "the list is growing" reads.
     expect(sent[0].textBody).toContain("3 in total");
+    // AND NOTHING ABOUT WHAT THEY WANT. The digest used to break the total down
+    // by who had ticked "I'd also like to publish"; the question is gone from
+    // the page and the reporting went with it. This pins the absence, so
+    // reinstating either half fails here.
+    expect(sent[0].textBody).not.toMatch(/publish/i);
+    expect(queries.some((q) => q.sql.includes("publish_interest"))).toBe(false);
   });
 
   it("advances the watermark to the newest reported row, not to now()", async () => {

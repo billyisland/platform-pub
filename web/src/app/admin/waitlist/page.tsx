@@ -66,7 +66,7 @@ export default function AdminWaitlistPage() {
   async function admit(email: string, resend: boolean) {
     const prompt = resend
       ? `Send the invitation to ${email} again? They already have an account.`
-      : `Admit ${email}? This creates their account and emails them that there's room.`
+      : `Admit ${email}? This creates their account and emails them that we're ready for them.`
     if (!window.confirm(prompt)) return
 
     setAdmitting(email)
@@ -142,11 +142,6 @@ export default function AdminWaitlistPage() {
               <StatCard label="Admitted" value={data.totals.admitted} />
               <StatCard label="Joined, 7 days" value={data.totals.joinedLast7d} />
               <StatCard
-                label="Want to publish"
-                value={data.totals.publishInterest}
-                detail="Ticked the opt-in"
-              />
-              <StatCard
                 label="Not yet told"
                 value={data.totals.admittedNotInvited}
                 detail={
@@ -177,7 +172,6 @@ export default function AdminWaitlistPage() {
                   <thead>
                     <tr className="border-b-2 border-grey-200">
                       <th className="label-ui text-grey-600 text-left pb-2">Email</th>
-                      <th className="label-ui text-grey-600 text-left pb-2">Publish</th>
                       <th className="label-ui text-grey-600 text-right pb-2">Joined</th>
                       <th className="label-ui text-grey-600 text-left pb-2 pl-6">Status</th>
                       <th className="label-ui text-grey-600 text-right pb-2">Action</th>
@@ -190,9 +184,6 @@ export default function AdminWaitlistPage() {
                       return (
                         <tr key={e.email}>
                           <td className="py-2 text-black">{e.email}</td>
-                          <td className="py-2 text-grey-600">
-                            {e.publishInterest ? 'Yes' : '—'}
-                          </td>
                           <td className="py-2 text-right tabular-nums text-grey-600">
                             {joined(e.joinedAt)}
                           </td>

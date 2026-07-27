@@ -66,7 +66,6 @@ const LAST_SENT_KEY = "waitlist_digest_last_sent_at";
 
 interface WaitlistRow {
   email: string;
-  publish_interest: boolean;
   created_at: Date;
   /** The same instant as Postgres renders it, MICROSECONDS INTACT. The
    *  watermark is stored from this, never from `created_at` — see below. */
@@ -87,41 +86,28 @@ function stamp(d: Date): string {
   );
 }
 
-function renderText(
-  rows: WaitlistRow[],
-  total: number,
-  publishers: number,
-): string {
+function renderText(rows: WaitlistRow[], total: number): string {
   const lines = rows.map(
-    (r) =>
-      `  ${r.email}${r.publish_interest ? "  [wants to publish]" : ""}\n` +
-      `    joined ${stamp(r.created_at)}`,
+    (r) => `  ${r.email}\n    joined ${stamp(r.created_at)}`,
   );
   return [
     `${rows.length} new ${rows.length === 1 ? "person" : "people"} on the all.haus waiting list.`,
     "",
     ...lines,
     "",
-    `The list now holds ${total} in total, ${publishers} of whom ticked "I'd also like to publish".`,
+    `The list now holds ${total} in total.`,
     "",
     "Nothing has been sent to them — the waiting list stores interest and does",
     "not write back (CLOSED-BETA-ADR D2). Admitting someone is still manual.",
   ].join("\n");
 }
 
-function renderHtml(
-  rows: WaitlistRow[],
-  total: number,
-  publishers: number,
-): string {
+function renderHtml(rows: WaitlistRow[], total: number): string {
   const items = rows
     .map(
       (r) =>
         `<li style="margin-bottom:10px;">` +
         `<span style="font-weight:500;">${escapeHtml(r.email)}</span>` +
-        (r.publish_interest
-          ? ` <span style="color:#B5242A;">wants to publish</span>`
-          : "") +
         `<br><span style="color:#57534e;font-size:13px;">joined ${escapeHtml(stamp(r.created_at))}</span>` +
         `</li>`,
     )
@@ -133,8 +119,7 @@ function renderHtml(
       </h2>
       <ul style="font-size: 15px; color: #1c1917; line-height: 1.5; padding-left: 18px;">${items}</ul>
       <p style="font-size: 14px; color: #57534e; line-height: 1.6;">
-        The list now holds ${total} in total, ${publishers} of whom ticked
-        &ldquo;I&rsquo;d also like to publish&rdquo;.
+        The list now holds ${total} in total.
       </p>
       <p style="font-size: 13px; color: #78716c; line-height: 1.6;">
         Nothing has been sent to them &mdash; the waiting list stores interest
@@ -216,7 +201,7 @@ export async function sendWaitlistDigest(): Promise<number> {
     // (Found by driving this against a real database; the unit tests could not
     // see it, because a mocked JS Date has no microseconds to lose.)
     const { rows } = await pool.query<WaitlistRow>(
-      `SELECT email, publish_interest, created_at, created_at::text AS created_at_exact
+      `SELECT email, created_at, created_at::text AS created_at_exact
          FROM waitlist
         WHERE created_at > $1::timestamptz
         ORDER BY created_at DESC`,
@@ -224,16 +209,14 @@ export async function sendWaitlistDigest(): Promise<number> {
     );
     if (rows.length === 0) return 0; // neither key advances: nothing was reported
 
-    const { rows: totals } = await pool.query<{
-      total: string;
-      publishers: string;
-    }>(
-      `SELECT count(*) AS total,
-              count(*) FILTER (WHERE publish_interest) AS publishers
-         FROM waitlist`,
+    // A count and the addresses, and nothing else. The digest used to break the
+    // total down by who had ticked "I'd also like to publish"; that question is
+    // gone from the page (2026-07-27) and the reporting went with it — keeping
+    // the breakdown would have been the same signal-gathering, one remove away.
+    const { rows: totals } = await pool.query<{ total: string }>(
+      `SELECT count(*) AS total FROM waitlist`,
     );
     const total = Number(totals[0]?.total ?? rows.length);
-    const publishers = Number(totals[0]?.publishers ?? 0);
 
     // Recipients are the admin accounts — the same set `requireAdmin` gates the
     // dashboard on, resolved through its one home. An admin with no email on
@@ -259,8 +242,8 @@ export async function sendWaitlistDigest(): Promise<number> {
     }
 
     const subject = `all.haus waiting list — ${rows.length} new`;
-    const textBody = renderText(rows, total, publishers);
-    const htmlBody = renderHtml(rows, total, publishers);
+    const textBody = renderText(rows, total);
+    const htmlBody = renderHtml(rows, total);
 
     for (const r of recipients) {
       await sendEmail({ to: r.email, subject, textBody, htmlBody });

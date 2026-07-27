@@ -184,7 +184,6 @@ export interface AdminWaitlist {
   totals: {
     total: number
     joinedLast7d: number
-    publishInterest: number
     /** Rows with an account behind them. */
     admitted: number
     /** Admitted but the invitation never went — the state that wants a retry. */
@@ -197,11 +196,10 @@ export interface AdminWaitlist {
   shown: number
   entries: Array<{
     email: string
-    publishInterest: boolean
     joinedAt: string
     /** An account exists for this address (migration 163). */
     admittedAt: string | null
-    /** The "there's room now" email went. Separate: the two can fail apart. */
+    /** The invitation email went. Separate: the two can fail apart. */
     invitedAt: string | null
     /** Who they became; null if unadmitted, or if that account was deleted. */
     username: string | null

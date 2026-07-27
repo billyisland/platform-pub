@@ -61,22 +61,27 @@ beforeEach(() => {
 });
 
 describe("POST /waitlist", () => {
-  it("captures a valid email, lower-cased and trimmed, reader by default", async () => {
+  it("captures a valid email, lower-cased and trimmed", async () => {
     const res = await join({ email: "  New@Example.COM  " });
 
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0].sql).toContain("ON CONFLICT (email) DO NOTHING");
-    // email normalised; publish_interest defaults to false (D3 reader-default)
-    expect(insertCalls[0].params).toEqual(["new@example.com", false]);
+    // The email, normalised, and NOTHING ELSE — one bound param, so a field
+    // added back to the insert fails here rather than shipping quietly.
+    expect(insertCalls[0].params).toEqual(["new@example.com"]);
   });
 
-  it("threads the publish-interest opt-in through", async () => {
+  // The tickbox and its column are gone from the write path (2026-07-27). A
+  // cached client still POSTing the old field must not 400 — the schema isn't
+  // strict, so the field is ignored — and it must not reach the INSERT.
+  it("ignores a stale client's publishInterest instead of rejecting it", async () => {
     const res = await join({ email: "writer@example.com", publishInterest: true });
 
     expect(res.statusCode).toBe(200);
-    expect(insertCalls[0].params).toEqual(["writer@example.com", true]);
+    expect(insertCalls[0].params).toEqual(["writer@example.com"]);
+    expect(insertCalls[0].sql).not.toContain("publish_interest");
   });
 
   it("is enumeration-safe: a repeat returns the identical acknowledgement", async () => {

@@ -701,9 +701,15 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
   // now says the count moved; this says WHO, which is the half an operator
   // needs to pick a cohort.
   //
+  // NO `publish_interest` ANYWHERE HERE (2026-07-27). The "I'd also like to
+  // publish" tickbox was removed from the page, and its tile and column went
+  // with it rather than being left to report on a question nobody is being
+  // asked. The COLUMN survives — those were answers people gave, and ceasing to
+  // ask is not the same as deleting what was said — but nothing reads it.
+  //
   // The admission state (migration 163) rides along: `admittedAt` says an
-  // account exists for this address, `invitedAt` says the "there's room now"
-  // email actually went, and they are separate because the send happens outside
+  // account exists for this address, `invitedAt` says the invitation email
+  // actually went, and they are separate because the send happens outside
   // the admission transaction and can fail on its own. A row that is admitted
   // but not invited is the state the panel offers a retry on — an admission
   // nobody heard about is the exact failure this section exists to stop.
@@ -725,13 +731,12 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         pool.query(
           `SELECT COUNT(*) AS total,
                   COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS joined_7d,
-                  COUNT(*) FILTER (WHERE publish_interest) AS publish_interest,
                   COUNT(*) FILTER (WHERE admitted_at IS NOT NULL) AS admitted,
                   COUNT(*) FILTER (WHERE admitted_at IS NOT NULL AND invited_at IS NULL) AS admitted_not_invited
              FROM waitlist`
         ),
         pool.query(
-          `SELECT w.email, w.publish_interest, w.created_at,
+          `SELECT w.email, w.created_at,
                   w.admitted_at, w.invited_at, a.username
              FROM waitlist w
              LEFT JOIN accounts a ON a.id = w.admitted_account_id
@@ -755,7 +760,6 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         totals: {
           total: num(t.total),
           joinedLast7d: num(t.joined_7d),
-          publishInterest: num(t.publish_interest),
           admitted: num(t.admitted),
           admittedNotInvited: num(t.admitted_not_invited),
         },
@@ -764,7 +768,6 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         shown: rows.length,
         entries: rows.map((r: any) => ({
           email: r.email as string,
-          publishInterest: Boolean(r.publish_interest),
           joinedAt: new Date(r.created_at).toISOString(),
           admittedAt: r.admitted_at ? new Date(r.admitted_at).toISOString() : null,
           invitedAt: r.invited_at ? new Date(r.invited_at).toISOString() : null,

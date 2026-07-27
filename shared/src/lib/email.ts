@@ -84,7 +84,7 @@ export async function sendMagicLinkEmail(
 }
 
 // ---------------------------------------------------------------------------
-// Waitlist invitation — "there's room now" (CLOSED-BETA-ADR §XI, D8)
+// Waitlist invitation — "we're ready for you now" (CLOSED-BETA-ADR §XI, D8)
 //
 // Sent once, by the operator's Admit action, after the account exists. It is
 // the third of the section's three emails and the only one that is a reply to
@@ -115,9 +115,13 @@ export async function sendWaitlistInviteEmail(to: string): Promise<void> {
 
   await sendEmail({
     to,
-    subject: "There's room on all.haus",
+    // The page promises "we'll write when we're ready for you", so this is the
+    // sentence that keeps it. Changed together on 2026-07-27 — if the page's
+    // wording moves again, move this with it: a promise and its fulfilment
+    // reading differently is how a real message starts to sound like a template.
+    subject: "We're ready for you on all.haus",
     textBody: [
-      "You asked to be told when there was room on all.haus. There is.",
+      "You asked to be told when we were ready for you on all.haus. We are.",
       '',
       `Your account is ready. Log in at ${loginUrl} with this address (${to})`,
       'and we will email you a link to get in — no password to remember.',
@@ -132,11 +136,11 @@ export async function sendWaitlistInviteEmail(to: string): Promise<void> {
     htmlBody: `
       <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
         <h2 style="font-size: 20px; font-weight: 600; color: #1c1917; margin-bottom: 16px;">
-          There's room on all.haus
+          We're ready for you on all.haus
         </h2>
         <p style="font-size: 15px; color: #57534e; line-height: 1.6; margin-bottom: 24px;">
-          You asked to be told when there was room. There is — your account is ready.
-          Log in with this address (<strong>${to}</strong>) and we'll email you a link
+          You asked to be told when we were ready for you. We are — your account is
+          ready. Log in with this address (<strong>${to}</strong>) and we'll email you a link
           to get in. There's no password to remember.
         </p>
         <a href="${loginUrl}"

@@ -41,7 +41,6 @@ process.env.INTERNAL_SERVICE_TOKEN ??= "test-token";
 interface Row {
   id: string;
   email: string;
-  publish_interest: boolean;
   created_at: Date;
   admitted_at: Date | null;
   admitted_account_id: string | null;
@@ -91,9 +90,6 @@ function query(sql: string, params: unknown[] = []) {
         {
           total: String(waitlistRows.length),
           joined_7d: String(waitlistRows.length),
-          publish_interest: String(
-            waitlistRows.filter((r) => r.publish_interest).length,
-          ),
           admitted: String(
             waitlistRows.filter((r) => r.admitted_at !== null).length,
           ),
@@ -254,7 +250,6 @@ async function build() {
 const T = (iso: string) => new Date(iso);
 
 const row = (over: Partial<Row> & Pick<Row, "id" | "email">): Row => ({
-  publish_interest: false,
   created_at: T("2026-07-27T08:47:00Z"),
   admitted_at: null,
   admitted_account_id: null,
@@ -280,7 +275,6 @@ beforeEach(() => {
     row({
       id: "w2",
       email: "middle@thenerve.news",
-      publish_interest: true,
       created_at: T("2026-07-27T08:55:00Z"),
     }),
     row({
@@ -320,11 +314,14 @@ describe("GET /admin/dashboard/waitlist", () => {
     expect(body.totals).toEqual({
       total: 3,
       joinedLast7d: 3,
-      publishInterest: 1,
       admitted: 0,
       admittedNotInvited: 0,
     });
-    expect(body.entries[1].publishInterest).toBe(true);
+    // NOTHING about publish interest, in the totals or per row: the question
+    // left the page on 2026-07-27 and its tile and column went with it. toEqual
+    // above already pins the totals exactly; this pins the row shape too, so
+    // reinstating either half fails here.
+    expect(body.entries.every((e: any) => !("publishInterest" in e))).toBe(true);
     expect(body.truncated).toBe(false);
     await app.close();
   });
@@ -422,7 +419,10 @@ describe("GET /admin/dashboard/waitlist", () => {
     expect(lastCountSql).toMatch(
       /FILTER \(WHERE created_at > now\(\) - interval '7 days'\) AS joined_7d/,
     );
-    expect(lastCountSql).toMatch(/FILTER \(WHERE publish_interest\) AS publish_interest/);
+    // No publish-interest aggregate: the question left the page on 2026-07-27,
+    // so the route must stop counting it rather than report on something
+    // nobody is being asked.
+    expect(lastCountSql).not.toMatch(/publish_interest/);
     expect(lastCountSql).toMatch(
       /FILTER \(WHERE admitted_at IS NOT NULL\) AS admitted/,
     );

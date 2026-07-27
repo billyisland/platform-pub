@@ -113,6 +113,25 @@ on the page.
 > single unticked checkbox — "I'd also like to publish" — persisted to
 > `waitlist.publish_interest` (default false). The email-only alternative was
 > declined: the cohort-recruitment signal is worth the one boolean.
+>
+> **REVERSED (2026-07-27) — the email-only alternative wins after all, and the
+> reasoning above is where the mistake was.** "The signal is worth the one
+> boolean" values the signal without asking what it would ever change. Nothing:
+> the answer implies nothing about what we should give anyone, admission is one
+> operator reading one screen, and there is no larger interest here looking for
+> hints about revenue. What it does do is turn joining a waiting list into
+> answering a question, from people who have been given nothing yet and are
+> owed a way to be told when it opens. So the tickbox is gone from the page,
+> the field from the request schema, and — this is the half that matters — the
+> reporting behind it: the digest's breakdown and the panel's tile and column.
+> Removing the question while still counting the answers would have been the
+> same instinct wearing a different hat.
+>
+> **The column stays.** `waitlist.publish_interest` is not dropped: the `true`s
+> in it are answers people actually gave, and ceasing to ask is not the same as
+> deleting what was said. Nothing reads it. If the question is ever genuinely
+> needed, ask the people who are already in, where an answer has a consequence
+> they can see.
 
 ### D4 — Frontend presentation
 
@@ -190,8 +209,12 @@ thesis (ownership / farming / paying writers), then three mono body paragraphs
 
 **Waitlist surface**
 > **Not open yet.**
-> all.haus is in closed beta. Join the list and we'll write when there's room.
-> [ email · (opt-in: I'd also like to publish) · Join ]
+> all.haus is in closed beta. Join the list and we'll write when we're ready
+> for you.
+> [ email · Join ]
+>
+> _(Copy revised 2026-07-27: "when there's room" → "when we're ready for you",
+> and the "I'd also like to publish" opt-in removed entirely — see §XI.5.)_
 > _Already have an account? Log in._
 
 **Google-rejection / stray-signup landing**
@@ -325,9 +348,11 @@ storage failure → 500). Mutation-checked — dropping the lower-case or the
 the logged-out register (matches the `/auth` page's chrome: serif head, mono
 copy, the shared field/`.btn` grammar). Email field + the single unticked
 "I'd also like to publish" opt-in (D3) + success state. Copy per §V, to the
-author's ear. `web/src/lib/api/waitlist.ts` is the client method.
+author's ear. `web/src/lib/api/waitlist.ts` is the client method. *(The opt-in
+was removed 2026-07-27 — the form is an email field and a button; see the
+reversal on D3.)*
 
-**D3 resolved:** keep the opt-in (see the D3 note). **D5:** the lawful-basis /
+**D3 resolved:** keep the opt-in (see the D3 note) — **later reversed, 2026-07-27**. **D5:** the lawful-basis /
 purpose note is drafted at `docs/adr/WAITLIST-PRIVACY-NOTE.md` — what is stored,
 consent basis, single purpose, retention, subject rights, and why the endpoint
 can't leak membership — with three points flagged for counsel (consent
@@ -392,7 +417,7 @@ suspenders.
 
 **Waitlist surface (`app/waitlist/page.tsx`).** Gains the §V edge-case line:
 arriving with `?from=beta` shows "You're not in the beta yet. Join the waiting
-list and we'll be in touch when there's room." in place of the default
+list and we'll be in touch when we're ready for you." in place of the default
 subhead. Read from `window.location.search` in an effect, **not**
 `useSearchParams`, to keep the page out of a Suspense boundary.
 
@@ -493,7 +518,7 @@ shape does not have to change when it isn't.
    any panel: it turns "nobody knew she was there" into a solved problem in an
    afternoon. **BUILT 2026-07-27 — see XI.4.**
 
-The **admission** email — "there's room now" — is a third thing and belongs with
+The **admission** email — "we're ready for you" — is a third thing and belongs with
 the admit flow, not here. Note it is arguably bulk rather than transactional;
 DEPLOYMENT.md records that new Postmark broadcast streams are rate-limited and
 want warming over 2–4 weeks, which is a lead time the first cohort has to plan

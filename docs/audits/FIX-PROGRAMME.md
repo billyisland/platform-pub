@@ -163,6 +163,51 @@ starts.
   scenarios and left clean. **Not driven on prod** — the three real rows there
   will produce one digest on the next deploy, and that email is the check.
 
+- **2026-07-27 (waiting list: one promise reworded, one question withdrawn)** —
+  Two copy/scope changes on the join surface, the second larger than it looks.
+  Spec: `CLOSED-BETA-ADR.md` D3 (reversed) + §V copy block.
+
+  **"When there's room" → "when we're ready for you."** Room is a capacity
+  statement and it is the wrong one: it says the constraint is our shelf space,
+  when what a person on a list wants to know is when we will be in a state to
+  look after them. Changed on `/waitlist` (both subheads and the joined
+  confirmation), in the route's acknowledgement, in the admin admit dialog —
+  and in the **invitation email**, which is the sentence that keeps the promise
+  ("You asked to be told when we were ready for you. We are."). A promise and
+  its fulfilment reading differently is how a real message starts to sound like
+  a template, so those two move together or not at all.
+
+  **The "I'd also like to publish" tickbox is gone, and so is everything that
+  reported it.** D3 kept it in 2026-07-24 on the grounds that "the
+  cohort-recruitment signal is worth the one boolean" — which values the signal
+  without asking what it would ever change. Nothing: the answer implies nothing
+  about what anyone should be given, admission is one operator reading one
+  screen, and there is no larger interest here looking for hints about revenue.
+  What it does do is turn joining a waiting list into answering a question, put
+  to people who have been given nothing yet. Removed from the page, from
+  `waitlist.join`'s payload, and from the `POST /waitlist` schema — **and from
+  the two places that reported it**, the digest email's breakdown and the admin
+  panel's tile and column, because removing the question while still counting
+  the answers would be the same instinct wearing a different hat.
+
+  **The column is NOT dropped.** `waitlist.publish_interest` keeps its data and
+  its `false` default: the `true`s in it are answers people actually gave, and
+  ceasing to ask is not the same as deleting what was said. Nothing reads it —
+  no migration, no `schema.sql` regen, and the route simply stops writing it.
+  The schema is deliberately not `.strict()`, so a cached client still POSTing
+  the old field is accepted and the field ignored.
+
+  Tests: the three suites that pinned the field now pin its ABSENCE — the insert
+  binds one param, the digest body must not match `/publish/i` and must issue no
+  query mentioning the column, and the admin route must not aggregate it.
+  **Mutation-checked**, per the standing rule: reinstating the flag in the
+  insert, in the digest copy, and in the route's count each fails exactly one
+  test, which is what makes the absence a pin rather than a green suite that
+  would never have noticed.
+
+  Pre-flight: 433 gateway tests pass (unchanged count), `tsc` clean on gateway,
+  shared and web, root eslint 0 errors, `next build` green.
+
 - **2026-07-27 (public register: no vessel on a phone, and none taller than what
   it holds)** — Two chassis changes from one instinct: a container should be
   doing a container's job or not be there. Spec: `LOGGED-OUT-REGISTER-ADR.md`
