@@ -34,7 +34,7 @@ import type { VesselPalette } from '../../workspace/tokens'
 // 13.5px mobile. It stays the largest of the three at both sizes — it is the
 // demo carrying content a visitor is meant to read.
 
-// THE BYLINES AND BODIES ARE INVENTED — see the note in WorkspaceDemo. It
+// THE BYLINES AND BODIES ARE INVENTED — see the note in CanvasDemo. It
 // matters most here, because this is the demo shown at near-true size and the
 // one whose content a visitor is actually meant to read: a real name attached
 // to a retyped post is a claim we have no right to make, and a real name
@@ -43,7 +43,10 @@ import type { VesselPalette } from '../../workspace/tokens'
 export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
   return (
     <div className="ah-demo-omnivore">
-      <DemoVessel palette={palette}>
+      {/* This demo is the FIXED-SIZE figure, so it owns its ⊔ inline. The other
+          two omit `wall` and take their geometry from §1d, because they scale in
+          `em` off a container query — see the two-mode note in primitives. */}
+      <DemoVessel palette={palette} wall={8}>
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Marguerite Oyelaran" time="5d" />
           <DemoTitle palette={palette}>The Ravelin</DemoTitle>

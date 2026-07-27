@@ -6,9 +6,9 @@ import { LIGHT_ISLAND_STYLE } from '../../lib/palette/island'
 import { useResolvedDark } from '../../stores/colorScheme'
 import { ForallDisc } from '../brand/ForallDisc'
 import { LandingFigure } from './LandingFigure'
-import { WorkspaceDemo } from './demos/WorkspaceDemo'
+import { CanvasDemo } from './demos/CanvasDemo'
 import { OmnivoreDemo } from './demos/OmnivoreDemo'
-import { GateDemo } from './demos/GateDemo'
+import { ReaderDemo } from './demos/ReaderDemo'
 
 // =============================================================================
 // LandingVessel — `/`'s chassis. An ABSTRACTION of the workspace vessel, not a
@@ -83,13 +83,20 @@ import { GateDemo } from './demos/GateDemo'
 // `fontSize` in px and everything inside it is `em`, so a demo has a single
 // register knob. The three are tuned against the page's own 17px prose:
 //
-//   · OmnivoreDemo   14.5px — the LARGEST. It carries content a visitor is
-//                            meant to read; the four VIA lines are the argument.
-//   · GateDemo       13px   — a specimen, plus an inset. It is the only demo
-//                            that could be mistaken for the page's own prose,
-//                            so it needs the clearest step down. See GateDemo.
-//   · WorkspaceDemo  12px   — schematic. It only has to read as "several feeds,
-//                            each different, side by side", which survives small.
+//   · OmnivoreDemo  14.5px  — the LARGEST, and a fixed px. It carries content a
+//                             visitor is meant to read; the four VIA lines are
+//                             the argument, and a single column has the width to
+//                             hold them at any sane viewport.
+//   · ReaderDemo    12px    — a specimen. The article text inside the pane is
+//                             filler, so it must not invite reading; the pane
+//                             and scrim now carry the "this is a demo" signal
+//                             structurally, which is why it no longer needs the
+//                             inset the bare gate did.
+//   · CanvasDemo    FLUID   — `clamp(8.5px, 1.95cqw, 12px)` off a container
+//                             query, because its ARRANGEMENT is its argument and
+//                             must not reflow. See the long note in CanvasDemo:
+//                             it scales rather than rearranges, and sheds card
+//                             detail rather than shrinking into illegibility.
 //
 // Each is sized to its job rather than to the shape of a source capture, which
 // is the substantive difference from what was here before.
@@ -110,15 +117,15 @@ import { GateDemo } from './demos/GateDemo'
 // lagging `dark`, so a dark-mode visitor never paints the light vessel on the
 // dark floor first.
 //
-// THE SAME FLAG GOES TO WorkspaceDemo, which resolves the spring and winter
-// colourways for its second and third columns. It takes the flag as a prop
-// rather than calling the hook itself so the demos stay hook-free and inert.
+// THE SAME FLAG GOES TO CanvasDemo and ReaderDemo, which resolve four seasonal
+// colourways apiece for their feeds. Both take the flag as a prop rather than
+// calling the hook themselves, so the demos stay hook-free and inert.
 // =============================================================================
 
 const GAP = 12 // inter-card gap
 
 /** Which demo a figure mounts. Copy for each lives in page.tsx. */
-export type FigureKey = 'workspace' | 'omnivore' | 'gate'
+export type FigureKey = 'canvas' | 'omnivore' | 'reader'
 
 export interface Figure {
   key: FigureKey
@@ -165,12 +172,12 @@ export function LandingVessel({
 
   const demoFor = (key: FigureKey) => {
     switch (key) {
-      case 'workspace':
-        return <WorkspaceDemo dark={globalDark} />
+      case 'canvas':
+        return <CanvasDemo dark={globalDark} />
       case 'omnivore':
         return <OmnivoreDemo palette={palette} />
-      case 'gate':
-        return <GateDemo palette={palette} />
+      case 'reader':
+        return <ReaderDemo palette={palette} dark={globalDark} />
     }
   }
 

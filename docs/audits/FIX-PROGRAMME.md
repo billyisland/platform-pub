@@ -163,6 +163,90 @@ starts.
   scenarios and left clean. **Not driven on prod** — the three real rows there
   will produce one digest on the next deploy, and that email is the check.
 
+- **2026-07-27 (landing: the demos become a canvas and a reading pane)** — A
+  second bundle the same day, revising the one below. Reviewed, corrected in
+  four places, applied. Spec: `LOGGED-OUT-REGISTER-ADR.md` §IX departure 7quater.
+
+  **Three equal columns were the weakest reading of the claim.** `WorkspaceDemo`
+  showed three feeds of equal width, height and spacing, which says "this app has
+  columns" — a thing every app has had since 2004. What the workspace does is let
+  a feed be any SIZE, in any POSITION, at either ORIENTATION, and no figure in the
+  set had ever shown it. `CanvasDemo` replaces it with four irregular feeds: one
+  wide and tall down the left, two narrow stacked in the right-hand column, one
+  horizontal along the bottom whose cards run off its own right edge under a
+  gradient to the vessel interior (a horizontal feed shown statically has to be
+  clipped to read as scrollable — a row that ends tidily reads as a row that has
+  ended). Four colourways rather than three, so the per-feed wall reads as a
+  system. Caption rewritten to match: "Feeds are objects on a canvas — size them,
+  stack them, turn them sideways."
+
+  **It scales instead of reflowing, and that is the mobile fix.** The old version
+  dropped to two columns under a viewport media query and got knocked about: it
+  was sized against a guess at the viewport rather than the width it was handed,
+  so an upstream padding change threw it out. And reflowing was wrong in
+  principle — the arrangement IS the argument, so a mobile version that tidies
+  the feeds into a regular stack demonstrates the opposite. The wrapper is now a
+  container (`container-type: inline-size`), the base size
+  `clamp(8.5px, 1.95cqw, 12px)`, everything inside `em`. Below 430px of
+  *container* width the card bodies and provenance tags hide, leaving bylines and
+  titles — shed detail, don't shrink. **This is a deliberate departure from §1c's
+  media-query rule and is safe for §1c's own reason**: a container query is still
+  CSS, resolving at paint on server-rendered markup, so it keeps the SSR safety
+  while measuring the right box rather than a guess at it.
+
+  **The bare gate became the whole Glasshouse figure.** Shown on plain card
+  ground, `GateDemo` read as text that had gone wrong — a paragraph trailing into
+  a fade, a price, two buttons, floating on nothing. A paywall is legible as a
+  paywall because of the SITUATION it appears in, and the situation was missing.
+  `ReaderDemo` supplies it: a blurred, desaturated four-feed floor, a scrim at
+  `.gh-scrim`'s wash, and the lifted pane with grip and ✕. The blur is a `filter`
+  on the floor, NOT `backdrop-filter` on the scrim — the real scrim needs it
+  because it sits over a live workspace it cannot know the contents of; this
+  floor is inert markup that exists only to be blurred, so blurring it directly
+  renders identically, costs less, and dodges the backdrop-filter containment
+  bugs that bite inside clipped ancestors. The 52px inset is gone: a lifted pane
+  over a blurred field cannot be mistaken for the page's own prose, so the inset
+  was no longer doing separate work. Registers are now omnivore 14.5px fixed /
+  reader 12px / canvas fluid.
+
+  **`DemoVessel` gains two geometry modes**, because inline styles beat
+  `@layer components`: pass `wall` and it draws its ⊔ inline (the fixed-size
+  omnivore figure), omit it and it only publishes `--ah-demo-wall` and leaves
+  border/padding/gap to §1d (the two demos that scale in `em`). An inline zeroed
+  border would silently win and flatten the ⊔, hence "declare no borders at all"
+  rather than "declare 0".
+
+  **Four corrections to the bundle.** (1) **It reverted both corrections to the
+  bundle below** — the demo content again named Naomi Kanakia, Scott Alexander,
+  the Guardian, Reuters, the Baffler, Astral Codex Ten, and the same real-account
+  Ukrainian drone post, and it deleted the comment blocks recording why the names
+  were invented. Rewritten onto the existing invented world (Tobias Wren, Ines
+  Bergqvist, Marguerite Oyelaran, Ellis Marchetti, Halloran, Aurelio Frame,
+  Rosalind Vane; The Meridian, Fenwick Wire, The Ravelin, The Slow Hour,
+  Northgate Transit, plus one new publication, *The Whip Room*), with the note
+  rehomed to `CanvasDemo` and its references repointed. (2) **The 1px divider was
+  back**, `height: 1` again, this time in `ReaderDemo` — caught by the pattern the
+  previous entry added to `check-hairlines.sh`, which is the first time that
+  pattern has earned its place. Whitespace again, not a thicker rule. (3) and (4)
+  are both consequences of the new `wall`-optional mode, which silently drops the
+  ⊔ from any vessel that neither passes `wall` nor has a CSS rule: `OmnivoreDemo`
+  still called `<DemoVessel palette={palette}>` and would have rendered wall-less
+  (now explicit `wall={8}`, the mode the bundle's own notes say it wants), and
+  `.ah-demo-reader-floor > *` set padding and gap but no border — so the reader's
+  floor would have been four borderless interiors, losing the four wall colours
+  that are the entire reason the floor is there.
+
+  Incidental: the duplicate `../../workspace/tokens` import is back in both new
+  files (a hard `no-duplicate-imports` error under the root config), merged
+  again; a stale `WorkspaceDemo` reference in `LandingVessel`'s dark-flag note
+  repointed.
+
+  Pre-flight: `check-hairlines.sh` clean on all touched files, `tsc --noEmit`
+  clean, root eslint 0 errors, `next build` green (41 pages prerendered). **Not
+  in a browser** — and this bundle adds container queries, the one genuinely new
+  platform feature in the set, plus eight seasonal palettes resolving inside
+  `LIGHT_ISLAND_STYLE` (ADR §IX still-open 7).
+
 - **2026-07-27 (landing: the screengrabs become live markup)** — Arrived as a
   patch bundle; reviewed, corrected in two places, applied. Undoes the showcase
   half of yesterday's entry below. Spec: `LOGGED-OUT-REGISTER-ADR.md` §IX

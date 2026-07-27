@@ -25,40 +25,66 @@ import type { VesselPalette } from '../../workspace/tokens'
 // element that contains another font-sized element, so the ems never compound.
 // =============================================================================
 
-/** The ⊔ a demo feed sits in. Walls come from the palette being demonstrated. */
+/**
+ * The ⊔ a demo feed sits in. Walls come from the palette being demonstrated.
+ *
+ * TWO MODES, and the distinction matters. Pass `wall` and the vessel draws its
+ * own ⊔ inline at that px thickness — what the omnivore demo wants, since it is
+ * a fixed-size figure. Pass NO `wall` and the vessel draws nothing: it only
+ * publishes its palette's wall colour as `--ah-demo-wall` and leaves border,
+ * padding and gap to a stylesheet rule matching `className`.
+ *
+ * The second mode exists because inline styles beat @layer components. The
+ * canvas and reader demos scale their whole geometry in `em` off a container
+ * query (globals.css §1d), so their wall thickness has to be CSS — and an
+ * inline `borderLeft` here, even a zeroed one, would silently win and flatten
+ * the ⊔ to nothing. Hence "declare no borders at all" rather than "declare 0".
+ */
 export function DemoVessel({
   palette,
-  wall = 8,
-  gap = 8,
-  pad = 8,
+  wall,
+  gap,
+  pad,
   children,
   className,
   style,
 }: {
   palette: VesselPalette
-  /** Wall thickness in px. The workspace demo runs thinner walls at its scale. */
+  /** Wall thickness in px. OMIT to hand geometry to `className`'s CSS rule. */
   wall?: number
   gap?: number
   pad?: number
   children: ReactNode
-  /** For §1d geometry the stylesheet owns (the workspace demo's columns). */
+  /** For §1d geometry the stylesheet owns (the canvas and reader demos). */
   className?: string
   style?: CSSProperties
 }) {
+  const ownsGeometry = wall !== undefined
+
   return (
     <div
       className={className}
-      style={{
-        background: palette.interior,
-        borderLeft: `${wall}px solid ${palette.walls}`,
-        borderRight: `${wall}px solid ${palette.walls}`,
-        borderBottom: `${wall}px solid ${palette.walls}`,
-        padding: pad,
-        display: 'flex',
-        flexDirection: 'column',
-        gap,
-        ...style,
-      }}
+      style={
+        {
+          background: palette.interior,
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          // Always published, both modes: §1d's rules read it for the border
+          // colour, which CSS cannot derive because the palette resolves in JS.
+          '--ah-demo-wall': palette.walls,
+          ...(ownsGeometry
+            ? {
+                borderLeft: `${wall}px solid ${palette.walls}`,
+                borderRight: `${wall}px solid ${palette.walls}`,
+                borderBottom: `${wall}px solid ${palette.walls}`,
+                padding: pad ?? wall,
+                gap: gap ?? wall,
+              }
+            : {}),
+          ...style,
+        } as CSSProperties
+      }
     >
       {children}
     </div>

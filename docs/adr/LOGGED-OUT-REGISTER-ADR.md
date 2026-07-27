@@ -664,7 +664,9 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    on a signal the size already sends) and the workspace drops to two columns
    (three at ~100px stop reading as cards) — the third hidden rather than
    reflowed, since stacked it would say "feeds go underneath each other", the
-   opposite of what the desktop workspace does.
+   opposite of what the desktop workspace does. *(The specific registers and the
+   mobile step-down here are **superseded by 7quater**, which replaces two of the
+   three demos; the one-knob-in-§1d principle stands, and 7quater keeps it.)*
 
    **The demo content is invented, and must stay so.** The captures showed real
    posts by real people, which is defensible in a screenshot and is not
@@ -674,6 +676,84 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    *The Common Room*, *The Slow Hour* — shared across the three demos so they
    read as one world). The protocol labels are the exception and must stay
    literally true: they are the argument.
+
+7quater. **The canvas and the reading pane** (2026-07-27, same day as 7ter and
+   revising it). Two of the three demos are replaced; the omnivore column, which
+   was always the one carrying content meant to be read, is untouched.
+
+   **`CanvasDemo` supersedes `WorkspaceDemo`.** Three feeds of equal width,
+   height and spacing was the weakest available reading of the claim — three
+   identical columns say "this app has columns", which every app has had since
+   2004. The workspace's actual argument is that a feed can be any SIZE, in any
+   POSITION, at either ORIENTATION, and no figure in the old set ever showed it.
+   So the arrangement is irregular on purpose: one wide and tall down the left
+   (the feed you read), two narrow stacked in the right-hand column (two feeds
+   sharing one column of canvas), one horizontal along the bottom with its cards
+   running off its own right edge under a gradient to the vessel interior. The
+   clipping is load-bearing: a horizontal feed shown statically has to be clipped
+   to read as scrollable, because a row that ends tidily reads as a row that has
+   ended. Four colourways (basic/spring/winter/autumn), so the per-feed wall
+   colour reads as a system rather than as decoration.
+
+   **It scales, it never reflows — and this is the one place `/` uses a container
+   query.** The predecessor dropped to two columns under a viewport media query,
+   which failed twice over: it was sized against a *guess* at the viewport rather
+   than the width it was actually handed (so an upstream padding change threw it
+   out), and rearranging was wrong in principle, since the arrangement IS the
+   argument and a mobile version that tidies the feeds into a regular stack
+   demonstrates the opposite of the claim. The wrapper is now
+   `container-type: inline-size`, the base `clamp(8.5px, 1.95cqw, 12px)`, and
+   every measurement inside — type, padding, gaps, wall thickness, the bar — is
+   `em`. Below 430px of *container* width the card bodies and provenance tags
+   hide, leaving bylines and titles: **shed detail, don't shrink**, because
+   scaling everything down to fit reproduces exactly the grey texture 7ter
+   deleted the screengrabs for. **This departs from 7bis/§1c's media-query rule
+   and is safe for §1c's own reason** — a container query is still CSS, resolving
+   at paint on server-rendered markup with no JS and no hydration snap, so it
+   keeps the SSR safety while measuring the right box. It is also the only new
+   platform feature on the page, and the first thing to check if `/` ever has to
+   reach an older browserslist (the fallback is a fixed 11px base).
+
+   **`ReaderDemo` supersedes `GateDemo`.** On plain card ground the bare gate read
+   as text that had gone wrong: a paragraph trailing into a fade, a price, two
+   buttons, floating on nothing. A paywall is legible as a paywall because of the
+   SITUATION it appears in, and the situation was the missing part — a reader
+   recognises the shape of a pane held over an interrupted background. So the
+   demo is now the whole Glasshouse figure: a blurred, desaturated four-feed
+   floor, a scrim at `.gh-scrim`'s wash (bone-bright 0.72 / ink-925 0.74), and
+   the lifted pane with grip and ✕, per §III.2's shadow-alone lift. The floor does
+   double duty, quietly restating the canvas argument so the reader reads as
+   something that opens OVER your feeds rather than a place you navigate to.
+   **The blur is a `filter` on the floor, not `backdrop-filter` on the scrim** —
+   the real scrim needs backdrop-filter because it sits over a live workspace
+   whose contents it cannot know; this floor is inert markup that exists only to
+   be blurred, so blurring it directly renders identically, costs less, and
+   sidesteps the backdrop-filter containment bugs that bite inside clipped
+   ancestors. Do not "correct" it for consistency. The 52px inset is gone: a
+   lifted pane over a blurred field cannot be mistaken for the page's own prose,
+   so the inset had stopped doing separate work and is now just the pane's margin
+   (which shrinks on mobile but never goes — a pane flush to the edges is a box).
+
+   **Registers, superseding 7ter's**: omnivore 14.5/13.5px fixed, reader 12px,
+   canvas fluid. The one-knob-per-demo rule and its home in §1d are unchanged.
+
+   **`DemoVessel` has two geometry modes**, and the distinction is not cosmetic:
+   inline styles beat `@layer components`, so a demo whose walls must scale in
+   `em` cannot have them set inline — an inline zeroed border would silently win
+   and flatten the ⊔ to nothing. Pass `wall` and the vessel draws its own ⊔ (the
+   fixed-size omnivore figure); omit it and it publishes only `--ah-demo-wall`
+   and leaves border/padding/gap to §1d. **The trap is that omitting `wall` with
+   no matching CSS rule renders a wall-less vessel and nothing errors** — which
+   is exactly what the bundle did in two places (the omnivore call site, and the
+   reader's floor rule), caught in review. A vessel is its walls; if a demo's
+   feeds ever go colourless, this is why.
+
+   **The invented-content rule of 7ter stands unchanged**, and had to be
+   re-applied: the bundle reverted it wholesale, real names and all, and deleted
+   the notes recording it. The note now lives in `CanvasDemo`. Anything arriving
+   as a patch bundle for this page gets checked against 7ter's paragraph and
+   against `check-hairlines.sh` before it is read for design — both regressions
+   came back in the same delivery.
 
 7. **Three logged-in tool surfaces clear the band** — `/write`, `/admin/*`,
    `/traffology/*` — because the row mounts on every non-workspace route and
@@ -730,11 +810,17 @@ and is rewritten; a "public register" section documents the new chassis.
    `--ah-row-band` and every page's clearance with it). Not attempted here
    because the landing brief was the vessel, and any of the three moves the
    register's own furniture.
-7. **The demos (7ter) have never been in a browser, in either mode.** They
-   compile and `/` still prerenders static, but the three things worth looking
-   at are all rendered facts: whether the seasonal walls in `WorkspaceDemo`
-   still read as three distinct feeds at 12px in DARK (the dark variants are a
-   near-shared neutral by design — the identity rides the walls, and this is the
-   smallest surface that claim has ever been made at); whether the gate's 52px
-   inset reads as an object on the card when the demo's ground is the card's own
-   colour; and the 390px step-down — inset gone, two columns, third hidden.
+7. **The demos (7ter, then 7quater) have never been in a browser, in either
+   mode.** They compile and `/` still prerenders static, but everything worth
+   looking at is a rendered fact, and 7quater widened the list rather than
+   shortening it: whether `CanvasDemo`'s four seasonal walls still read as four
+   distinct feeds in DARK at a base that now goes as low as 8.5px (the dark
+   variants are a near-shared neutral by design — identity rides the walls, and
+   this is by some way the smallest surface that claim has ever been made at);
+   whether `ReaderDemo`'s floor survives its own blur, i.e. whether four wall
+   colours at `blur(2.6px) saturate(0.55)` still say "your feeds" or just say
+   "grey"; whether the pane's elevation shadow reads as lift against a dark
+   scrim; **container-query support**, the one genuinely new platform feature on
+   the page (fine in current browsers, and the fallback is a fixed 11px base);
+   and at 390px, that the canvas keeps its arrangement while shedding card
+   bodies and tags, and the reader pane keeps a visible margin.

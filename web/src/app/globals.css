@@ -939,95 +939,228 @@ html.dark {
     }
   }
 
-  /* 1d. The landing demos' REGISTER. `/`'s showcase is three inert
-         reconstructions of the app (components/landing/demos), and each has ONE
-         knob: a base font-size, with everything inside it expressed in `em`, so
-         a demo's type, padding, gaps and rules all move together.
+  /* 1d. The landing demos' GEOMETRY AND REGISTER. `/`'s showcase is three inert
+         reconstructions of the app (components/landing/demos). Each has ONE
+         knob — a base font-size — with everything inside expressed in `em`, so a
+         demo's type, padding, gaps, wall thickness and rules all move together.
 
-         WHY THE KNOBS ARE HERE AND NOT IN THE COMPONENTS. Same reason as §1c:
-         `/` is server-rendered for logged-out visitors, so a JS breakpoint would
-         paint the desktop register on a phone and snap after hydration. These
-         three numbers are the only thing that changes between form factors, so
-         they are the only thing that has to be a media query.
+         WHY THE KNOBS LIVE HERE. Same reason as §1c: `/` is server-rendered for
+         logged-out visitors, so a JS breakpoint would paint the desktop register
+         on a phone and snap after hydration.
 
          THE THREE ARE DELIBERATELY UNEQUAL, sized to their jobs rather than to
-         one another — the substantive change from the screengrabs they replaced,
-         which were all the same shape because they were all the same capture:
+         each other — the substantive difference from the three screengrabs they
+         replaced, which were all the same shape because they were all the same
+         capture. */
 
-           · OMNIVORE (largest) carries content the visitor is meant to READ. Its
-             four `via …` provenance lines ARE the argument — the whole reason the
-             captures failed was that a 2.9× downscale reduced them to texture. It
-             is a single column precisely so it can run near true size at the
-             prose measure.
-           · GATE (middle) is a SPECIMEN, and the one demo that could be mistaken
-             for the page's own prose — its predecessor sat at ~16px directly
-             below the page's 17px prose card, so the eye could not tell the app's
-             filler from the page's argument, and its £0.75 was set larger than
-             anything but the headline. It gets both signals: a clear step down in
-             size, and an INSET so it reads as an object ON the card rather than
-             as the card's contents.
-           · WORKSPACE (smallest) is SCHEMATIC. It only has to read as "several
-             feeds, each in its own colours, side by side", which survives at
-             11–12px in a way the omnivore column's argument would not. */
+  /* --- Omnivore: the one a visitor is meant to READ ------------------------
+     Fixed px, and the largest of the three. Its four `via …` provenance lines
+     ARE the argument — a 2.9× downscale reducing them to grey texture is what
+     condemned the screengrab it replaced — and a single column has the width to
+     carry them at any sane viewport, so it needs no fluid behaviour at all.
+
+     This is also the one demo whose ⊔ is drawn INLINE (`wall={8}` in the
+     component) rather than here: it is fixed-size, so its wall has nothing to
+     scale with. The two below are the opposite case. */
   .ah-demo-omnivore {
     font-size: 14.5px;
   }
-
-  .ah-demo-gate {
-    font-size: 13px;
-    /* The inset is the second half of the specimen signal. Small type alone says
-       "this is a demo"; small type plus margin says it without ambiguity. */
-    margin-left: 52px;
-    margin-right: 52px;
-  }
-
-  .ah-demo-workspace {
-    font-size: 12px;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
   @media (max-width: 767px) {
-    /* The mobile vessel is full-bleed with an 8px wall and 8px pad, so a card at
-       390px has ~318px of interior — which is what these three rules are
-       budgeting against. */
-
     .ah-demo-omnivore {
-      /* Down one notch, still the largest: the provenance lines have to survive,
-         and at 318px a single column has the width to carry them. */
       font-size: 13.5px;
     }
+  }
 
-    .ah-demo-gate {
-      /* THE INSET GOES ENTIRELY. 104px of margin out of 318 is a third of the
-         card spent on a signal that the size already sends — and it would squeeze
-         the fading article text into a column too narrow to read as an article
-         being interrupted, which is the thing the demo is for. Same arithmetic,
-         and the same conclusion, as §1c's doubled wall collapsing on mobile: the
-         gesture is worth its room on desktop and is not worth it here. */
-      font-size: 12px;
-      margin-left: 0;
-      margin-right: 0;
-    }
+  /* --- Canvas: the ARRANGEMENT is the argument -----------------------------
+     Four feeds, irregular on purpose: one wide and tall down the left, two
+     narrow stacked in the right-hand column, one horizontal along the bottom.
+     Three equal columns — the previous version — demonstrated the weakest
+     possible reading of the claim, since every app has had columns since 2004.
 
-    .ah-demo-workspace {
-      /* TWO COLUMNS, NOT THREE. At 318px three columns are ~100px each, at which
-         point the cards stop reading as cards and the demo becomes the grey
-         texture the screengrabs were replaced for. Two columns at ~155px still
-         show two DIFFERENT wall colours side by side, which is the whole claim —
-         "as many as you like" is made by the caption and by the numerals, not by
-         the third column's presence.
+     IT SCALES, IT NEVER REFLOWS, and that is the whole mobile fix. The earlier
+     version dropped to two columns under a viewport media query and got knocked
+     about, for two reasons: it was sized against a GUESS at the viewport rather
+     than the width the demo was actually handed, so any upstream padding change
+     threw it out; and rearranging was wrong in principle, because a mobile
+     version that tidies the feeds into a regular stack demonstrates the opposite
+     of what the demo is for.
 
-         The third is hidden rather than reflowed onto a second row: stacked, it
-         would read as "feeds go underneath each other", which is the opposite of
-         what the desktop workspace does. */
-      font-size: 11px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+     So the wrapper is a CONTAINER and the base size is fluid. The canvas
+     measures the space it is actually given, at any width, and cannot be thrown
+     out by anything upstream.
 
-    .ah-demo-ws-col-3 {
+     THIS DEPARTS FROM §1c's MEDIA-QUERY RULE, and safely: §1c insists on media
+     queries because a JS breakpoint would snap after hydration. A container
+     query is still CSS — it resolves at paint, on server-rendered markup, with
+     no JS. It gets §1c's SSR safety while measuring the right box. */
+  .ah-demo-canvas-wrap {
+    container-type: inline-size;
+  }
+
+  .ah-demo-canvas {
+    font-size: clamp(8.5px, 1.95cqw, 12px);
+    display: grid;
+    gap: 0.7em;
+    grid-template-columns: 1.55fr 1fr;
+    grid-template-areas:
+      'wide narrowA'
+      'wide narrowB'
+      'horiz horiz';
+  }
+
+  /* The vessels take their ⊔ here rather than inline, so wall thickness scales
+     with the canvas like everything else. The wall COLOUR is still inline and
+     palette-derived (`--ah-demo-wall`, set by DemoVessel). */
+  .ah-demo-canvas > * {
+    border-left: 0.55em solid var(--ah-demo-wall);
+    border-right: 0.55em solid var(--ah-demo-wall);
+    border-bottom: 0.55em solid var(--ah-demo-wall);
+    padding: 0.45em;
+    gap: 0.45em;
+    min-width: 0;
+  }
+
+  .ah-demo-c1 { grid-area: wide; }
+  .ah-demo-c2 { grid-area: narrowA; }
+  .ah-demo-c3 { grid-area: narrowB; }
+  .ah-demo-c4 { grid-area: horiz; }
+
+  /* The sideways feed. Cards run off the vessel's own right edge under a
+     gradient to the FLOOR colour (not to white) — a horizontal feed shown
+     statically has to be clipped to read as scrollable, because a row that ends
+     tidily reads as a row that has ended. */
+  .ah-demo-hrow {
+    display: flex;
+    gap: 0.45em;
+    overflow: hidden;
+    position: relative;
+  }
+  .ah-demo-hrow > * {
+    flex: 0 0 38%;
+  }
+  .ah-demo-hrow::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2.5em;
+    background: linear-gradient(to right, transparent, var(--ah-demo-floor));
+  }
+
+  @container (max-width: 430px) {
+    /* SHED DETAIL, DON'T SHRINK. Below this the card bodies and provenance tags
+       go, leaving bylines and titles. Scaling everything down to fit would
+       reproduce exactly the grey texture the screengrabs were replaced for; the
+       arrangement, which is the argument, survives intact at every width. */
+    .ah-demo-canvas .ah-demo-detail {
       display: none;
+    }
+    .ah-demo-hrow > * {
+      flex: 0 0 46%;
+    }
+  }
+
+  /* --- Reader: the pane ON THE GLASSHOUSE ----------------------------------
+     The gate shown on bare card ground read as text that had gone wrong — a
+     paragraph trailing into a fade, a price, two buttons, floating on nothing.
+     A paywall is legible as a paywall because of the SITUATION it appears in,
+     and the situation was missing. So the demo is now the whole Glasshouse
+     figure: blurred feed floor, scrim, lifted pane. */
+  .ah-demo-reader {
+    position: relative;
+    font-size: 12px;
+    overflow: hidden;
+    padding: 0.6em;
+  }
+
+  .ah-demo-reader-floor {
+    position: absolute;
+    inset: 0;
+    padding: 0.6em;
+    display: grid;
+    gap: 0.6em;
+    grid-template-columns: 1.4fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    /* A `filter` on the floor, NOT `backdrop-filter` on the scrim. The real
+       .gh-scrim needs backdrop-filter because it sits over a live workspace it
+       cannot know the contents of; this floor is inert markup that exists only
+       to be blurred. Blurring it directly renders identically, costs less, and
+       sidesteps the backdrop-filter containment bugs that bite inside clipped
+       ancestors — which this is. Do not "correct" it for consistency. */
+    filter: blur(2.6px) saturate(0.55);
+    opacity: 0.9;
+  }
+  /* The ⊔ again — same reason as the canvas, and needed for the same reason the
+     floor exists at all: four wall COLOURS blurred behind a pane is what says
+     "your feeds", and a floor of borderless interiors says nothing. */
+  .ah-demo-reader-floor > * {
+    border-left: 0.55em solid var(--ah-demo-wall);
+    border-right: 0.55em solid var(--ah-demo-wall);
+    border-bottom: 0.55em solid var(--ah-demo-wall);
+    padding: 0.45em;
+    gap: 0.45em;
+    min-width: 0;
+  }
+
+  /* Matches .gh-scrim's wash. The blur lives on the floor, above. */
+  .ah-demo-reader-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgb(var(--ah-bone-bright-rgb) / 0.72);
+  }
+  :root.dark .ah-demo-reader-scrim {
+    background: rgb(var(--ah-ink-925-rgb) / 0.74);
+  }
+
+  /* Lifted by elevation alone, no top edge — GLASSHOUSE-AND-PALETTE-ADR §III.2.
+     The margin here is just the pane's margin; it is no longer doing the
+     specimen-separation work the bare gate's inset had to do, because a lifted
+     pane over a blurred field cannot be mistaken for the page's own prose. */
+  .ah-demo-reader-pane {
+    position: relative;
+    margin: 1.6em 2.4em;
+    padding: 1.6em 1.8em 1.8em;
+    box-shadow: 0 0.8em 2.4em rgb(0 0 0 / 0.22);
+  }
+
+  .ah-demo-grip {
+    width: 2.6em;
+    height: 0.35em;
+    background: var(--ah-stone-300);
+    opacity: 0.7;
+    margin: -0.7em auto 1.2em;
+  }
+  .ah-demo-close {
+    position: absolute;
+    top: 0.9em;
+    right: 1em;
+    font-size: 1.1em;
+    line-height: 1;
+  }
+
+  .ah-demo-art {
+    position: relative;
+    font-size: 1em;
+    line-height: 1.6;
+    padding-bottom: 1.2em;
+  }
+  .ah-demo-art::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3.2em;
+    background: linear-gradient(to bottom, transparent, var(--ah-demo-pane));
+  }
+
+  @media (max-width: 560px) {
+    /* The pane's margin shrinks but never goes: it is what makes the thing read
+       as FLOATING, and a pane flush to the demo's edges is just a box. */
+    .ah-demo-reader-pane {
+      margin: 1.2em 1em;
+      padding: 1.3em 1.2em 1.4em;
     }
   }
 

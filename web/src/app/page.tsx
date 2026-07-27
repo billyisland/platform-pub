@@ -50,7 +50,7 @@ const PROSE = [
 // would read as a wall of invented bylines and prices.
 //
 // THE DEMOS' OWN CONTENT IS INVENTED — bylines, publications, handles and post
-// bodies alike (see the note in WorkspaceDemo). The captures they replaced held
+// bodies alike (see the note in CanvasDemo). The captures they replaced held
 // real posts by real people; retyped as markup on a page that is selling
 // something, a real name is a claim we have no right to make. Keep these
 // descriptions free of real ones too. The protocol labels are the exception, and
@@ -61,10 +61,10 @@ const PROSE = [
 // Nostr paragraph has no demo, because an open protocol has no screen.
 const FIGURES: Figure[] = [
   {
-    key: 'workspace',
-    caption: 'Your feeds, side by side — as many as you like',
+    key: 'canvas',
+    caption: 'Feeds are objects on a canvas — size them, stack them, turn them sideways',
     description:
-      'Three all.haus feeds open side by side as columns, each framed in its own colour scheme and numbered along the bottom: a news feed of headlines, a feed of long essays arriving by RSS, and a feed of short Bluesky posts.',
+      'Four all.haus feeds arranged on one canvas, each framed in a different colour and numbered: a wide one down the left running the full height, two narrow ones stacked in the right-hand column, and a fourth along the bottom whose cards run sideways off the edge of the screen.',
   },
   {
     key: 'omnivore',
@@ -73,10 +73,10 @@ const FIGURES: Figure[] = [
       'A single all.haus feed in close-up. Four posts sit in one column in the same card style, each labelled with where it came from: an RSS essay, a Bluesky post quoting another, a Nostr note, and a newsletter post from RSS.',
   },
   {
-    key: 'gate',
+    key: 'reader',
     caption: 'Read it — pay a few pence. No subscription required.',
     description:
-      'An article on all.haus breaking off at a “Keep reading” panel: the price, seventy-five pence, then a button to continue and a link to add a payment card, with a monthly subscription offered underneath as the alternative.',
+      'A reading pane floating over a blurred workspace of feeds. The article inside it breaks off at a “Keep reading” panel: the price, seventy-five pence, then a button to continue and a link to add a payment card, with a monthly subscription offered underneath as the alternative.',
   },
 ]
 
