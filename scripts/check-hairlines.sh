@@ -29,6 +29,11 @@ TARGETS=("${@:-$ROOT/web/src}")
 # focus outlines and 4px slab rules).
 PATTERNS=(
   "literal 1px (border/shadow/size)::(?<![0-9])1px"
+  # A bare `1` in a JS style object is a 1px line at render — React appends the
+  # unit for you. `height: 1` reads as a number and greps as nothing, so the
+  # `1px` pattern above never sees it. That is how a divider rule shipped past
+  # this script in the landing-demo bundle (GateDemo, 2026-07-27).
+  "numeric 1 in a style object (renders as 1px)::(height|width|borderWidth|border(Top|Bottom|Left|Right)Width|outlineWidth)\s*:\s*1\s*[,}]"
   "tailwind bare 1px border width::[\"'\` :]border(-[tblrxyse])?[\"'\` ]"
   "tailwind 1px arbitrary border::border-\[1px\]|border-(t|b|l|r|x|y|s|e)-\[1px\]"
   "tailwind divide (1px between children)::\bdivide-[xy](?!-[0-9])"

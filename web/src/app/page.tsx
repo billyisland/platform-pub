@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import HomeRedirect from '../components/layout/HomeRedirect'
-import { LandingVessel } from '../components/landing/LandingVessel'
+import { LandingVessel, type Figure } from '../components/landing/LandingVessel'
 
 const TITLE = 'all.haus — No one should own the public square.'
 const DESCRIPTION =
@@ -37,28 +37,46 @@ const PROSE = [
   'The whole thing runs on Nostr: an open protocol with no company behind it, no servers to seize, and no owner to sell it to someone worse.',
 ]
 
-// Live-site screengrabs shown as cards below the sell text. Real images live at
-// these paths under web/public, shipped at their CAPTURE size (full 1848×1056
-// viewport grabs) — the frame is cut to that ratio rather than the images being
-// padded or cropped to a chosen frame; see LandingVessel's SHOT_RATIO. If one
-// ever goes missing the frame falls back to a faint-disc placeholder rather than
-// a broken-image glyph. Keep alt text descriptive, and keep it honest about what
-// the shot actually shows.
-const SHOTS = [
+// The showcase below the sell text. These were three `.webp` viewport captures
+// under web/public/landing; they are now COMPONENTS (components/landing/demos),
+// built from the same palette tokens as the live site. See the long note in
+// LandingVessel for why, and for the register each demo is tuned to.
+//
+// WHAT STAYS HERE IS THE COPY. `caption` is the visible claim under the demo;
+// `description` is what a screen reader gets in place of seeing it, and it
+// inherits the old `alt` discipline — describe what is actually shown, and keep
+// it honest about what the demo does and does not demonstrate. The demos
+// themselves are `aria-hidden`: they are div reconstructions, and announced they
+// would read as a wall of invented bylines and prices.
+//
+// THE DEMOS' OWN CONTENT IS INVENTED — bylines, publications, handles and post
+// bodies alike (see the note in WorkspaceDemo). The captures they replaced held
+// real posts by real people; retyped as markup on a page that is selling
+// something, a real name is a claim we have no right to make. Keep these
+// descriptions free of real ones too. The protocol labels are the exception, and
+// must stay literally true: they ARE the argument.
+//
+// ORDER FOLLOWS THE PROSE ABOVE: feeds, then payment, then the protocol — so a
+// visitor meets each demo having just read the paragraph it illustrates. The
+// Nostr paragraph has no demo, because an open protocol has no screen.
+const FIGURES: Figure[] = [
   {
-    src: '/landing/workspace.webp',
-    alt: 'The all.haus workspace in light mode: four numbered feeds open side by side as columns on a pale floor, each with its own wall colour and an “add source” bar along the bottom.',
-    caption: 'Your feeds, side by side',
+    key: 'workspace',
+    caption: 'Your feeds, side by side — as many as you like',
+    description:
+      'Three all.haus feeds open side by side as columns, each framed in its own colour scheme and numbered along the bottom: a news feed of headlines, a feed of long essays arriving by RSS, and a feed of short Bluesky posts.',
   },
   {
-    src: '/landing/omnivore.webp',
-    alt: 'The same workspace in dark mode: four feeds whose posts are marked via Bluesky, via Nostr and via RSS — a Guardian headline column beside Substack essays beside Bluesky replies.',
+    key: 'omnivore',
     caption: 'Bluesky, Nostr, RSS — read together',
+    description:
+      'A single all.haus feed in close-up. Four posts sit in one column in the same card style, each labelled with where it came from: an RSS essay, a Bluesky post quoting another, a Nostr note, and a newsletter post from RSS.',
   },
   {
-    src: '/landing/reader.webp',
-    alt: 'Reading an article on all.haus: the prose breaks at a “Keep reading” panel offering to continue for £0.75, with a subscription offered as the alternative.',
-    caption: 'Read it — pay a few pence',
+    key: 'gate',
+    caption: 'Read it — pay a few pence. No subscription required.',
+    description:
+      'An article on all.haus breaking off at a “Keep reading” panel: the price, seventy-five pence, then a button to continue and a link to add a payment card, with a monthly subscription offered underneath as the alternative.',
   },
 ]
 
@@ -138,7 +156,7 @@ export default function HomePage() {
             headline={HEADLINE}
             propositions={PROPOSITIONS}
             prose={PROSE}
-            shots={SHOTS}
+            figures={FIGURES}
           />
         </div>
       </div>

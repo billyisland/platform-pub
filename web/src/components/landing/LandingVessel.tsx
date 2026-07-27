@@ -1,11 +1,14 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
-import Image from 'next/image'
+import type { CSSProperties } from 'react'
 import { paletteFor } from '../workspace/tokens'
 import { LIGHT_ISLAND_STYLE } from '../../lib/palette/island'
 import { useResolvedDark } from '../../stores/colorScheme'
 import { ForallDisc } from '../brand/ForallDisc'
+import { LandingFigure } from './LandingFigure'
+import { WorkspaceDemo } from './demos/WorkspaceDemo'
+import { OmnivoreDemo } from './demos/OmnivoreDemo'
+import { GateDemo } from './demos/GateDemo'
 
 // =============================================================================
 // LandingVessel — `/`'s chassis. An ABSTRACTION of the workspace vessel, not a
@@ -43,31 +46,54 @@ import { ForallDisc } from '../brand/ForallDisc'
 // cards passing behind a fixed mouth, exactly as a workspace vessel does.
 //
 // ON MOBILE THE VESSEL GOES FULL-BLEED and the doubled wall collapses to a
-// single one — the floor margin, the outer wall and its buffer all drop, and the
-// interior pad halves. A phone cannot afford 56px a side to argue about an 8px
-// square, and the mobile workspace drops the vessel chassis outright for a
-// full-bleed feed, so this is the same instinct one notch softer. THE GEOMETRY
-// FOR BOTH FORM FACTORS LIVES IN globals.css §1c (`.ah-landing-area`,
-// `.ah-landing-frame*`), not in this file: `/` is SSR'd, so a JS breakpoint
-// would paint the desktop chassis on a phone and snap after hydration. Change
-// wall thickness or padding THERE. What stays here is the palette-derived wall
-// colour, handed to the CSS as `--ah-landing-wall`.
+// single one. THE GEOMETRY FOR BOTH FORM FACTORS LIVES IN globals.css §1c
+// (`.ah-landing-area`, `.ah-landing-frame*`), not in this file: `/` is SSR'd, so
+// a JS breakpoint would paint the desktop chassis on a phone and snap after
+// hydration. Change wall thickness or padding THERE. What stays here is the
+// palette-derived wall colour, handed to the CSS as `--ah-landing-wall`.
 //
-// NO CALL TO ACTION IN HERE. The waiting-list button lives once, in the nav
-// row, where it is on screen for the whole page rather than only at the foot of
-// it. A second copy at the end of the prose said the same words to the same
-// destination — on a page this short that reads as nagging, not as closing the
-// argument. If it ever comes back it belongs in a card of its own, not tacked
-// onto the bottom of the prose card.
+// NO CALL TO ACTION IN HERE. The waiting-list button lives once, in the nav row,
+// where it is on screen for the whole page rather than only at the foot of it.
 //
-// THE SCROLL EARNS ITS KEEP: sell text, then a SHOWCASE of live-site
-// screengrabs (LandingShot — each a framed figure with a caption), then a
-// closing CODA (the ∀ disc + the motto ‘FOR ALL’, centred) that ends the
-// column. The screengrabs are real <img>s pointed at `/landing/*` in
-// web/public, and the FRAME takes ITS ratio from THEM (see SHOT_RATIO below);
-// if one ever goes missing the frame shows a faint disc placeholder instead
-// (LandingShot's onError), so the slot reads as intentional rather than as a
-// broken image. The coda is the one place the disc appears inside the vessel.
+// THE SCROLL EARNS ITS KEEP: sell text, then a SHOWCASE of three DEMOS, then a
+// closing CODA (the ∀ disc + the motto 'FOR ALL', centred) that ends the column.
+//
+// -----------------------------------------------------------------------------
+// THE DEMOS ARE LIVE MARKUP, NOT SCREENGRABS. This replaced three `.webp` files
+// under web/public/landing (and the `Shot` type, `SHOT_RATIO`, `LandingShot` and
+// its missing-image fallback, all now deleted). The reason was not file size:
+//
+//   · EVERY SHOT WAS A FULL 1848×1056 VIEWPORT CAPTURE shown ~640px wide inside
+//     a card at the prose measure. That is a 2.9× reduction, which put the app's
+//     15px body type at about 5px. The pictures became grey texture and the
+//     CAPTIONS carried the whole argument — which is the definition of a
+//     decorative image, and these were meant to be evidence.
+//   · THE FRAME TOOK ITS RATIO FROM THE CAPTURES ("cut to fit them rather than
+//     the other way round"), which sounded principled and was in fact the trap:
+//     it locked all three figures to 16:9 landscape, the worst possible shape
+//     for showing interface detail in a narrow column.
+//   · SCREENSHOTS ROT. Every colour retune, copy fix and card-grammar change
+//     silently dated them, with nothing in CI to notice.
+//
+// Rebuilt as components, each demo is legible at the measure it is actually
+// shown at, inverts with the global toggle for free, re-proportions itself for
+// mobile, and cannot drift from the palette because it reads the same tokens.
+//
+// THEY ARE SIZED AS A SET, AND DELIBERATELY UNEQUALLY. Each demo's root sets one
+// `fontSize` in px and everything inside it is `em`, so a demo has a single
+// register knob. The three are tuned against the page's own 17px prose:
+//
+//   · OmnivoreDemo   14.5px — the LARGEST. It carries content a visitor is
+//                            meant to read; the four VIA lines are the argument.
+//   · GateDemo       13px   — a specimen, plus an inset. It is the only demo
+//                            that could be mistaken for the page's own prose,
+//                            so it needs the clearest step down. See GateDemo.
+//   · WorkspaceDemo  12px   — schematic. It only has to read as "several feeds,
+//                            each different, side by side", which survives small.
+//
+// Each is sized to its job rather than to the shape of a source capture, which
+// is the substantive difference from what was here before.
+// -----------------------------------------------------------------------------
 //
 // THE PROPOSITIONS ARE A REAL <ol>. They are literally three numbered
 // propositions, so the list is the ordered list, not div-soup with a decorative
@@ -76,109 +102,53 @@ import { ForallDisc } from '../brand/ForallDisc'
 // crimson numeral is presentational (the <li> position already carries order).
 //
 // COLOUR. `basic` follows the global light/dark toggle — that is the whole
-// point of the neutral colourway, and unlike a seasonal scheme it has nothing
-// to preserve against it. So the palette is resolved with the resolved dark flag
-// exactly as Vessel.tsx resolves its own, and LIGHT_ISLAND_STYLE then pins the
-// derived neutral slugs so BASIC_DARK's explicit values aren't inverted a second
-// time by html.dark. Copy the pair or neither; the island alone would freeze the
-// page light, the flag alone would double-invert it. The flag is useResolvedDark
-// (the DOM class the pre-paint script set), not the store's lagging `dark`, so a
-// dark-mode visitor never paints the light vessel on the dark floor first.
+// point of the neutral colourway. The palette is resolved with the resolved dark
+// flag exactly as Vessel.tsx resolves its own, and LIGHT_ISLAND_STYLE then pins
+// the derived neutral slugs so BASIC_DARK's explicit values aren't inverted a
+// second time by html.dark. Copy the pair or neither. The flag is
+// useResolvedDark (the DOM class the pre-paint script set), not the store's
+// lagging `dark`, so a dark-mode visitor never paints the light vessel on the
+// dark floor first.
+//
+// THE SAME FLAG GOES TO WorkspaceDemo, which resolves the spring and winter
+// colourways for its second and third columns. It takes the flag as a prop
+// rather than calling the hook itself so the demos stay hook-free and inert.
 // =============================================================================
 
 const GAP = 12 // inter-card gap
 
-// The shot frame's aspect ratio, and it is the SHOTS' OWN ratio, not a chosen
-// one: every screengrab is a full 1848×1056 viewport capture, so the frame is
-// cut to fit them rather than the other way round. That is what makes the
-// `objectFit: cover` below a no-op — nothing is padded to fit the frame and
-// nothing is cropped away by it. If the shots are ever recaptured at another
-// size, change this number to match; do not letterbox the images into it.
-const SHOT_RATIO = '1848 / 1056'
+/** Which demo a figure mounts. Copy for each lives in page.tsx. */
+export type FigureKey = 'workspace' | 'omnivore' | 'gate'
 
-export interface Shot {
-  /** Path under web/public, e.g. `/landing/workspace.webp`. */
-  src: string
-  alt: string
+export interface Figure {
+  key: FigureKey
+  /** The visible claim under the demo. */
   caption: string
+  /** The accessible equivalent of seeing it. */
+  description: string
 }
 
 interface LandingVesselProps {
   headline: string
   propositions: string[]
   prose: string[]
-  shots: Shot[]
-}
-
-// A single screengrab card body: a framed figure at the shots' own ratio, with a
-// caption. Until the image at `shot.src` exists it falls back to a faint disc
-// placeholder, so the slot always looks deliberate and never shows a
-// broken-image glyph.
-function LandingShot({
-  shot,
-  frameBg,
-  captionColor,
-}: {
-  shot: Shot
-  frameBg: string
-  captionColor: string
-}) {
-  const [failed, setFailed] = useState(false)
-
-  return (
-    <figure style={{ margin: 0 }}>
-      <div
-        style={{
-          position: 'relative',
-          aspectRatio: SHOT_RATIO,
-          background: frameBg,
-          overflow: 'hidden',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        {failed ? (
-          <span style={{ opacity: 0.22 }}>
-            <ForallDisc size={56} />
-          </span>
-        ) : (
-          <Image
-            src={shot.src}
-            alt={shot.alt}
-            fill
-            sizes="(max-width: 760px) 100vw, 680px"
-            onError={() => setFailed(true)}
-            style={{ objectFit: 'cover' }}
-          />
-        )}
-      </div>
-      <figcaption
-        className="label-ui"
-        style={{ color: captionColor, marginTop: 10 }}
-      >
-        {shot.caption}
-      </figcaption>
-    </figure>
-  )
+  figures: Figure[]
 }
 
 export function LandingVessel({
   headline,
   propositions,
   prose,
-  shots,
+  figures,
 }: LandingVesselProps) {
   const globalDark = useResolvedDark()
   const palette = paletteFor('basic', globalDark)
 
   // A ⊔ frame that fills its flex parent and clips its overflow. Both frames use
   // it — outer and inner. The WALL THICKNESS AND PADDING ARE NOT HERE: they are
-  // `.ah-landing-frame*` in globals.css, because mobile collapses the doubled
-  // wall to a single one and only a media query can do that without a
-  // post-hydration snap on this SSR'd page (see the CSS comment). What stays
-  // inline is what CSS cannot know: the palette-derived wall colour, handed over
-  // as `--ah-landing-wall`, and the interior.
+  // `.ah-landing-frame*` in globals.css (see the CSS comment). What stays inline
+  // is what CSS cannot know: the palette-derived wall colour, handed over as
+  // `--ah-landing-wall`, and the interior.
   const frame = {
     background: palette.interior,
     flex: 1,
@@ -193,6 +163,17 @@ export function LandingVessel({
     padding: '18px 20px',
   }
 
+  const demoFor = (key: FigureKey) => {
+    switch (key) {
+      case 'workspace':
+        return <WorkspaceDemo dark={globalDark} />
+      case 'omnivore':
+        return <OmnivoreDemo palette={palette} />
+      case 'gate':
+        return <GateDemo palette={palette} />
+    }
+  }
+
   return (
     <div
       className="ah-landing-frame ah-landing-frame-outer"
@@ -204,10 +185,7 @@ export function LandingVessel({
         } as CSSProperties
       }
     >
-      <div
-        className="ah-landing-frame ah-landing-frame-inner"
-        style={frame}
-      >
+      <div className="ah-landing-frame ah-landing-frame-inner" style={frame}>
         {/* The scrolling card column — the one moving part. `.scroll-silent`
             hides the native scrollbar (whose track would draw a banned vertical
             rule); wheel / touch / keyboard scroll are unaffected. */}
@@ -273,14 +251,13 @@ export function LandingVessel({
 
           <div style={card}>
             <div
-              className="font-mono"
+              className="font-serif"
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 20,
-                fontSize: '1.0625rem',
-                lineHeight: 1.65,
-                letterSpacing: '0.01em',
+                gap: 18,
+                fontSize: 17,
+                lineHeight: 1.6,
                 color: palette.cardStandfirst,
               }}
             >
@@ -292,13 +269,15 @@ export function LandingVessel({
             </div>
           </div>
 
-          {shots.map((shot, i) => (
-            <div key={`shot-${i}`} style={card}>
-              <LandingShot
-                shot={shot}
-                frameBg={palette.interior}
-                captionColor={palette.cardStandfirst}
-              />
+          {figures.map((figure) => (
+            <div key={figure.key} style={card}>
+              <LandingFigure
+                palette={palette}
+                caption={figure.caption}
+                description={figure.description}
+              >
+                {demoFor(figure.key)}
+              </LandingFigure>
             </div>
           ))}
 
@@ -324,7 +303,7 @@ export function LandingVessel({
                 letterSpacing: '0.2em',
               }}
             >
-              ‘FOR ALL’
+              &lsquo;FOR ALL&rsquo;
             </span>
           </div>
         </div>

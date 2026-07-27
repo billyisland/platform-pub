@@ -625,6 +625,56 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    Measured after the change: phone 390 → card x=16 w=358; desktop 1440 → card
    x=400 w=640, i.e. desktop is unchanged to the pixel.
 
+7ter. **`/`'s showcase is live markup, not screengrabs** (2026-07-27). 7bis's
+   companion, and it retires the three `.webp` captures that shipped the day
+   before along with `LandingShot`, `SHOT_RATIO`, the `failed`/disc-placeholder
+   fallback and `next/image` on `/`. The captures were each a full 1848×1056
+   viewport shown ~640px wide inside a card at the prose measure — a 2.9×
+   reduction, which put the app's 15px body type at about 5px. The four `via …`
+   provenance lines ARE the omnivore argument, and they were the first thing to
+   dissolve; the captions were left carrying the whole claim, which is the
+   definition of a decorative image, and these were meant to be evidence. 7bis's
+   own reasoning ("the frame was cut to the shots") reads well and was in fact
+   the trap: it locked all three figures to 16:9 landscape, the worst shape for
+   interface detail in a narrow column. And screenshots rot — every colour
+   retune and card-grammar change dated them silently, with nothing in CI to
+   notice.
+
+   Rebuilt as inert components (`components/landing/demos/`, plus
+   `LandingFigure` for the figure/caption pairing), each demo reads the same
+   palette tokens as the live site, so it inverts with the global toggle for
+   free and cannot drift from a retune. They are a deliberate COPY of the card
+   grammar rather than a reuse of `PostCard`, which takes a `Post`, resolves a
+   level spec and threads eight callbacks — none of it meaningful to a
+   logged-out visitor, all of it weight on the one page a stranger loads cold.
+   The accepted cost is that the copy drifts if the real byline or origin-tag
+   idiom changes; the mitigation is that the pieces are small enough to re-read
+   against `Byline.tsx`/`PostOriginTag.tsx`/`QuotedEmbed.tsx` in a minute.
+
+   **Sized as a set, and deliberately unequally** — the substantive difference
+   from three captures that were all the same shape because they were all the
+   same capture. Each demo's root sets one `fontSize` and everything inside is
+   `em`, so a demo has a single register knob: omnivore 14.5px (largest — it
+   carries content meant to be read), gate 13px (a specimen, and the only demo
+   that could be mistaken for the page's own 17px prose, so it also gets a 52px
+   inset), workspace 12px (schematic — it only has to read as "several feeds,
+   each in its own colours, side by side"). Those knobs live in `globals.css`
+   §1d, not the components, for 7bis's SSR reason exactly: on mobile they step
+   to 13.5/12/11px, the gate's inset goes entirely (104px of a 318px card spent
+   on a signal the size already sends) and the workspace drops to two columns
+   (three at ~100px stop reading as cards) — the third hidden rather than
+   reflowed, since stacked it would say "feeds go underneath each other", the
+   opposite of what the desktop workspace does.
+
+   **The demo content is invented, and must stay so.** The captures showed real
+   posts by real people, which is defensible in a screenshot and is not
+   defensible retyped as markup: a named person's post becomes indistinguishable
+   from words we put in their mouth, on a page whose job is to sell something.
+   Bylines, publications, handles and bodies are all fictional (*The Meridian*,
+   *The Common Room*, *The Slow Hour* — shared across the three demos so they
+   read as one world). The protocol labels are the exception and must stay
+   literally true: they are the argument.
+
 7. **Three logged-in tool surfaces clear the band** — `/write`, `/admin/*`,
    `/traffology/*` — because the row mounts on every non-workspace route and
    they are the only real pages left there (every other platform route is a
@@ -680,3 +730,11 @@ and is rewritten; a "public register" section documents the new chassis.
    `--ah-row-band` and every page's clearance with it). Not attempted here
    because the landing brief was the vessel, and any of the three moves the
    register's own furniture.
+7. **The demos (7ter) have never been in a browser, in either mode.** They
+   compile and `/` still prerenders static, but the three things worth looking
+   at are all rendered facts: whether the seasonal walls in `WorkspaceDemo`
+   still read as three distinct feeds at 12px in DARK (the dark variants are a
+   near-shared neutral by design — the identity rides the walls, and this is the
+   smallest surface that claim has ever been made at); whether the gate's 52px
+   inset reads as an object on the card when the demo's ground is the card's own
+   colour; and the 390px step-down — inset gone, two columns, third hidden.

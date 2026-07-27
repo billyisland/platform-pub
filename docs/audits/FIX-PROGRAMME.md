@@ -23,6 +23,62 @@ starts.
 
 ## Progress
 
+- **2026-07-27 (landing: the screengrabs become live markup)** — Arrived as a
+  patch bundle; reviewed, corrected in two places, applied. Undoes the showcase
+  half of yesterday's entry below. Spec: `LOGGED-OUT-REGISTER-ADR.md` §IX
+  departure 7ter.
+
+  **Why the captures had to go, and it was not file size.** Each was a full
+  1848×1056 viewport shown ~640px wide inside a card at the prose measure — a
+  2.9× reduction, which put the app's 15px body type at about 5px. The four
+  `via …` provenance lines ARE the omnivore argument and they were the first
+  thing to dissolve, leaving the captions to carry the whole claim: a decorative
+  image where evidence was intended. Yesterday's "the frame was cut to the
+  shots" reads well and was the trap — it locked all three figures to 16:9
+  landscape, the worst shape for interface detail in a narrow column. And
+  screenshots rot silently, with nothing in CI to notice.
+
+  **Rebuilt as inert components.** `components/landing/demos/` (`primitives` +
+  `WorkspaceDemo`/`OmnivoreDemo`/`GateDemo`) and `LandingFigure`; deleted
+  `web/public/landing/*.webp` (331 kB), `Shot`, `SHOT_RATIO`, `LandingShot`, its
+  `failed`/disc-placeholder fallback, and `next/image` on `/`. The demos read
+  the same palette tokens as the live site, so they invert with the global
+  toggle and cannot drift from a retune. Deliberately a COPY of the card grammar
+  rather than a reuse of `PostCard` — that takes a `Post`, resolves a level spec
+  and threads eight callbacks, none of it meaningful to a logged-out visitor.
+  Sized as a set and unequally (omnivore 14.5 / gate 13 + a 52px inset /
+  workspace 12), one `fontSize` knob each with everything inside in `em`; the
+  knobs live in `globals.css` §1d, not the components, for §1c's SSR reason —
+  mobile steps to 13.5/12/11, drops the gate's inset and the workspace's third
+  column.
+
+  **Two corrections to the bundle.** (1) `GateDemo` drew a divider as
+  `height: 1` — a real 1px rule, which the house never renders. Removed rather
+  than thickened; the surrounding margin already separated. `check-hairlines.sh`
+  passed it clean, because every pattern greps the literal string `1px` and a
+  bare `1` in a style object only picks up its unit at render — so the script
+  gained a pattern for that form (`height|width|border*Width|outlineWidth: 1`),
+  self-tested on a planted line, and finding **zero** other hits across
+  `web/src`. (2) The demo content named real people and outlets — Guardian,
+  Reuters, Scott Alexander, and a post about Ukrainian drone procurement
+  attributed to a real account with a real-sounding quote tile. Real posts in a
+  screenshot are defensible; retyped as markup on a page that sells something
+  they are indistinguishable from words we put in someone's mouth. All bylines,
+  publications, handles and bodies are now invented and share one world across
+  the three demos; the protocol labels stay literally true, being the argument.
+  A note saying so sits in `WorkspaceDemo`, `OmnivoreDemo` and `page.tsx`.
+
+  Incidental: the bundle's duplicate `../../workspace/tokens` import (value +
+  type on two lines) is a hard `no-duplicate-imports` error under the root
+  config, merged to one inline-type import; its bare `ah-demo-ws-col` class,
+  which no stylesheet defines, dropped.
+
+  Pre-flight: `check-hairlines.sh` clean on all touched files (full-repo sweep
+  otherwise unchanged — same 7/14/3 pre-existing), `tsc --noEmit` clean,
+  `next build` green with `/` still prerendered static at 6.92 kB, root eslint
+  0 errors, `knip` shows nothing landing-related. **Not in a browser** — dark
+  mode and the 390px step-down are unverified by eye (ADR §IX still-open 7).
+
 - **2026-07-26 (feed feel: the horizontal axis gets one owner, and the card gets
   a handle)** — Two reported feel bugs in the workspace, both with the same
   shape: an affordance that existed but had no way to be found, or had three
