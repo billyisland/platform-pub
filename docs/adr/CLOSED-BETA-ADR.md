@@ -484,7 +484,7 @@ shape does not have to change when it isn't.
    what the panel (XI.2) would show. This is the cheapest possible fix for the
    failure that produced this section, and it is worth building *first*, before
    any panel: it turns "nobody knew she was there" into a solved problem in an
-   afternoon.
+   afternoon. **BUILT 2026-07-27 — see XI.4.**
 
 The **admission** email — "there's room now" — is a third thing and belongs with
 the admit flow, not here. Note it is arguably bulk rather than transactional;
@@ -548,3 +548,52 @@ exists to serve.
 Emphatically *not* first: the join acknowledgement. It is the most visible and
 the least urgent — it tells people something the success page already told them,
 while the operator still cannot see who is waiting.
+
+### XI.4 As built — the operator digest (2026-07-27)
+
+`gateway/src/workers/waitlist-digest.ts`, on the hourly worker tick under
+`ADVISORY_LOCKS.WAITLIST_DIGEST` (100008), recipients resolved from
+`getAdminIds()` → those accounts' `email`. Cadence dial
+`waitlist_digest_interval_hours` (24) in `config-defaults.sql`; the state it
+keeps is two `platform_config` keys, both deliberately absent from that file
+because absence is the meaningful cold start.
+
+**Two keys, because they are two facts** — and the first cut had one doing
+both. `waitlist_digest_watermark` holds a ROW's `created_at` and answers *what
+have I already reported*; `waitlist_digest_last_sent_at` holds a CLOCK reading
+and answers *am I due*. Conflated, the cadence drifts: a digest sent at 10:00
+whose newest row was from 02:00 leaves a watermark eight hours in the past, so
+the "24 hours since" test passes at 02:00 the next day and the digest fires
+fourteen hours early. Harmless on a quiet list (nothing new, nothing sends),
+wrong the moment the list moves.
+
+**The watermark is carried as Postgres's own text, never through a JS Date.**
+`created_at::text AS created_at_exact` out, `$1::timestamptz` back in. Postgres
+keeps microseconds and a `Date` keeps milliseconds, so a watermark that has been
+through `toISOString()` lands up to 999µs *before* the row it was taken from —
+and that row satisfies `created_at > watermark` again on the next run. Every
+digest would re-report its own newest joiner, for ever.
+
+**Both bugs were found by running it against a real database, and neither was
+visible to the unit tests.** The first because the tests set both keys in
+lockstep; the second because a mocked JS Date has no microseconds to lose. The
+suite (14 cases, `gateway/tests/waitlist-digest.test.ts`) is mutation-checked —
+watermark-from-`now()`, bare `UPDATE`, advancing on an empty digest, no due
+check, advancing before the send, dropping the publish-interest flag, the
+truncated Date, and window/cadence swapped each fail at least one case. The
+`::timestamptz` cast is pinned structurally only, and the test says so: a mock
+compares strings and cannot see a cast, which is precisely the gap that let the
+microsecond bug in.
+
+**Neither key moves unless a send succeeded**, so a Postmark failure retries the
+same rows rather than dropping a day of joins (D7); an unconfigured
+`admin_account_ids`, or admin accounts with no email, log a warning and move
+nothing — otherwise configuring an admin later would start the digest from a
+window that skipped everyone who joined while it was unconfigured.
+
+Driven on dev, five runs: cold start reports the window's rows and sets both
+keys · an immediate re-run reports nothing · a new joiner with the cadence
+rewound reports exactly one, not the whole window again · nothing new moves
+nothing · a three-day-old watermark with a digest an hour ago stays quiet.
+**Not yet driven on prod**, where the three real rows will produce one digest on
+the next deploy — the first thing that happens should be an email naming them.

@@ -70,6 +70,7 @@ import {
 } from "./lib/follow-import.js";
 import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { publishScheduledDrafts } from "./workers/scheduler.js";
+import { sendWaitlistDigest } from "./workers/waitlist-digest.js";
 import { runDiscoverySweep } from "./lib/discovery-publish.js";
 import { relayForAccount } from "./lib/nostr-events.js";
 import { pool } from "@platform-pub/shared/db/client.js";
@@ -403,6 +404,7 @@ async function start() {
   const LOCK_DISCOVERY = ADVISORY_LOCKS.DISCOVERY;
   const LOCK_TRIBUTES = ADVISORY_LOCKS.TRIBUTES;
   const LOCK_FOLLOW_IMPORT = ADVISORY_LOCKS.FOLLOW_IMPORT;
+  const LOCK_WAITLIST_DIGEST = ADVISORY_LOCKS.WAITLIST_DIGEST;
   const SCHEDULER_INTERVAL_MS = 60 * 1000; // 1 minute
 
   async function withAdvisoryLock(
@@ -447,6 +449,13 @@ async function start() {
         (err) => logger.error({ err }, "Tribute lifecycle worker failed"),
       );
     }
+    // Waitlist operator digest — hourly tick, but self-gated to at most one
+    // send a day and only when the list moved (CLOSED-BETA-ADR §XI, D8.2).
+    withAdvisoryLock(
+      LOCK_WAITLIST_DIGEST,
+      "Waitlist digest",
+      sendWaitlistDigest,
+    ).catch((err) => logger.error({ err }, "Waitlist digest worker failed"));
   }, WORKER_INTERVAL_MS);
 
   setInterval(() => {
@@ -486,6 +495,11 @@ async function start() {
       (err) => logger.error({ err }, "Tribute lifecycle worker failed (startup)"),
     );
   }
+  withAdvisoryLock(
+    LOCK_WAITLIST_DIGEST,
+    "Waitlist digest",
+    sendWaitlistDigest,
+  ).catch((err) => logger.error({ err }, "Waitlist digest worker failed (startup)"));
   withAdvisoryLock(
     LOCK_SCHEDULER,
     "Scheduled publishing",

@@ -205,6 +205,22 @@ INSERT INTO platform_config (key, value, description) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Waitlist operator digest (CLOSED-BETA-ADR §XI, D8.2, 2026-07-27).
+-- Read by gateway/src/workers/waitlist-digest.ts, which runs on the hourly
+-- worker tick and self-gates on this cadence. A dial rather than a constant
+-- because the right cadence is a function of how fast the list is actually
+-- moving — daily suits a beta taking a handful a day; a launch week may want
+-- it hourly, and that should be an UPDATE, not a deploy.
+--
+-- Its companion `waitlist_digest_last_sent_at` is deliberately NOT here: that
+-- is runtime state (the reported-up-to watermark), and its ABSENCE is the
+-- meaningful cold-start value — "never sent". Same posture as payouts_halted.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('waitlist_digest_interval_hours',           '24',   'Minimum hours between waitlist operator digests. The digest also sends nothing when no one has joined since the last one (waitlist-digest.ts).')
+ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Owner dashboard — UK tax / regulatory awareness thresholds (2026-07-22).
 -- Read by GET /admin/dashboard/regulatory (gateway/src/routes/admin-dashboard.ts).
 -- Values are the thresholds as of April 2026; they are dials (not code

@@ -23,6 +23,53 @@ starts.
 
 ## Progress
 
+- **2026-07-27 (waitlist: the operator hears about it)** — CLOSED-BETA-ADR §XI
+  D8.2, the first of the four items §XI.3 orders. Spec + as-built: §XI.4.
+
+  **The failure it closes.** `POST /waitlist` stores a prospect and sends
+  nothing (D2, by design) and nothing reads the table, so a real prospect sat
+  unseen on prod for eight hours and was found only because the operator went
+  looking for a confirmation email that was never going to arrive. The mailer
+  was fine (`EMAIL_PROVIDER=postmark`), the capture was fine; the gap was that
+  no one was told.
+
+  **What shipped.** `gateway/src/workers/waitlist-digest.ts` on the hourly
+  worker tick under a new advisory lock (100008), recipients from
+  `getAdminIds()` → those accounts' email, cadence dial
+  `waitlist_digest_interval_hours` in `config-defaults.sql` (a dial, not a
+  constant: a launch week may want hourly, and that should be an UPDATE).
+  Neither state key moves unless a send succeeded, so Postmark having a bad
+  minute retries the same rows instead of dropping a day of joins (D7).
+
+  **Two bugs, both found by driving it against a real database, neither visible
+  to the unit tests that were passing at the time.**
+
+    · **One key doing two jobs.** The window ("what have I reported") and the
+      cadence ("am I due") were the same value. The watermark holds a ROW's
+      timestamp, so a digest sent at 10:00 whose newest row was from 02:00
+      reads as due again at 02:00 the next day — fourteen hours early. Split
+      into `waitlist_digest_watermark` and `waitlist_digest_last_sent_at`. The
+      tests missed it because they set both in lockstep.
+    · **Microseconds.** Postgres keeps µs; a JS `Date` keeps ms. A watermark
+      round-tripped through `toISOString()` lands up to 999µs BEFORE the row it
+      came from, so that row qualifies again next run and every digest
+      re-reports its own newest joiner, for ever. Now carried as Postgres's own
+      text (`created_at::text` out, `$1::timestamptz` back). The tests could not
+      have caught this: a mocked Date has no microseconds to lose.
+
+  The second is the sharper lesson and it is the same one as 2026-07-17: **a
+  green suite written against a mock proves the mock.** The suite is now 14
+  cases and mutation-checked (8 mutations, each caught); the `::timestamptz`
+  cast is pinned structurally only, and the test says so out loud, because that
+  is exactly the class the mock cannot see.
+
+  Pre-flight: 411 gateway tests pass (was 397), `tsc` clean on gateway +
+  shared, root eslint 0 errors, `check-schema-drift.sh` green (Check 4b now
+  counts 67 dials — the new one self-heals onto an existing DB, verified by
+  running migrate on dev: "seeded 1 missing dial(s)"). Dev driven through five
+  scenarios and left clean. **Not driven on prod** — the three real rows there
+  will produce one digest on the next deploy, and that email is the check.
+
 - **2026-07-27 (landing: the screengrabs become live markup)** — Arrived as a
   patch bundle; reviewed, corrected in two places, applied. Undoes the showcase
   half of yesterday's entry below. Spec: `LOGGED-OUT-REGISTER-ADR.md` §IX
