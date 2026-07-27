@@ -687,6 +687,80 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
   })
 
   // ---------------------------------------------------------------------------
+  // GET /admin/dashboard/waitlist — the closed-beta waiting list, read-only
+  //
+  // CLOSED-BETA-ADR §XI.2. The list has been write-only since migration 162:
+  // POST /waitlist stores a prospect and nothing reads the table, so the only
+  // way to see who was waiting was psql on the box — which is how a real
+  // prospect went unnoticed for eight hours on 2026-07-27. The digest (§XI.4)
+  // now says the count moved; this says WHO, which is the half an operator
+  // needs to pick a cohort.
+  //
+  // READ-ONLY, DELIBERATELY. Admit is the next item (§XI.3) and needs row state
+  // (`admitted_at`) to be safe, so there is no action here and no `admitted`
+  // column to show yet.
+  //
+  // NO FILTERING, BY DESIGN. The list attracts disposable addresses — one of
+  // the first three real rows was from a temp-mail domain. The domain is right
+  // there in the address for an operator to read; auto-rejecting a domain list
+  // is a policy decision with false positives, and it belongs to a person
+  // looking at a screen, not to a heuristic in a route. Sort and see.
+  //
+  // The cap is 500 with an explicit `truncated` flag rather than pagination:
+  // the beta is 20–30 people, but a silent LIMIT would read as "that's
+  // everyone" precisely when it isn't.
+  // ---------------------------------------------------------------------------
+  app.get('/admin/dashboard/waitlist', { preHandler: requireAdmin }, async (req, reply) => {
+    try {
+      const CAP = 500
+      const [totals, entries, digest] = await Promise.all([
+        pool.query(
+          `SELECT COUNT(*) AS total,
+                  COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS joined_7d,
+                  COUNT(*) FILTER (WHERE publish_interest) AS publish_interest
+             FROM waitlist`
+        ),
+        pool.query(
+          `SELECT email, publish_interest, created_at
+             FROM waitlist
+            ORDER BY created_at DESC
+            LIMIT $1`,
+          [CAP + 1]
+        ),
+        // When the operator was last told. The digest is the only thing that
+        // reports this list unprompted, so "last told" belongs beside it —
+        // absent means never, which is the honest cold-start reading.
+        pool.query(
+          `SELECT value FROM platform_config WHERE key = 'waitlist_digest_last_sent_at'`
+        ),
+      ])
+
+      const t = totals.rows[0]
+      const truncated = entries.rows.length > CAP
+      const rows = truncated ? entries.rows.slice(0, CAP) : entries.rows
+
+      return reply.send({
+        totals: {
+          total: num(t.total),
+          joinedLast7d: num(t.joined_7d),
+          publishInterest: num(t.publish_interest),
+        },
+        lastDigestAt: digest.rows[0]?.value ?? null,
+        truncated,
+        shown: rows.length,
+        entries: rows.map((r: any) => ({
+          email: r.email as string,
+          publishInterest: Boolean(r.publish_interest),
+          joinedAt: new Date(r.created_at).toISOString(),
+        })),
+      })
+    } catch (err) {
+      req.log.error({ err }, 'admin dashboard waitlist failed')
+      return reply.status(500).send({ error: 'Failed to load the waiting list' })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
   // Trigger proxies — payment-service internal endpoints (x-internal-token)
   // ---------------------------------------------------------------------------
   app.post(

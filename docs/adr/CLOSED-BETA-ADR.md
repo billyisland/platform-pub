@@ -502,7 +502,7 @@ Before D8.1 ships, the form needs the line the note flags as open, and the
 acknowledgement needs the unsubscribe that makes deletion a user action rather
 than an operator favour.
 
-### XI.2 The panel — `/admin/waitlist`, a seventh tab
+### XI.2 The panel — `/admin/waitlist`, a seventh tab  · READ HALF BUILT, see XI.5
 
 Written in the OWNER-DASHBOARD-SPEC §4 idiom so it can be lifted straight into
 a build. The dashboard itself shipped 2026-07-22 with six tabs; this is an
@@ -597,3 +597,49 @@ rewound reports exactly one, not the whole window again · nothing new moves
 nothing · a three-day-old watermark with a digest an hour ago stays quiet.
 **Not yet driven on prod**, where the three real rows will produce one digest on
 the next deploy — the first thing that happens should be an email naming them.
+
+### XI.5 As built — the panel's read half (2026-07-27)
+
+`GET /admin/dashboard/waitlist` (`admin-dashboard.ts`, `requireAdmin`) +
+`web/src/app/admin/waitlist/page.tsx`, and `AdminShell`'s tab list goes from
+six to seven. **Path note:** §XI.2 wrote the route as `/admin/waitlist`; the
+shipped convention for every dashboard read is `/admin/dashboard/*`, so it
+follows the code rather than the spec. The page is at `/admin/waitlist` as
+written.
+
+**What it shows.** Four counts — total waiting, joined in the last 7 days, how
+many ticked publish-interest, and **when the operator was last told** (the
+digest's own `waitlist_digest_last_sent_at`, "Never" in crimson while the list
+is non-empty and nothing has gone out). Then every entry, newest first:
+address, publish-interest, absolute joined stamp. The last-digest tile is not
+in §XI.2's spec; it earns its place because this whole section exists from an
+incident about not being told, and the panel is where you would look to find
+out whether you had been.
+
+**No actions, and the page says so** rather than showing a control that
+half-works: Admit needs `admitted_at` on the row to be safe, so it waits for
+its own item. There is no `admitted` column yet for the same reason.
+
+**No filtering, per §XI.2** — the disposable-domain row is returned like any
+other, and a mutation that filtered it fails two tests. The domain is on screen
+for a person to read; a route that quietly dropped rows would hide someone who
+IS waiting and give the operator no way to know.
+
+**The cap is 500 with an explicit `truncated` flag**, not pagination and not a
+silent LIMIT. The beta is 20–30 people, but a bare cap reads as "that's
+everyone" exactly when it isn't, and the panel prints "showing the 500 most
+recent of N" when it bites.
+
+Six route tests, mutation-checked: dropping `requireAdmin`, flipping the sort
+to ASC, hard-coding `truncated: false`, filtering a domain in the route, and
+nulling the last-digest read each fail at least one. The ASC mutation initially
+passed — the mock sorted in JS regardless of the SQL — so the mock now reads
+the `ORDER BY` out of the query it is handed. That is the same blind spot that
+let the digest's microsecond bug through (XI.4), caught this time by mutating
+rather than by production.
+
+**Driven against the dev database through the real middleware**: no session →
+401, a genuinely signed admin cookie → 200 with the rows newest-first, and the
+7-day count correctly excluding a 9-day-old row. **Not seen in a browser** —
+the page compiles and prerenders (1.5 kB), but its rendered appearance in
+either mode is unverified.

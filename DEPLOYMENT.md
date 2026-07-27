@@ -502,6 +502,7 @@ All under `requireAdmin` (session + `platform_config.admin_account_ids`; `ADMIN_
 | PATCH | /api/v1/admin/dashboard/config | Update existing dials only — unknown keys refused (new dials go via config-defaults.sql), state keys refused, numeric/`_bps`/`_pct` validated; changes logged |
 | POST | /api/v1/admin/dashboard/trigger-settlements | Proxy → payment-service `POST /settlement-check/monthly` (`x-internal-token`) |
 | POST | /api/v1/admin/dashboard/trigger-payouts | Proxy → payment-service `POST /payout-cycle` (`x-internal-token`) |
+| GET | /api/v1/admin/dashboard/waitlist | Closed-beta waiting list, read-only — counts, every entry newest-first, and when the digest last went out. Capped at 500 with a `truncated` flag; no filtering and no actions (admitting is still manual) |
 
 ### Auth
 

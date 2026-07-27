@@ -23,6 +23,43 @@ starts.
 
 ## Progress
 
+- **2026-07-27 (waitlist: the operator can see the list)** — CLOSED-BETA-ADR
+  §XI.3 item 2, straight after the digest below. Spec + as-built: §XI.5.
+
+  `GET /admin/dashboard/waitlist` behind `requireAdmin`, plus
+  `web/src/app/admin/waitlist/page.tsx`; `AdminShell`'s tabs go six → seven.
+  Four counts — total, joined in 7 days, publish-interest, and **when the
+  operator was last told** (the digest's own key, "Never" in crimson while the
+  list is non-empty) — then every entry newest-first with an absolute joined
+  stamp. The last-digest tile isn't in §XI.2's spec; it earns its place because
+  this whole section exists from an incident about not being told.
+
+  **Three deliberate restraints**, each with a test that fails if it is
+  relaxed: no actions (Admit needs `admitted_at` to be safe against a
+  double-admit, so it waits for its own item, and the page says so rather than
+  showing a control that half-works); no filtering of disposable-mail domains
+  (the address is on screen for a person to read — a route that quietly dropped
+  rows would hide someone who IS waiting); and the 500 cap carries a
+  `truncated` flag, because a bare LIMIT reads as "that's everyone" exactly
+  when it isn't.
+
+  **The mutation pass caught the mock, again.** Flipping the route's `ORDER BY`
+  to ASC passed all six tests, because the mock sorted in JS regardless of the
+  SQL it was handed — the same blind spot that let the digest's microsecond bug
+  through yesterday. Fixed in the mock (it now reads the `ORDER BY` out of the
+  query) rather than by adding a structural assertion, so the ordering test is
+  real. Four other mutations — dropping `requireAdmin`, hard-coding
+  `truncated: false`, filtering a domain, nulling the last-digest read — were
+  caught first time.
+
+  Pre-flight: 417 gateway tests (was 411), `tsc` clean on gateway + web,
+  `next build` green (`/admin/waitlist` prerenders at 1.5 kB), root eslint 0
+  errors, hairline check clean. **Driven against the dev database through the
+  real middleware**: no session → 401, a genuinely signed admin cookie → 200,
+  rows newest-first, and the 7-day count correctly excluding a 9-day-old row;
+  dev left clean. **Not seen in a browser** — rendered appearance in either
+  mode is unverified, tracked in §11.
+
 - **2026-07-27 (waitlist: the operator hears about it)** — CLOSED-BETA-ADR §XI
   D8.2, the first of the four items §XI.3 orders. Spec + as-built: §XI.4.
 

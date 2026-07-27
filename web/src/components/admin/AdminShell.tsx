@@ -26,6 +26,7 @@ const TABS = [
   { href: '/admin/content', label: 'Content' },
   { href: '/admin/config', label: 'Config' },
   { href: '/admin/regulatory', label: 'Regulatory' },
+  { href: '/admin/waitlist', label: 'Waitlist' },
 ] as const
 
 export function AdminShell({

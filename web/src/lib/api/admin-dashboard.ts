@@ -180,6 +180,16 @@ export interface AdminRegulatory {
   financialYear: { start: string; end: string; daysRemaining: number }
 }
 
+export interface AdminWaitlist {
+  totals: { total: number; joinedLast7d: number; publishInterest: number }
+  /** When the operator digest last went out; null = never (CLOSED-BETA-ADR §XI.4). */
+  lastDigestAt: string | null
+  /** True when the list exceeded the route's cap — never a silent truncation. */
+  truncated: boolean
+  shown: number
+  entries: Array<{ email: string; publishInterest: boolean; joinedAt: string }>
+}
+
 export const adminDashboard = {
   overview: () => request<AdminOverview>('/admin/dashboard/overview'),
   users: () => request<AdminUsers>('/admin/dashboard/users'),
@@ -191,6 +201,7 @@ export const adminDashboard = {
       body: JSON.stringify({ updates }),
     }),
   regulatory: () => request<AdminRegulatory>('/admin/dashboard/regulatory'),
+  waitlist: () => request<AdminWaitlist>('/admin/dashboard/waitlist'),
   triggerSettlements: () =>
     request<{ settlementTriggered: number }>('/admin/dashboard/trigger-settlements', {
       method: 'POST',
