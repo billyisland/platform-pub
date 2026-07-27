@@ -23,6 +23,62 @@ starts.
 
 ## Progress
 
+- **2026-07-27 (waitlist: the operator can admit)** — CLOSED-BETA-ADR §XI.3
+  item 3, the last of the three the incident produced. Spec + as-built: §XI.6.
+  §3.7's minimum for running a beta at all: before this, converting a
+  waitlister to a member meant hand-written SQL on the box.
+
+  **Migration 163** — `admitted_at` (the double-admit guard),
+  `admitted_account_id` (`ON DELETE SET NULL`), `invited_at`. Three columns
+  because they are three facts, and the last two can fail apart.
+
+  **`POST /admin/dashboard/waitlist/admit`** claims the row in one statement,
+  find-or-creates the account, then claims and sends the invitation. Account
+  creation moved to `gateway/src/lib/account-provision.ts::provisionAccount` —
+  an EXTRACTION of `google-auth.ts`'s private `createGoogleAccount`, which now
+  imports it, so the two paths cannot drift. It deliberately bypasses
+  `CLOSED_BETA` (that constant reserves account creation to a human decision;
+  this is that decision) and deliberately is not `signup()`, which sets a
+  session cookie on the reply — from the admit route that would log the
+  operator into the prospect's account, once per admission.
+
+  **The second claim was found by mutation, not by design.** The admission
+  claim leaves a window in which a second click reads the row as "admitted,
+  never told" and sends a duplicate email; the invitation is now claimed the
+  same way and released if the send throws. Every failure path leaves a
+  retryable row: provisioning throws → the admission claim is released
+  (guarded on `admitted_account_id IS NULL`); the mail throws → the admission
+  STANDS (D7) and the row rests at "admitted, not yet told", which the panel
+  shows and offers the retry on.
+
+  The invitation carries **no login token** (a 15-minute magic link read hours
+  later is dead on arrival, and its likeliest observable is a prospect
+  concluding the invitation was a mistake) and goes on the **transactional**
+  stream, not broadcast — one message per operator click to a named person who
+  asked. Panel: Status column, a per-row Admit / Send invite behind a
+  `window.confirm`, two new tiles.
+
+  A row stamped with no account behind it is refused (409
+  `admit_in_progress`), not invited — that state is either a click mid-flight
+  or a failed release, never a resend, and inviting would point someone at a
+  login page for an account we cannot confirm.
+
+  22 tests; 10 mutations each kill at least one, and **two of them found real
+  defects in this work**: the double-click test passed against a route with no
+  claim guard at all (the event loop ran the requests in sequence, so the claim
+  was never exercised — both reads are now held open until both arrive), and
+  the mock was handing out live row objects, letting one request see another's
+  writes through shared identity. The one survivor — a `COUNT(*) FILTER`
+  replaced by a literal — is underivable from SQL by any mock, so it gets a
+  structural pin that says so.
+
+  Driven on dev through the real middleware on a rebuilt gateway: fresh admit
+  (real keypair, reading tab, 500p allowance, invitation sent), repeat → 409,
+  existing member → linked not duplicated, unknown → 404, malformed → 400,
+  mixed-case padded input → matched. Drift guard green (7/7), `next build`
+  clean, hairline tripwire clean. **Still not seen in a browser** — no browser
+  tooling this session, same residual the read half carries.
+
 - **2026-07-27 (waitlist: the operator can see the list)** — CLOSED-BETA-ADR
   §XI.3 item 2, straight after the digest below. Spec + as-built: §XI.5.
 

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
-import { generateKeypair } from "../lib/key-custody-client.js";
+import { pool } from "@platform-pub/shared/db/client.js";
+import { provisionAccount } from "../lib/account-provision.js";
 import { createSession } from "@platform-pub/shared/auth/session.js";
 import { getAccount } from "@platform-pub/shared/auth/accounts.js";
 import { invalidateAuthCache } from "../middleware/auth.js";
@@ -204,7 +204,7 @@ export async function googleAuthRoutes(app: FastifyInstance) {
         );
         return reply.status(403).send({ error: CLOSED_BETA_ERROR });
       } else {
-        accountId = await createGoogleAccount(email, name);
+        accountId = (await provisionAccount(email, name)).accountId;
         logger.info(
           { accountId, email: email.slice(0, 3) + "***" },
           "Google login — new account created",
@@ -301,64 +301,3 @@ async function verifyIdToken(idToken: string): Promise<{
   };
 }
 
-async function createGoogleAccount(
-  email: string,
-  displayName: string,
-): Promise<string> {
-  const keypair = await generateKeypair();
-
-  let baseUsername = displayName
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 30);
-
-  if (baseUsername.length < 3) {
-    baseUsername = email
-      .split("@")[0]
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, "")
-      .slice(0, 30);
-  }
-
-  if (baseUsername.length < 3) {
-    baseUsername = "user";
-  }
-
-  // Use base username if available, otherwise append a random suffix
-  let username = baseUsername;
-  const { rows: existing } = await pool.query<{ username: string }>(
-    `SELECT username FROM accounts WHERE username = $1 OR username LIKE $2 ORDER BY username`,
-    [baseUsername, `${baseUsername}-%`],
-  );
-  if (existing.some((r) => r.username === baseUsername)) {
-    const taken = new Set(existing.map((r) => r.username));
-    do {
-      username = `${baseUsername}-${randomBytes(3).toString("hex")}`;
-    } while (taken.has(username));
-  }
-
-  return withTransaction(async (client) => {
-    const result = await client.query<{ id: string }>(
-      `INSERT INTO accounts (
-         nostr_pubkey, nostr_privkey_enc, username, display_name, email,
-         status, free_allowance_remaining_pence
-       ) VALUES ($1, $2, $3, $4, $5, 'active', 500)
-       RETURNING id`,
-      [
-        keypair.pubkeyHex,
-        keypair.privkeyEncrypted,
-        username,
-        displayName,
-        email,
-      ],
-    );
-
-    const accountId = result.rows[0].id;
-
-    await client.query("INSERT INTO reading_tabs (reader_id) VALUES ($1)", [
-      accountId,
-    ]);
-
-    return accountId;
-  });
-}

@@ -2,11 +2,18 @@
 
 **all.haus Architectural Decision Record**
 **Status:** Accepted — 2026-07-22. **Phase 1 built 2026-07-23**, **Phase 2 built
-2026-07-24**, **Phase 3 built 2026-07-24** (local; not yet deployed). All three
-phases complete. As-built notes: §VIII (Phase 1), §IX (Phase 2), §X (Phase 3).
+2026-07-24**, **Phase 3 built 2026-07-24** (local; not yet deployed). As-built
+notes: §VIII (Phase 1), §IX (Phase 2), §X (Phase 3).
+**Phase 4 (§XI — admission and the two emails, specced 2026-07-27 from prod
+evidence): three of four items built the same day** — the operator digest
+(§XI.4), the panel's read half (§XI.5), and the admit action (§XI.6). **Open:
+the joiner acknowledgement (D8.1)**, gated on D9's privacy line landing on the
+form. Standing residual: **no part of the `/admin/waitlist` panel has been seen
+in a browser.**
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** existing magic-link + Google OAuth auth flow (`gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`)
 **Affects:** `gateway/src/routes/auth.ts`, `gateway/src/routes/google-auth.ts`, `gateway/src/routes/` (new `waitlist.ts`), `web/src/app/auth/page.tsx`, `web/src/app/page.tsx`, `web/src/app/` (new waitlist surface), `schema.sql`, `migrations/`
+**Phase 4 also affects:** `gateway/src/routes/admin-dashboard.ts`, `gateway/src/workers/waitlist-digest.ts`, `gateway/src/lib/account-provision.ts` (new — extracted from `google-auth.ts`), `shared/src/lib/email.ts`, `web/src/app/admin/waitlist/page.tsx`, `web/src/components/admin/AdminShell.tsx`
 
 > **Note to Claude Code.** This is a design-decisions document, not a line-level
 > implementation spec. It fixes the _what_ and the _why_; you own the _how_.
@@ -502,7 +509,7 @@ Before D8.1 ships, the form needs the line the note flags as open, and the
 acknowledgement needs the unsubscribe that makes deletion a user action rather
 than an operator favour.
 
-### XI.2 The panel — `/admin/waitlist`, a seventh tab  · READ HALF BUILT, see XI.5
+### XI.2 The panel — `/admin/waitlist`, a seventh tab  · BUILT: read half XI.5, admit XI.6
 
 Written in the OWNER-DASHBOARD-SPEC §4 idiom so it can be lifted straight into
 a build. The dashboard itself shipped 2026-07-22 with six tabs; this is an
@@ -539,11 +546,14 @@ exists to serve.
 
 ### XI.3 Order to build
 
-1. **The operator digest (D8.2).** Smallest, and it closes the actual incident.
-2. **The panel's read half (XI.2, no actions).** Turns `psql` into a screen.
-3. **The admit action + its row state**, which is §3.7's minimum for running a
-   beta at all.
+1. ~~**The operator digest (D8.2).**~~ **BUILT 2026-07-27 — XI.4.** Smallest,
+   and it closes the actual incident.
+2. ~~**The panel's read half (XI.2, no actions).**~~ **BUILT 2026-07-27 —
+   XI.5.** Turns `psql` into a screen.
+3. ~~**The admit action + its row state**~~ **BUILT 2026-07-27 — XI.6.**
+   §3.7's minimum for running a beta at all.
 4. **The join acknowledgement (D8.1)**, gated on D9's privacy line landing.
+   **The only item of §XI still open.**
 
 Emphatically *not* first: the join acknowledgement. It is the most visible and
 the least urgent — it tells people something the success page already told them,
@@ -643,3 +653,128 @@ rather than by production.
 7-day count correctly excluding a 9-day-old row. **Not seen in a browser** —
 the page compiles and prerenders (1.5 kB), but its rendered appearance in
 either mode is unverified.
+
+### XI.6 As built — the admit action (2026-07-27)
+
+§XI.3 item 3, and the §3.7 minimum for running a closed beta at all: until this
+landed, converting a waitlister into a member meant hand-written SQL on the box.
+The panel could see who was waiting and had no way to do anything about it.
+
+**Migration 163** adds the three columns the action needs, and they are three
+facts rather than one: `admitted_at` (an account exists — the guard a second
+click loses against), `admitted_account_id` (which account it became, so "was
+this person admitted?" and "who are they now?" are one question; `ON DELETE SET
+NULL`, so a member who later deletes their account leaves the admission stamp
+standing with the pointer cleared), and `invited_at` (the invitation actually
+went). The last two are separate because they can fail apart, which is the whole
+of the design below.
+
+**`POST /admin/dashboard/waitlist/admit`** (behind `requireAdmin`) does three
+things, and the order is the design:
+
+1. **Claim** the row — one statement, `WHERE admitted_at IS NULL`. Two
+   concurrent admits contend on the database and exactly one wins; the loser
+   reads a 409.
+2. **Find-or-create** the account via the new `gateway/src/lib/account-provision.ts`
+   `provisionAccount`, which deliberately **bypasses `CLOSED_BETA`** — that
+   constant exists to reserve account creation to a human decision, and this is
+   that decision. An address that already has an account is **linked, never
+   duplicated** (`accounts.email` is unique, so a blind insert would 500; and
+   the operator testing the form with their own address is the likely first
+   real case — one of the three live prod rows is exactly that).
+3. **Send** the invitation, and stamp `invited_at` only if it went.
+
+**`provisionAccount` is an extraction, not a new copy.** It is the old private
+`createGoogleAccount` lifted out of `google-auth.ts`, which now imports it — one
+home for "make this address a member", so the two paths cannot drift. It is
+separate from `shared/auth/accounts.ts::signup` because `signup` takes a
+`FastifyReply` and calls `createSession` on it: driving that from the admit
+route would set the NEW USER'S session cookie on the ADMIN'S response, logging
+the operator out of their own account and into the prospect's, once per
+admission.
+
+**Two claims, not one, and the second was found by mutation.** The admission
+claim leaves a window between "claimed" and "sent" in which a second click reads
+the row as *admitted, never told* — the exact shape of a resend — and mails the
+person a duplicate. So the invitation is claimed the same way
+(`WHERE invited_at IS NULL`), stamped before the send and **released** if the
+send throws. Reserve→create→confirm on both halves, the pattern the Stripe
+invariant already codifies.
+
+**A row stamped with no account behind it is refused, not invited.** That state
+means either another click is between its claim and its account, or one failed
+and its release failed too — indistinguishable from the route, and neither is a
+resend. It answers 409 `admit_in_progress` rather than sending someone to a
+login page for an account it cannot confirm exists.
+
+**A failure never leaves a stuck row.** Provisioning throws → the admission
+claim is released (guarded on `admitted_account_id IS NULL`, so it can never
+clobber a concurrent success) and the operator simply clicks again. The mail
+throws → the admission **stands** (D7: the account is the product, the message
+is the courtesy; a 500 here would invite a retry that double-creates), the
+invite stamp is released, and the row rests at *admitted, not yet told* — which
+the panel shows and offers the retry on, because an admission nobody heard about
+is the failure this whole section exists to stop.
+
+**The invitation carries no login token.** A magic link expires in 15 minutes
+and an invitation is read hours later, so an embedded link would be dead on
+arrival for almost everyone — its likeliest observable is a prospect clicking
+"log in", being told the link is invalid, and concluding the invitation was a
+mistake. It points at the login page and names the address to enter; the link
+they need is the one they ask for, seconds before they use it. That also keeps a
+long-lived credential out of an inbox we don't control. **Transactional stream,
+not broadcast**: the ADR flags this email as "arguably bulk", and it would be as
+a cohort blast, but it is one message per operator click to a named person who
+asked. Batch admission is the point to move it, and to start the 2–4 weeks of
+stream warming DEPLOYMENT.md records.
+
+**The panel** gains a Status column (Waiting / Admitted · @username / Admitted ·
+not emailed, in crimson) and one per-row action whose label follows that state
+(Admit / Send invite), behind a `window.confirm` naming the consequence — it
+creates a stranger an account and emails them, and neither is undoable from that
+screen. Two new tiles: **Admitted**, and **Not yet told** (crimson while
+non-zero).
+
+**Twenty-two route tests, ten mutations, and two of them found real defects in
+this work.** Dropping `requireAdmin` or either claim guard, removing either
+release or the no-account refusal, skipping the existing-account lookup,
+re-throwing the mail failure, and flipping the read's `ORDER BY` each fail at
+least one test. Two things are worth recording because
+they were nearly missed:
+
+- The double-click test **passed against a route with no claim guard at all**.
+  Left to the event loop the first request runs to completion before the second
+  issues a query, so the second took the plain already-admitted path and the
+  claim was never exercised. It now holds both reads open until both have
+  arrived — the only interleaving in which the claim decides anything.
+- The mock was handing out **live row objects**, so one request observed
+  another's writes through shared identity — a snapshot no database would give
+  it, and it made a losing racer look like a resend rather than a refused claim.
+  It returns copies now.
+
+The one mutation that survived — replacing a `COUNT(*) FILTER` with a literal —
+is not derivable from the SQL by any mock, since only Postgres evaluates a
+FILTER. Per the standing rule it gets a **structural pin** that asserts the
+query's shape and says out loud that it is not a behavioural test.
+
+**Driven against the dev database, through the real middleware, on a rebuilt
+gateway**: a fresh prospect admitted (account created with a real custodial
+keypair, reading tab, 500p allowance; invitation sent), the same address again
+→ 409, an address that already had an account → linked with
+`accountCreated: false` and no second account, an address never on the list →
+404, a malformed address → 400 before any lookup, a mixed-case padded address
+matching the stored lower-cased row, a hand-made half-done row → 409
+`admit_in_progress`, and an admitted-but-never-told row resending once and then
+409ing. Three invitations in the log, one
+per successful admit.
+
+**Still not seen in a browser.** `next build` compiles it (2.25 kB) and the page
+serves 200 from the rebuilt web container with all three row states seeded on
+dev — but no browser tooling was available in this session, so its rendered
+appearance, the confirm dialog and the button states remain visually unverified,
+exactly as the read half was. That is now the oldest outstanding thing about
+this panel.
+
+**What remains of §XI:** the joiner acknowledgement (D8.1, item 4), still gated
+on D9's privacy line landing on the form — and note D6, that it goes on *every*
+accepted submission or not at all.

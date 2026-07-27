@@ -84,6 +84,82 @@ export async function sendMagicLinkEmail(
 }
 
 // ---------------------------------------------------------------------------
+// Waitlist invitation — "there's room now" (CLOSED-BETA-ADR §XI, D8)
+//
+// Sent once, by the operator's Admit action, after the account exists. It is
+// the third of the section's three emails and the only one that is a reply to
+// a specific human decision about a specific person.
+//
+// IT CARRIES NO LOGIN TOKEN, ON PURPOSE. A magic link expires in 15 minutes
+// (TOKEN_EXPIRY_MINUTES, shared/auth/magic-links.ts) and an invitation is read
+// hours or days after it lands — so an embedded link would be dead on arrival
+// for almost everyone who received it, and its most likely observable is a
+// prospect clicking "log in", being told the link is invalid, and concluding
+// the invitation was a mistake. It points at the login page instead and names
+// the address to enter; the link they need is the one they ask for, seconds
+// before they use it. That also keeps a long-lived credential out of an inbox
+// we don't control.
+//
+// TRANSACTIONAL STREAM, NOT BROADCAST. The ADR flags this one as "arguably
+// bulk", and it would be if it were a cohort blast. It isn't: it is one message
+// per operator click, to a named person, in response to their own request to
+// join — which is what the transactional stream is for. If admission ever
+// becomes a batch action over a selected cohort, that is the point to move it
+// to the broadcast stream, and DEPLOYMENT.md records that a new one wants 2–4
+// weeks of warming before it carries real volume.
+// ---------------------------------------------------------------------------
+
+export async function sendWaitlistInviteEmail(to: string): Promise<void> {
+  const appUrl = process.env.APP_URL ?? 'http://localhost:3000'
+  const loginUrl = `${appUrl}/auth`
+
+  await sendEmail({
+    to,
+    subject: "There's room on all.haus",
+    textBody: [
+      "You asked to be told when there was room on all.haus. There is.",
+      '',
+      `Your account is ready. Log in at ${loginUrl} with this address (${to})`,
+      'and we will email you a link to get in — no password to remember.',
+      '',
+      'all.haus is a place to read and write without an algorithm deciding what',
+      'you see. You build your own feeds, from here and from anywhere else you',
+      'already read.',
+      '',
+      "We're still small and still fixing things. If something is broken or",
+      'wrong, reply to this email — it reaches a person.',
+    ].join('\n'),
+    htmlBody: `
+      <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
+        <h2 style="font-size: 20px; font-weight: 600; color: #1c1917; margin-bottom: 16px;">
+          There's room on all.haus
+        </h2>
+        <p style="font-size: 15px; color: #57534e; line-height: 1.6; margin-bottom: 24px;">
+          You asked to be told when there was room. There is — your account is ready.
+          Log in with this address (<strong>${to}</strong>) and we'll email you a link
+          to get in. There's no password to remember.
+        </p>
+        <a href="${loginUrl}"
+           style="display: inline-block; background: #1c1917; color: #ffffff; font-size: 14px; font-weight: 500; padding: 12px 28px; border-radius: 6px; text-decoration: none;">
+          Log in
+        </a>
+        <p style="font-size: 15px; color: #57534e; line-height: 1.6; margin-top: 32px;">
+          all.haus is a place to read and write without an algorithm deciding what you
+          see. You build your own feeds, from here and from anywhere else you already read.
+        </p>
+        <p style="font-size: 13px; color: #a8a29e; margin-top: 32px; line-height: 1.5;">
+          We're still small and still fixing things. If something is broken or wrong,
+          reply to this email — it reaches a person.
+        </p>
+        <p style="font-size: 12px; color: #d6d3d1; margin-top: 24px;">
+          all.haus — writing worth reading
+        </p>
+      </div>
+    `.trim(),
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Broadcast email — for publish notifications (separate Postmark stream)
 // ---------------------------------------------------------------------------
 

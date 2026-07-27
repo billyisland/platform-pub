@@ -181,13 +181,42 @@ export interface AdminRegulatory {
 }
 
 export interface AdminWaitlist {
-  totals: { total: number; joinedLast7d: number; publishInterest: number }
+  totals: {
+    total: number
+    joinedLast7d: number
+    publishInterest: number
+    /** Rows with an account behind them. */
+    admitted: number
+    /** Admitted but the invitation never went — the state that wants a retry. */
+    admittedNotInvited: number
+  }
   /** When the operator digest last went out; null = never (CLOSED-BETA-ADR §XI.4). */
   lastDigestAt: string | null
   /** True when the list exceeded the route's cap — never a silent truncation. */
   truncated: boolean
   shown: number
-  entries: Array<{ email: string; publishInterest: boolean; joinedAt: string }>
+  entries: Array<{
+    email: string
+    publishInterest: boolean
+    joinedAt: string
+    /** An account exists for this address (migration 163). */
+    admittedAt: string | null
+    /** The "there's room now" email went. Separate: the two can fail apart. */
+    invitedAt: string | null
+    /** Who they became; null if unadmitted, or if that account was deleted. */
+    username: string | null
+  }>
+}
+
+/** The outcome of one Admit click — what the operator needs told back. */
+export interface AdminWaitlistAdmitResult {
+  email: string
+  admitted: true
+  /** False when they already had an account and were linked, not created. */
+  accountCreated: boolean
+  username: string | null
+  /** False = admitted, but the invitation didn't send. Retry with the same call. */
+  invited: boolean
 }
 
 export const adminDashboard = {
@@ -202,6 +231,11 @@ export const adminDashboard = {
     }),
   regulatory: () => request<AdminRegulatory>('/admin/dashboard/regulatory'),
   waitlist: () => request<AdminWaitlist>('/admin/dashboard/waitlist'),
+  admitWaitlister: (email: string) =>
+    request<AdminWaitlistAdmitResult>('/admin/dashboard/waitlist/admit', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
   triggerSettlements: () =>
     request<{ settlementTriggered: number }>('/admin/dashboard/trigger-settlements', {
       method: 'POST',

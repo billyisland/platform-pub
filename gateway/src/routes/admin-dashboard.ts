@@ -5,6 +5,8 @@ import { zodValidationError } from '@platform-pub/shared/lib/validation.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { requireEnv } from '@platform-pub/shared/lib/env.js'
 import { requireAdmin } from '../middleware/admin.js'
+import { provisionAccount } from '../lib/account-provision.js'
+import { sendWaitlistInviteEmail } from '@platform-pub/shared/lib/email.js'
 
 // =============================================================================
 // Owner dashboard — operator visibility over the money pipeline, users,
@@ -19,6 +21,9 @@ import { requireAdmin } from '../middleware/admin.js'
 // GET  /admin/dashboard/config      — all platform_config rows
 // PATCH /admin/dashboard/config     — update existing keys (never insert)
 // GET  /admin/dashboard/regulatory  — revenue vs UK tax thresholds, custody
+// GET  /admin/dashboard/waitlist    — the closed-beta waiting list
+// POST /admin/dashboard/waitlist/admit — admit one waitlister (creates their
+//                                        account, sends the invitation)
 // POST /admin/dashboard/trigger-settlements — proxy to payment-service
 // POST /admin/dashboard/trigger-payouts     — proxy to payment-service
 //
@@ -696,9 +701,12 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
   // now says the count moved; this says WHO, which is the half an operator
   // needs to pick a cohort.
   //
-  // READ-ONLY, DELIBERATELY. Admit is the next item (§XI.3) and needs row state
-  // (`admitted_at`) to be safe, so there is no action here and no `admitted`
-  // column to show yet.
+  // The admission state (migration 163) rides along: `admittedAt` says an
+  // account exists for this address, `invitedAt` says the "there's room now"
+  // email actually went, and they are separate because the send happens outside
+  // the admission transaction and can fail on its own. A row that is admitted
+  // but not invited is the state the panel offers a retry on — an admission
+  // nobody heard about is the exact failure this section exists to stop.
   //
   // NO FILTERING, BY DESIGN. The list attracts disposable addresses — one of
   // the first three real rows was from a temp-mail domain. The domain is right
@@ -717,13 +725,17 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         pool.query(
           `SELECT COUNT(*) AS total,
                   COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS joined_7d,
-                  COUNT(*) FILTER (WHERE publish_interest) AS publish_interest
+                  COUNT(*) FILTER (WHERE publish_interest) AS publish_interest,
+                  COUNT(*) FILTER (WHERE admitted_at IS NOT NULL) AS admitted,
+                  COUNT(*) FILTER (WHERE admitted_at IS NOT NULL AND invited_at IS NULL) AS admitted_not_invited
              FROM waitlist`
         ),
         pool.query(
-          `SELECT email, publish_interest, created_at
-             FROM waitlist
-            ORDER BY created_at DESC
+          `SELECT w.email, w.publish_interest, w.created_at,
+                  w.admitted_at, w.invited_at, a.username
+             FROM waitlist w
+             LEFT JOIN accounts a ON a.id = w.admitted_account_id
+            ORDER BY w.created_at DESC
             LIMIT $1`,
           [CAP + 1]
         ),
@@ -744,6 +756,8 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           total: num(t.total),
           joinedLast7d: num(t.joined_7d),
           publishInterest: num(t.publish_interest),
+          admitted: num(t.admitted),
+          admittedNotInvited: num(t.admitted_not_invited),
         },
         lastDigestAt: digest.rows[0]?.value ?? null,
         truncated,
@@ -752,11 +766,249 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           email: r.email as string,
           publishInterest: Boolean(r.publish_interest),
           joinedAt: new Date(r.created_at).toISOString(),
+          admittedAt: r.admitted_at ? new Date(r.admitted_at).toISOString() : null,
+          invitedAt: r.invited_at ? new Date(r.invited_at).toISOString() : null,
+          // NULL for an unadmitted row, and also for one whose member has since
+          // deleted their account (the FK is ON DELETE SET NULL) — the panel
+          // reads it as "admitted, account gone", not as "never admitted",
+          // because admittedAt is what answers that.
+          username: (r.username as string | null) ?? null,
         })),
       })
     } catch (err) {
       req.log.error({ err }, 'admin dashboard waitlist failed')
       return reply.status(500).send({ error: 'Failed to load the waiting list' })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // POST /admin/dashboard/waitlist/admit — admit one waitlister
+  //
+  // CLOSED-BETA-ADR §XI.2 "Actions", build order item 3. The one write on this
+  // panel, and the §3.7 minimum for running a closed beta at all: until now,
+  // converting a waitlister into a member meant hand-writing SQL on the box.
+  //
+  // It does three things, in this order, and the order is the design:
+  //
+  //   1. CLAIM the row (`admitted_at IS NULL` → now()). One statement, so two
+  //      concurrent admits — the operator double-clicking a slow button — race
+  //      on the database and exactly one wins. The loser reads the row it
+  //      didn't claim and reports it already admitted.
+  //   2. Find-or-create the account. `provisionAccount` deliberately BYPASSES
+  //      the CLOSED_BETA gate: that constant exists to reserve account creation
+  //      to a human decision, and this IS that decision, taken by an admin
+  //      behind requireAdmin. A prospect who is already a member (the operator
+  //      testing the form with their own address is the likely first case, and
+  //      one of the three live prod rows is exactly that) is LINKED, not
+  //      duplicated — accounts.email is unique, so a blind insert would 500.
+  //   3. Send the invitation, and stamp `invited_at` only if it went.
+  //
+  // THE EMAIL IS OUTSIDE THE CLAIM, AND ITS FAILURE DOES NOT UNDO ANYTHING
+  // (D7's rule, applied to admission). The account is the product; the message
+  // is the courtesy. A Postmark blip must not roll back a real account or
+  // release the claim, because the retry would then try to create it again.
+  // Instead the row rests at "admitted, not yet told", the panel shows that
+  // state and offers a resend, and this route's own resend path is the same
+  // endpoint called again.
+  //
+  // RESERVE→CREATE→CONFIRM, so a failure between the claim and the account is
+  // not a stuck row: if provisioning throws, the claim is RELEASED (guarded on
+  // `admitted_account_id IS NULL`, so it can never clobber a concurrent
+  // success) and the operator can simply click again.
+  // ---------------------------------------------------------------------------
+  const AdmitSchema = z.object({
+    email: z.string().trim().max(254).email(),
+  })
+
+  app.post('/admin/dashboard/waitlist/admit', { preHandler: requireAdmin }, async (req, reply) => {
+    const parsed = AdmitSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send(zodValidationError(parsed.error))
+    }
+    // POST /waitlist lower-cases before insert, so the stored key is lower-case
+    // and the lookup has to match it.
+    const email = parsed.data.email.toLowerCase().trim()
+    const adminId = (req as any).session!.sub as string
+
+    try {
+      const existingRow = await pool.query<{
+        id: string
+        admitted_at: Date | null
+        invited_at: Date | null
+        admitted_account_id: string | null
+      }>(
+        `SELECT id, admitted_at, invited_at, admitted_account_id
+           FROM waitlist WHERE email = $1`,
+        [email]
+      )
+
+      if (existingRow.rows.length === 0) {
+        // Deliberately a real 404 with a real reason. This endpoint is behind
+        // requireAdmin, so there is no enumeration surface to protect here —
+        // that concern belongs to the public POST /waitlist, and blurring the
+        // admin's error would only hide a typo from the one person who can fix
+        // it.
+        return reply.status(404).send({ error: 'not_on_list' })
+      }
+
+      const row = existingRow.rows[0]
+
+      if (row.admitted_at && row.invited_at) {
+        return reply.status(409).send({ error: 'already_admitted' })
+      }
+
+      let accountId = row.admitted_account_id
+      let username: string | null = null
+      let accountCreated = false
+      // Read once, before the claim moves it: this call is either the admission
+      // or a resend to a row that was admitted and never told, and step 3 needs
+      // to know which when it loses a race.
+      const isResend = Boolean(row.admitted_at)
+
+      if (!row.admitted_at) {
+        // 1. Claim.
+        const claim = await pool.query<{ id: string }>(
+          `UPDATE waitlist SET admitted_at = now()
+            WHERE id = $1 AND admitted_at IS NULL
+            RETURNING id`,
+          [row.id]
+        )
+        if (claim.rows.length === 0) {
+          // Lost the race against a concurrent admit of the same row — which
+          // is the double-click this claim exists to absorb.
+          return reply.status(409).send({ error: 'already_admitted' })
+        }
+
+        try {
+          // 2. Find-or-create.
+          const account = await pool.query<{ id: string; username: string | null }>(
+            'SELECT id, username FROM accounts WHERE email = $1',
+            [email]
+          )
+          if (account.rows.length > 0) {
+            accountId = account.rows[0].id
+            username = account.rows[0].username
+          } else {
+            // Display name from the local part — it is all a waitlist row
+            // carries, and the member renames themselves in Settings.
+            const provisioned = await provisionAccount(email, email.split('@')[0])
+            accountId = provisioned.accountId
+            username = provisioned.username
+            accountCreated = true
+          }
+
+          await pool.query('UPDATE waitlist SET admitted_account_id = $1 WHERE id = $2', [
+            accountId,
+            row.id,
+          ])
+        } catch (err) {
+          // Release the claim so a retry is possible. Guarded on
+          // admitted_account_id IS NULL: if a concurrent admit somehow got
+          // further than this one, its stamp survives.
+          await pool
+            .query(
+              `UPDATE waitlist SET admitted_at = NULL
+                WHERE id = $1 AND admitted_account_id IS NULL`,
+              [row.id]
+            )
+            .catch((releaseErr) => {
+              // The release itself failing leaves a claimed row with no
+              // account — the one state that needs a human, so say so loudly
+              // rather than burying it under the provisioning error.
+              logger.error(
+                { err: releaseErr, waitlistId: row.id },
+                'waitlist admit: FAILED TO RELEASE CLAIM — row is admitted with no account'
+              )
+            })
+          throw err
+        }
+      } else {
+        // Already admitted, never told: this call is the resend.
+        if (!accountId) {
+          // Stamped, but with no account behind it — which means either another
+          // click is between its claim and its account (the mid-flight window),
+          // or one failed AND its release failed too (loudly logged above).
+          // Both are indistinguishable from here and neither is a resend: this
+          // call must not invite someone to an account it cannot confirm
+          // exists. Refusing also keeps a second click out of the first's way
+          // rather than racing it.
+          return reply.status(409).send({ error: 'admit_in_progress' })
+        }
+        // Read back the username so the response can name who they are.
+        const account = accountId
+          ? await pool.query<{ username: string | null }>(
+              'SELECT username FROM accounts WHERE id = $1',
+              [accountId]
+            )
+          : { rows: [] as Array<{ username: string | null }> }
+        username = account.rows[0]?.username ?? null
+      }
+
+      // 3. Tell them — and claim the invitation the same way the admission was
+      // claimed, for the same reason. Without it there is a window between the
+      // admission claim and the send in which a second click reads the row as
+      // "admitted, never told", takes the resend path, and mails the person a
+      // duplicate. Stamping FIRST and releasing on failure closes it: two
+      // clicks contend on one statement and exactly one sends.
+      let invited = false
+      const inviteClaim = await pool.query<{ id: string }>(
+        `UPDATE waitlist SET invited_at = now()
+          WHERE id = $1 AND invited_at IS NULL
+          RETURNING id`,
+        [row.id]
+      )
+
+      if (inviteClaim.rows.length === 0) {
+        // Someone else's click is sending it, or already has. If this call had
+        // nothing else to do — a resend that lost the race — say so rather than
+        // reporting a send it did not make.
+        if (isResend) {
+          return reply.status(409).send({ error: 'already_admitted' })
+        }
+        invited = true
+      } else {
+        try {
+          await sendWaitlistInviteEmail(email)
+          invited = true
+        } catch (err) {
+          // Release the stamp. The admission stands — the account is real and
+          // the person is a member — but the row must go on saying "not yet
+          // told", because that is the state the panel offers the retry on and
+          // an invitation nobody received is the failure this section exists to
+          // stop.
+          await pool
+            .query(
+              `UPDATE waitlist SET invited_at = NULL WHERE id = $1`,
+              [row.id]
+            )
+            .catch((releaseErr) => {
+              logger.error(
+                { err: releaseErr, waitlistId: row.id },
+                'waitlist admit: FAILED TO RELEASE INVITE STAMP — row reads as told when it was not'
+              )
+            })
+          logger.error(
+            { err, waitlistId: row.id, email: email.slice(0, 3) + '***' },
+            'waitlist admit: invitation email failed — admission stands, not yet told'
+          )
+        }
+      }
+
+      logger.info(
+        { adminId, waitlistId: row.id, accountId, accountCreated, invited },
+        'waitlist admit'
+      )
+
+      return reply.send({
+        email,
+        admitted: true,
+        accountCreated,
+        username,
+        invited,
+      })
+    } catch (err) {
+      req.log.error({ err }, 'waitlist admit failed')
+      return reply.status(500).send({ error: 'Failed to admit' })
     }
   })
 

@@ -1,22 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { adminDashboard, type AdminWaitlist } from '../../../lib/api'
+import { ApiError } from '../../../lib/api/client'
 import { AdminShell } from '../../../components/admin/AdminShell'
 import { StatCard, StatGrid, StatSection } from '../../../components/admin/Stat'
 
 // =============================================================================
-// Waitlist panel — the read half (CLOSED-BETA-ADR §XI.2).
+// Waitlist panel (CLOSED-BETA-ADR §XI.2).
 //
-// The list has been write-only since migration 162: POST /waitlist stores a
-// prospect, nothing read the table, and on 2026-07-27 a real prospect went
-// unnoticed for eight hours because the only way to look was psql on the box.
-// The digest (§XI.4) now says the count moved; this page says who.
+// The list was write-only from migration 162 until 2026-07-27, when a real
+// prospect went unnoticed for eight hours because the only way to look was psql
+// on the box. The digest says the count moved; this page says who — and, since
+// the admit action landed, is where they stop waiting.
 //
-// NO ACTIONS HERE. Admit is the next item and needs `admitted_at` on the row to
-// be safe — a button with nothing recording it is a double-admit waiting to
-// happen. So this page is honest about what it cannot do rather than offering
-// a control that half-works.
+// ADMIT IS ONE CLICK AND TWO CONSEQUENCES: it creates a stranger an account and
+// emails them. Both are visible from outside the building and neither is
+// undoable from this screen, so it asks first. That is what window.confirm is
+// for here, matching the manual triggers on the overview tab.
+//
+// THE ROW SAYS WHAT HAPPENED, NOT JUST THAT SOMETHING DID. "Admitted" and
+// "told" are separate stamps because the email is sent after the account exists
+// and can fail on its own — so a row can honestly read "admitted · not emailed"
+// and offer the retry, rather than claiming a success nobody received.
 //
 // ABSOLUTE DATES, NOT "3d ago". An operator picking a cohort wants to know
 // whether someone has been waiting since the launch post or since this morning,
@@ -42,13 +48,71 @@ function joined(iso: string): string {
 export default function AdminWaitlistPage() {
   const [data, setData] = useState<AdminWaitlist | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [admitting, setAdmitting] = useState<string | null>(null)
+  const [result, setResult] = useState<{ text: string; warn: boolean } | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      setData(await adminDashboard.waitlist())
+    } catch {
+      setError('Failed to load the waiting list.')
+    }
+  }, [])
 
   useEffect(() => {
-    adminDashboard
-      .waitlist()
-      .then(setData)
-      .catch(() => setError('Failed to load the waiting list.'))
-  }, [])
+    void load()
+  }, [load])
+
+  async function admit(email: string, resend: boolean) {
+    const prompt = resend
+      ? `Send the invitation to ${email} again? They already have an account.`
+      : `Admit ${email}? This creates their account and emails them that there's room.`
+    if (!window.confirm(prompt)) return
+
+    setAdmitting(email)
+    setResult(null)
+    try {
+      const r = await adminDashboard.admitWaitlister(email)
+      const who = r.username ? ` (@${r.username})` : ''
+      if (!r.invited) {
+        // The half-failure worth spelling out: they ARE a member, they just
+        // don't know it. The row will offer the retry.
+        setResult({
+          text: `${email}${who} is admitted, but the invitation did not send. They have an account and have not been told — try sending it again.`,
+          warn: true,
+        })
+      } else if (r.accountCreated) {
+        setResult({ text: `${email}${who} is in — account created and invited.`, warn: false })
+      } else {
+        setResult({
+          text: `${email}${who} already had an account — linked and invited.`,
+          warn: false,
+        })
+      }
+      await load()
+    } catch (err: unknown) {
+      const code: string | null =
+        err instanceof ApiError && typeof err.body?.error === 'string' ? err.body.error : null
+      setResult({
+        text:
+          code === 'already_admitted'
+            ? `${email} has already been admitted and invited. Nothing was sent.`
+            : code === 'admit_in_progress'
+              ? `${email} is part-way through being admitted — either another click is still running, or one failed and left the row half-done. Reload before trying again.`
+              : code === 'not_on_list'
+                ? `${email} is not on the list.`
+                : `Could not admit ${email}. Nothing was created.`,
+        warn: true,
+      })
+      // Re-read either way: a 409 means someone else's click landed, and the
+      // screen should show that rather than the state it was refused against.
+      await load()
+    } finally {
+      setAdmitting(null)
+    }
+  }
+
+  const waiting = data ? data.totals.total - data.totals.admitted : 0
 
   return (
     <AdminShell title="Site owner">
@@ -64,14 +128,33 @@ export default function AdminWaitlistPage() {
       )}
       {data && (
         <>
+          {result && (
+            <div className="bg-glasshouse-well px-4 py-3 mb-8">
+              <p className={`text-ui-xs ${result.warn ? 'text-crimson' : 'text-black'}`}>
+                {result.text}
+              </p>
+            </div>
+          )}
+
           <StatSection label="The waiting list">
             <StatGrid>
-              <StatCard label="Total waiting" value={data.totals.total} />
+              <StatCard label="Still waiting" value={waiting} />
+              <StatCard label="Admitted" value={data.totals.admitted} />
               <StatCard label="Joined, 7 days" value={data.totals.joinedLast7d} />
               <StatCard
                 label="Want to publish"
                 value={data.totals.publishInterest}
                 detail="Ticked the opt-in"
+              />
+              <StatCard
+                label="Not yet told"
+                value={data.totals.admittedNotInvited}
+                detail={
+                  data.totals.admittedNotInvited > 0
+                    ? 'Admitted, invitation never sent'
+                    : undefined
+                }
+                warn={data.totals.admittedNotInvited > 0}
               />
               <StatCard
                 label="Last digest"
@@ -84,12 +167,10 @@ export default function AdminWaitlistPage() {
 
           <StatSection
             label="Everyone waiting"
-            helper="Newest first. Admitting someone is still manual — there is no action here yet."
+            helper="Newest first. Admitting creates their account and emails them — it asks first."
           >
             {data.totals.total === 0 ? (
-              <p className="text-ui-sm text-grey-600">
-                Nobody has joined yet.
-              </p>
+              <p className="text-ui-sm text-grey-600">Nobody has joined yet.</p>
             ) : (
               <div className="bg-glasshouse-well px-6 py-5">
                 <table className="w-full text-ui-xs">
@@ -98,20 +179,47 @@ export default function AdminWaitlistPage() {
                       <th className="label-ui text-grey-600 text-left pb-2">Email</th>
                       <th className="label-ui text-grey-600 text-left pb-2">Publish</th>
                       <th className="label-ui text-grey-600 text-right pb-2">Joined</th>
+                      <th className="label-ui text-grey-600 text-left pb-2 pl-6">Status</th>
+                      <th className="label-ui text-grey-600 text-right pb-2">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.entries.map((e) => (
-                      <tr key={e.email}>
-                        <td className="py-2 text-black">{e.email}</td>
-                        <td className="py-2 text-grey-600">
-                          {e.publishInterest ? 'Yes' : '—'}
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-grey-600">
-                          {joined(e.joinedAt)}
-                        </td>
-                      </tr>
-                    ))}
+                    {data.entries.map((e) => {
+                      const busy = admitting === e.email
+                      const untold = Boolean(e.admittedAt) && !e.invitedAt
+                      return (
+                        <tr key={e.email}>
+                          <td className="py-2 text-black">{e.email}</td>
+                          <td className="py-2 text-grey-600">
+                            {e.publishInterest ? 'Yes' : '—'}
+                          </td>
+                          <td className="py-2 text-right tabular-nums text-grey-600">
+                            {joined(e.joinedAt)}
+                          </td>
+                          <td className={`py-2 pl-6 ${untold ? 'text-crimson' : 'text-grey-600'}`}>
+                            {!e.admittedAt
+                              ? 'Waiting'
+                              : untold
+                                ? 'Admitted · not emailed'
+                                : `Admitted${e.username ? ` · @${e.username}` : ''}`}
+                          </td>
+                          <td className="py-2 text-right">
+                            {e.admittedAt && e.invitedAt ? (
+                              <span className="text-grey-600">—</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn-text"
+                                disabled={busy}
+                                onClick={() => void admit(e.email, untold)}
+                              >
+                                {busy ? 'Working…' : untold ? 'Send invite' : 'Admit'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -125,9 +233,9 @@ export default function AdminWaitlistPage() {
           </StatSection>
 
           <p className="text-ui-xs text-grey-600">
-            Nothing on this page writes to anyone. Joining sends no email by design, and
-            admitting a prospect — creating their account and inviting them — is still a
-            manual step outside the dashboard.
+            Joining the list still sends nothing by design — the first message anyone gets is
+            the invitation, and it goes when you admit them. Admitting someone who already has
+            an account links the two rather than creating a second.
           </p>
         </>
       )}

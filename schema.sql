@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict i9IfEFeFbyD0nd6cT46EFcchf3wgjqL4jKXbwQ1DCMjbQKPWhlZMmG0BqxIxanG
+\restrict IvkPGPDeZzCncvoJwmCFrfmiihrhdfNkHOUuJJZPznjzIhE1gOpqfYFOkcfqOnS
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2393,7 +2393,10 @@ CREATE TABLE public.waitlist (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     email text NOT NULL,
     publish_interest boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    admitted_at timestamp with time zone,
+    admitted_account_id uuid,
+    invited_at timestamp with time zone
 );
 
 
@@ -6977,6 +6980,14 @@ ALTER TABLE ONLY public.vouches
 
 
 --
+-- Name: waitlist waitlist_admitted_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.waitlist
+    ADD CONSTRAINT waitlist_admitted_account_id_fkey FOREIGN KEY (admitted_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
 -- Name: writer_payouts writer_payouts_writer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7148,8 +7159,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict i9IfEFeFbyD0nd6cT46EFcchf3wgjqL4jKXbwQ1DCMjbQKPWhlZMmG0BqxIxanG
-
+\unrestrict IvkPGPDeZzCncvoJwmCFrfmiihrhdfNkHOUuJJZPznjzIhE1gOpqfYFOkcfqOnS
 
 
 --
@@ -7319,4 +7329,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('159_account_status_deleted.sql'),
     ('160_resonance_band_thresholds.sql'),
     ('161_feed_proof_floor.sql'),
-    ('162_waitlist.sql');
+    ('162_waitlist.sql'),
+    ('163_waitlist_admission.sql');
