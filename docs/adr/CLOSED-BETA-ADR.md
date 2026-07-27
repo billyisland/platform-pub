@@ -414,3 +414,137 @@ during the beta) rather than building new exemptions:**
 **Not verified:** rendered appearance / copy tone (no browser tooling in the
 build session; the copy still wants the author's ear per §V). Behaviour is
 covered by the build and by manual trace of each redirect.
+
+---
+
+## XI. Phase 4 — admission, and the two emails (SPEC, not built)
+
+Written 2026-07-27, from evidence rather than from plan. The operator left three
+test entries on the live site and none of them produced an email, which read as
+a broken flow; it is not one. **The waitlist sends no email at all, by design
+(D2), and nothing in the product reads the table.** What follows specifies the
+missing half. Nothing here is built.
+
+### XI.1 What was actually established
+
+Queried on prod, 2026-07-27:
+
+- **Capture works.** Three rows, correctly normalised, spanning one day —
+  including one genuine prospect (a journalist's work address) alongside the
+  operator's own and one from a disposable-mail domain. `POST /api/v1/waitlist`
+  validates and rejects a malformed body, so the endpoint is live and behaving.
+- **The mailer works too.** `EMAIL_PROVIDER=postmark` with a key present, so
+  magic links send. This is *not* a mail-configuration fault — it is the
+  waitlist route never calling `sendEmail`, which is D2 working as written.
+- **Nothing reads the table.** No admin surface, no export, no admit path. The
+  list is write-only, and the success page tells every joiner "We'll write to
+  you when there's room" — a promise with no mechanism behind it and no way to
+  see who is owed it short of `psql` on the box.
+
+The third point is the one that matters. A real prospect has been waiting since
+the morning of the day the beta's own operator discovered, by accident, that
+there was no way to know she was there.
+
+### D6 — The join acknowledgement is sent unconditionally, or not at all
+
+If a joiner gets an email, it goes on **every** accepted submission — new row or
+`ON CONFLICT DO NOTHING` no-op — with byte-identical copy. Sending only on a new
+insert reintroduces exactly what D2/D5 designed out: an attacker who submits a
+third party's address learns nothing from the HTTP response (which is fixed),
+but the *presence or absence of a message in that person's inbox* becomes the
+side channel instead, and the victim is the one who pays for the probe. The
+route must therefore not learn what it does not need: no `RETURNING`, no
+branching on rowcount.
+
+The alternative — send nothing, which is today's behaviour — stays legitimate.
+What is not legitimate is a confirmation that fires only for new rows.
+
+### D7 — A mail failure must never fail the join
+
+The row is the product; the email is a courtesy. `sendEmail` is awaited outside
+the insert's success path and its rejection is caught and logged, never
+surfaced. A 500 from the join route means the *storage* failed and the prospect
+should retry — it must not come to mean Postmark had a bad minute, or the list
+loses people at exactly the moments it is busiest.
+
+The operator notification (D8) is subject to the same rule, and additionally
+must not be a per-row send at scale: it is specified as a daily digest, not an
+alert, for the same reason the launch cohort is 20–30 people and not 20–30
+thousand. At three rows a day the digest is a formality; the point is that the
+shape does not have to change when it isn't.
+
+### D8 — Two emails, and they are not the same decision
+
+1. **Join acknowledgement** (to the joiner) — transactional, Postmark's
+   transactional stream. Subject to D6 and D7. Its copy has a job the HTTP ack
+   does not: the joiner keeps it, so it is the only durable record they hold of
+   what they signed up for and how to get off the list. It carries the D5
+   purpose line and an unsubscribe that actually deletes the row.
+2. **Operator digest** — one message a day, only when the count moved, listing
+   what the panel (XI.2) would show. This is the cheapest possible fix for the
+   failure that produced this section, and it is worth building *first*, before
+   any panel: it turns "nobody knew she was there" into a solved problem in an
+   afternoon.
+
+The **admission** email — "there's room now" — is a third thing and belongs with
+the admit flow, not here. Note it is arguably bulk rather than transactional;
+DEPLOYMENT.md records that new Postmark broadcast streams are rate-limited and
+want warming over 2–4 weeks, which is a lead time the first cohort has to plan
+around rather than discover.
+
+### D9 — Emailing the list sharpens the legal question, it does not create it
+
+`WAITLIST-PRIVACY-NOTE.md` already carries three points for counsel (consent
+sufficiency, a retention backstop, whether a privacy line must sit on the form).
+Adding email moves the first from theoretical to live: a single "join the list"
+action currently produces no contact, so consent has had nothing to cover.
+Before D8.1 ships, the form needs the line the note flags as open, and the
+acknowledgement needs the unsubscribe that makes deletion a user action rather
+than an operator favour.
+
+### XI.2 The panel — `/admin/waitlist`, a seventh tab
+
+Written in the OWNER-DASHBOARD-SPEC §4 idiom so it can be lifted straight into
+a build. The dashboard itself shipped 2026-07-22 with six tabs; this is an
+addition to it, not part of it.
+
+**Route.** `/admin/waitlist`, tab label "Waitlist", behind `requireAdmin` from
+`gateway/src/middleware/admin.ts` (never a re-implementation — the one home).
+Backed by a new route group in `admin-dashboard.ts`.
+
+**Reads.** `GET /admin/waitlist` returns the rows plus three counts: total,
+joined in the last 7 days, and `publish_interest` true. The counts are the
+demand signal D2 promised and nobody has yet seen.
+
+**Columns.** Email · publish-interest · joined (absolute date, not "3d ago" —
+an operator deciding a cohort wants the real date) · admitted state. Default
+sort newest first. No pagination until it needs it; the beta is 20–30 people.
+
+**Triage, not policy.** The list will attract throwaway addresses — one of the
+first three is from a disposable-mail domain. The panel should make that
+*visible* (the domain is right there in the column) and must not act on it:
+auto-rejecting a domain list is a policy decision with false positives, taken by
+an operator looking at a screen, not by a heuristic. Sort and see; don't filter.
+
+**Actions.** One, initially: **Admit**, which is the §3.7 manual admit —
+an admin-privileged account create for that email bypassing the `CLOSED_BETA`
+constant, followed by the magic link / welcome. It needs state on the row to be
+safe (`admitted_at`, and the invite's own `notified_at` if the two can fail
+apart), because an admit button with nothing to record it is a double-admit
+waiting to happen. **Export CSV** second, for the cohort planning the list
+exists to serve.
+
+**Not in scope.** Invite codes, self-serve cohorts, and any automated admission
+— all explicitly out of scope of this ADR (§VII) and unchanged by this section.
+
+### XI.3 Order to build
+
+1. **The operator digest (D8.2).** Smallest, and it closes the actual incident.
+2. **The panel's read half (XI.2, no actions).** Turns `psql` into a screen.
+3. **The admit action + its row state**, which is §3.7's minimum for running a
+   beta at all.
+4. **The join acknowledgement (D8.1)**, gated on D9's privacy line landing.
+
+Emphatically *not* first: the join acknowledgement. It is the most visible and
+the least urgent — it tells people something the success page already told them,
+while the operator still cannot see who is waiting.
