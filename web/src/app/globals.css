@@ -1060,33 +1060,117 @@ html.dark {
     container-type: inline-size;
   }
 
+  /* THE ARRANGEMENT IS A LEGAL FLOOR, AND IT IS BUILT THE WAY THE FLOOR IS. The
+     real floor is columnar — an order of columns, each an ordered stack of
+     slots, geometry DERIVED from that order rather than stored
+     (WORKSPACE-COLUMN-LAYOUT-ADR) — so this is two flex columns of slots, [1, 4]
+     and [2, 3], and a slot with no fixed height fills its column's remainder,
+     which is that model's `h: null`. The two columns divide themselves
+     differently, which is where the irregularity comes from.
+
+     It was a grid of interlocking row spans before, and a full-width band under
+     both columns before that. The band is not a shape any stored order can
+     express, and reads as a footer rather than as a feed; the row spans were
+     expressible but had to be steered through `fr` arithmetic, where the size of
+     the sideways feed — the one slot with a hard minimum — was three divisions
+     away from anything you could set.
+
+     THE GUTTER IS THE WALL. `gap` equals the wall thickness, so the space
+     between two vessels reads as three even bands — wall / buffer / wall — which
+     is the floor's own rule (GRID = WALL = 8). Interior padding is 2x the wall
+     and the inter-card gap 1.5x, the real vessel's 8 / 16 / 12 held as ratios so
+     the whole chassis scales as one thing.
+
+     THE VESSELS ARE BOXES THAT CLIP, AND THE CANVAS HAS A FIXED HEIGHT. A vessel
+     on the real floor is a fixed rectangle whose cards scroll inside it, so the
+     last card is cut off at the bar; content-sized vessels are not what the
+     workspace looks like, and — worse — the grid makes the two columns exactly
+     as tall as each other, so whichever column holds less content opens a void
+     inside its own feed. Tuning card counts to close that void is a losing game:
+     it has to come out right at every container width. So each feed is given
+     MORE cards than can fit and clips them, which is both the honest picture and
+     the only stable one.
+
+     THE HEIGHT IS IN `em`, NOT AN ASPECT RATIO. Card heights are `em`, so an
+     `em` height keeps the same number of cards visible at every container width.
+     An aspect ratio would fight the `clamp`: once the base size floors at 8.5px
+     the cards stop shrinking, but a ratio-derived box keeps going with the
+     container, and the feeds would quietly close over their own content.
+
+     63em IS ALSO A CEILING, NOT JUST A PROPORTION. At the 12px cap that is about
+     756px, which fits inside the landing vessel's scroll area on an ordinary
+     laptop — and the arrangement is the whole argument here, so a figure a
+     visitor can only ever see two-thirds of at a time defeats it. Feeds showing
+     one card fewer is the cheaper loss.
+
+     IT IS ALSO WHY THERE IS NO LONGER A DETAIL-SHED RULE. Below 430px of
+     container this used to hide card bodies and provenance tags, so a
+     content-sized canvas would not crush itself; a clipping canvas has no such
+     failure mode, and the shed halved every card height at one width only —
+     precisely the width-dependence the fixed box exists to remove, and it left
+     the vertical feeds showing bare bylines. Every card is now the same card at
+     every size; only the scale changes. */
   .ah-demo-canvas {
     font-size: clamp(8.5px, 1.95cqw, 12px);
-    display: grid;
-    gap: 0.7em;
-    grid-template-columns: 1.55fr 1fr;
-    grid-template-areas:
-      'wide narrowA'
-      'wide narrowB'
-      'horiz horiz';
+    display: flex;
+    gap: 0.55em;
+    height: 63em;
+  }
+
+  .ah-demo-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55em;
+    min-width: 0;
+  }
+  .ah-demo-col-a { flex: 1.55; }
+  .ah-demo-col-b { flex: 1; }
+
+  /* Slot heights. `flex: 1 1 0` is the floor's `h: null` — take the column's
+     remaining share. The sideways feed is the one slot with a real minimum (a
+     card has to fit between the top wall and the bar), so it alone is fixed, and
+     everything else divides what is left. Feed 2 takes slightly more of its
+     column than feed 3 because headlines want length. */
+  .ah-demo-c1 { flex: 1 1 0; }
+  .ah-demo-c4 { flex: 0 0 18em; }
+  .ah-demo-c2 { flex: 1.15 1 0; }
+  .ah-demo-c3 { flex: 1 1 0; }
+
+  /* The scrolling card column, standing in for the vessel's scroll body. It
+     takes the inter-card gap; the vessel's own gap now separates it from the
+     bar. `min-height: 0` is what actually lets it clip inside the flex column. */
+  .ah-demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.82em;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* The vessels take their ⊔ here rather than inline, so wall thickness scales
      with the canvas like everything else. The wall COLOUR is still inline and
-     palette-derived (`--ah-demo-wall`, set by DemoVessel). */
-  .ah-demo-canvas > * {
+     palette-derived (`--ah-demo-wall`, set by DemoVessel).
+
+     NO BOTTOM WALL: the bar IS the bottom of a vessel ("the bottom wall is
+     replaced by VesselBar", Vessel.tsx), and DemoBar reaches out through this
+     padding to the walls' inside faces. Drawing a wall under it put two bands of
+     two different colours across the foot of every feed. */
+  .ah-demo-col > * {
     border-left: 0.55em solid var(--ah-demo-wall);
     border-right: 0.55em solid var(--ah-demo-wall);
-    border-bottom: 0.55em solid var(--ah-demo-wall);
-    padding: 0.45em;
-    gap: 0.45em;
+    padding: 1.1em;
+    gap: 0.82em;
     min-width: 0;
+    min-height: 0;
   }
 
-  .ah-demo-c1 { grid-area: wide; }
-  .ah-demo-c2 { grid-area: narrowA; }
-  .ah-demo-c3 { grid-area: narrowB; }
-  .ah-demo-c4 { grid-area: horiz; }
+  /* The horizontal vessel is a ⊐, not a ⊔: closed top and right, open on the
+     LEFT where new items arrive. Same rule as Vessel.tsx's `wallStyle`. */
+  .ah-demo-col > .ah-demo-c4 {
+    border-left: 0;
+    border-top: 0.55em solid var(--ah-demo-wall);
+  }
 
   /* The sideways feed. Cards run off the vessel's own right edge under a
      gradient to the FLOOR colour (not to white) — a horizontal feed shown
@@ -1094,12 +1178,14 @@ html.dark {
      tidily reads as a row that has ended. */
   .ah-demo-hrow {
     display: flex;
-    gap: 0.45em;
+    gap: 0.82em;
     overflow: hidden;
     position: relative;
+    flex: 1 1 0;
+    min-height: 0;
   }
   .ah-demo-hrow > * {
-    flex: 0 0 38%;
+    flex: 0 0 40%;
   }
   .ah-demo-hrow::after {
     content: '';
@@ -1112,15 +1198,12 @@ html.dark {
   }
 
   @container (max-width: 430px) {
-    /* SHED DETAIL, DON'T SHRINK. Below this the card bodies and provenance tags
-       go, leaving bylines and titles. Scaling everything down to fit would
-       reproduce exactly the grey texture the screengrabs were replaced for; the
-       arrangement, which is the argument, survives intact at every width. */
-    .ah-demo-canvas .ah-demo-detail {
-      display: none;
-    }
+    /* The one width concession left, and it is a proportion, not a shed: the
+       sideways feed's column is narrow enough here that a 40% card would be a
+       sliver. Nothing is hidden — see the note above on why the detail-shed
+       went. */
     .ah-demo-hrow > * {
-      flex: 0 0 46%;
+      flex: 0 0 64%;
     }
   }
 

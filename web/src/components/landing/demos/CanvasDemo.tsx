@@ -1,5 +1,5 @@
 import { paletteFor, type VesselPalette } from '../../workspace/tokens'
-import { DemoVessel, DemoPost, DemoByline, DemoTitle, DemoBody, DemoTag, DemoQuote } from './primitives'
+import { DemoVessel, DemoPost, DemoByline, DemoTitle, DemoBody, DemoTag, DemoQuote, DemoPhoto } from './primitives'
 
 // =============================================================================
 // CanvasDemo — feeds as OBJECTS ON A CANVAS. Supersedes WorkspaceDemo.
@@ -12,12 +12,24 @@ import { DemoVessel, DemoPost, DemoByline, DemoTitle, DemoBody, DemoTag, DemoQuo
 // and the part no screenshot in the old set ever showed. So this arrangement is
 // deliberately irregular:
 //
-//   1 — WIDE and tall, left, running the demo's full height. The feed you read.
-//   2 — NARROW, top right. Headlines; it doesn't need the width.
-//   3 — NARROW, STACKED under 2. Two feeds sharing one column of canvas.
-//   4 — HORIZONTAL, full width along the bottom, cards running off its own right
-//       edge under a gradient. The orientation flip is the thing here: the same
-//       cards, the same grammar, turned sideways.
+//   1 — WIDE and tall, top left. The feed you read: full cards, and the one
+//       carrying a picture, so the grammar is seen holding one.
+//   2 — NARROW, top right, at HEADLINE density — source and title, nothing else.
+//       Literally what the arrangement claims: a feed that doesn't need width
+//       has been given none, and has been told to stop showing standfirsts.
+//   3 — NARROW, under 2. Two feeds sharing one column of canvas.
+//   4 — HORIZONTAL, under 1, cards running off to the right under a gradient.
+//       The orientation flip is the thing here: the same cards, the same
+//       grammar, turned sideways.
+//
+// THE ARRANGEMENT IS A LEGAL FLOOR, and that is not decoration. The workspace
+// floor is COLUMNAR (WORKSPACE-COLUMN-LAYOUT-ADR): an order of columns, each an
+// ordered stack of slots, and slots in one column may differ in width. So this
+// is two columns — [1, 4] and [2, 3] — with the two rows interlocking, which is
+// a shape a user could actually build. The previous version ran feed 4 as a band
+// across the full width UNDER both columns, which no stored order can express;
+// it read as a footer rather than as a feed, because that is the only thing a
+// full-width band under two columns can read as.
 //
 // Four colourways rather than three (basic, spring, winter, autumn), so the
 // per-feed wall colour reads as a system rather than as decoration. All resolved
@@ -42,11 +54,13 @@ import { DemoVessel, DemoPost, DemoByline, DemoTitle, DemoBody, DemoTag, DemoQuo
 // viewport. It cannot be knocked out of true by a padding change upstream,
 // because it is measuring the actual container.
 //
-// The one concession below 430px of container width is that the card BODIES and
-// provenance tags hide, leaving bylines and titles. Shedding detail keeps what
-// remains legible; shrinking everything to fit would reproduce exactly the grey
-// texture the screengrabs were replaced for. The arrangement, which is the
-// argument, survives intact at every width.
+// The canvas is a FIXED BOX (a height in `em`) whose feeds clip, exactly as
+// vessels on the floor do — see the long note in §1d. Nothing is hidden at any
+// width and no card changes shape; only the scale moves. The earlier version
+// shed card bodies and provenance tags below 430px of container, which halved
+// every card height at that one width and left the vertical feeds showing bare
+// bylines. The arrangement, which is the argument, survives intact at every
+// width because the arrangement is the one thing that never varies.
 //
 // THIS IS A DEPARTURE FROM §1c's RULE and the reason it is safe: §1c insists on
 // media queries because `/` is SSR'd and a JS breakpoint would paint the wrong
@@ -60,23 +74,38 @@ interface DemoCard {
   name: string
   time: string
   title?: string
-  body: string
+  body?: string
   tag: string
   paid?: boolean
+  photo?: boolean
   quote?: { source: string; text: string }
 }
 
-/** The bottom band. Stands in for VesselBar; carries only the numeral. */
+/**
+ * The bottom band. Stands in for VesselBar, carrying only the numeral.
+ *
+ * IT IS THE BOTTOM OF THE VESSEL, NOT A ROW SITTING ON IT — "the bottom wall is
+ * replaced by VesselBar" (Vessel.tsx). Hence the negative margins, which take it
+ * out through the interior padding to the inside faces of the walls, and hence
+ * `marginTop: auto`, which pins it to the floor of a vessel the grid has
+ * stretched taller than its cards. Drawing a bottom wall UNDER this — which is
+ * what the canvas used to do — put two bands of two different colours across the
+ * foot of every feed, and was the single thing that made the vessels read wrong.
+ */
 function DemoBar({ palette, numeral }: { palette: VesselPalette; numeral: number }) {
   return (
     <div
       style={{
         background: palette.barBg,
-        height: '1.9em',
+        height: '2.1em',
         display: 'flex',
         alignItems: 'center',
-        padding: '0 0.7em',
-        margin: '0 -0.45em -0.45em',
+        padding: '0 0.9em',
+        marginTop: 'auto',
+        marginLeft: '-1.1em',
+        marginRight: '-1.1em',
+        marginBottom: '-1.1em',
+        flex: 'none',
       }}
     >
       <span className="font-mono" style={{ color: palette.barText, fontSize: '0.9em', fontWeight: 500 }}>
@@ -86,24 +115,38 @@ function DemoBar({ palette, numeral }: { palette: VesselPalette; numeral: number
   )
 }
 
-function Card({ palette, card }: { palette: VesselPalette; card: DemoCard }) {
+/**
+ * One card. `density` mirrors the real per-feed control: `standard` is the full
+ * card, `headline` is source + title and nothing else — no standfirst, no media,
+ * no quote — on the tighter 8/12 padding the condensed family uses (chassis.tsx).
+ */
+function Card({
+  palette,
+  card,
+  density = 'standard',
+}: {
+  palette: VesselPalette
+  card: DemoCard
+  density?: 'standard' | 'headline'
+}) {
+  const headline = density === 'headline'
+
   return (
-    <DemoPost palette={palette} padding="0.75em 0.85em">
+    <DemoPost palette={palette} padding={headline ? '0.55em 0.82em' : '1.1em'}>
       <DemoByline palette={palette} name={card.name} time={card.time} paid={card.paid} />
       {card.title ? <DemoTitle palette={palette}>{card.title}</DemoTitle> : null}
-      <div className="ah-demo-detail">
-        <DemoBody palette={palette}>{card.body}</DemoBody>
-      </div>
-      {card.quote ? (
-        <div className="ah-demo-detail">
-          <DemoQuote palette={palette} source={card.quote.source}>
-            {card.quote.text}
-          </DemoQuote>
-        </div>
+
+      {!headline && card.body ? <DemoBody palette={palette}>{card.body}</DemoBody> : null}
+
+      {!headline && card.photo ? <DemoPhoto palette={palette} /> : null}
+
+      {!headline && card.quote ? (
+        <DemoQuote palette={palette} source={card.quote.source}>
+          {card.quote.text}
+        </DemoQuote>
       ) : null}
-      <div className="ah-demo-detail">
-        <DemoTag palette={palette}>{card.tag}</DemoTag>
-      </div>
+
+      <DemoTag palette={palette}>{card.tag}</DemoTag>
     </DemoPost>
   )
 }
@@ -123,7 +166,8 @@ const FEED_1: DemoCard[] = [
     name: 'Tobias Wren',
     time: '5d',
     title: 'A theory of power',
-    body: 'There are many considerations in appointing a cabinet: rewarding loyal supporters, balancing factions, keeping rivals away from the spotlight and, ideally, competence…',
+    body: 'There are many considerations in appointing a cabinet: rewarding loyal supporters, balancing factions, keeping rivals well away from the spotlight…',
+    photo: true,
     tag: 'via RSS · The Whip Room',
   },
   {
@@ -144,22 +188,41 @@ const FEED_1: DemoCard[] = [
     body: 'This is the weekly visible open thread. Post about anything you want, ask random questions, whatever.',
     tag: 'via RSS · The Slow Hour',
   },
+  {
+    name: 'The Meridian',
+    time: '1w',
+    title: 'Who actually owns the harbour?',
+    body: 'Four holding companies, two of them registered last spring, and a lease nobody at the council can produce…',
+    tag: 'via RSS · The Meridian',
+  },
 ]
 
+// Feed 2 runs at HEADLINE density, so these carry titles and no bodies: a
+// standfirst written here would simply never render, and leaving one in would
+// invite someone to "fix" the density later by showing it.
 const FEED_2: DemoCard[] = [
-  { name: 'The Meridian', time: '1h', body: 'Harbour scheme approved after a decade of objections…', tag: 'via RSS' },
-  { name: 'Fenwick Wire', time: '2h', body: 'Veteran striker signs one more year at thirty-eight…', tag: 'via RSS' },
+  { name: 'The Meridian', time: '1h', title: 'Harbour scheme approved after a decade of objections', tag: 'via RSS' },
+  { name: 'Fenwick Wire', time: '2h', title: 'Veteran striker signs one more year at thirty-eight', tag: 'via RSS' },
+  { name: 'The Meridian', time: '3h', title: 'Two more ward surgeries to close by the spring', tag: 'via RSS' },
+  { name: 'Northgate Transit', time: '5h', title: 'Evening timetable holds after the winter review', tag: 'via Nostr' },
+  { name: 'Fenwick Wire', time: '6h', title: 'Rain forces a third postponement at the Ravelin', tag: 'via RSS' },
+  { name: 'The Meridian', time: '8h', title: 'Harbour board names its interim chair', tag: 'via RSS' },
+  { name: 'Northgate Transit', time: '11h', title: 'Weekend engineering works pushed to March', tag: 'via Nostr' },
 ]
 
 const FEED_3: DemoCard[] = [
   { name: 'Halloran', time: '1h', body: 'Are the high-street cinemas owned by private equity now?', tag: 'via Bluesky' },
   { name: 'Aurelio Frame', time: '7h', body: 'Hell yeah, brother! Did you make it out this time?', tag: 'via Nostr' },
+  { name: 'Ines Bergqvist', time: '9h', body: 'Third week of the new timetable and the 6.40 is still standing room only.', tag: 'via Bluesky' },
+  { name: 'Halloran', time: '1d', body: 'Someone has repainted the ravelin gates and nobody will admit to it.', tag: 'via Nostr' },
+  { name: 'Aurelio Frame', time: '1d', body: 'Two years of asking and the harbour board has finally published the seabed survey.', tag: 'via Nostr' },
+  { name: 'Marguerite Oyelaran', time: '2d', body: 'Print run sold through by Thursday. We are doing another one.', tag: 'via Bluesky' },
 ]
 
 const FEED_4: DemoCard[] = [
   { name: 'Marguerite Oyelaran', time: '5d', title: 'The Ravelin', body: 'The prettiest magazine I’ve reviewed so far…', tag: 'via RSS' },
+  { name: 'Ellis Marchetti', time: '6d', paid: true, title: 'Your Book Review', body: 'One of the finalists in this year’s book review contest…', tag: 'via RSS' },
   { name: 'Rosalind Vane', time: '6d', title: 'Finding an agent', body: 'I have several friends looking for agents…', tag: 'via RSS' },
-  { name: 'Ellis Marchetti', time: '1w', paid: true, title: 'Your Book Review', body: 'One of the finalists in the 2026 book review contest…', tag: 'via RSS' },
   { name: 'Tobias Wren', time: '1w', title: 'Summer reruns', body: 'We are now in the period which TV controllers used to call…', tag: 'via RSS' },
 ]
 
@@ -171,41 +234,62 @@ export function CanvasDemo({ dark }: { dark: boolean }) {
 
   return (
     <div className="ah-demo-canvas-wrap">
+      {/* Two COLUMNS of slots, which is the floor's own structure — see §1d.
+          Column A is the article feed over the sideways one; column B is the
+          headline feed over the chatter. */}
       <div className="ah-demo-canvas">
-        <DemoVessel palette={p1} className="ah-demo-c1">
-          {FEED_1.map((c, i) => (
-            <Card key={i} palette={p1} card={c} />
-          ))}
-          <DemoBar palette={p1} numeral={1} />
-        </DemoVessel>
+        <div className="ah-demo-col ah-demo-col-a">
+          {/* `ah-demo-stack` is the scroll body: it clips, so every feed holds
+              more cards than fit and the last one is cut off at the bar — which
+              is what a vessel on the floor actually looks like, and the only way
+              two columns of the same height can both stay full. */}
+          <DemoVessel palette={p1} className="ah-demo-c1">
+            <div className="ah-demo-stack">
+              {FEED_1.map((c, i) => (
+                <Card key={i} palette={p1} card={c} />
+              ))}
+            </div>
+            <DemoBar palette={p1} numeral={1} />
+          </DemoVessel>
 
-        <DemoVessel palette={p2} className="ah-demo-c2">
-          {FEED_2.map((c, i) => (
-            <Card key={i} palette={p2} card={c} />
-          ))}
-          <DemoBar palette={p2} numeral={2} />
-        </DemoVessel>
+          {/* The sideways one — a ⊐, not a ⊔. A horizontal vessel closes TOP and
+              RIGHT and opens on the LEFT, where newest items arrive; older ones
+              run off to the right, which is why the row is clipped there under a
+              gradient. (A horizontal feed shown statically has to be clipped to
+              read as scrollable: a row that ends tidily reads as a row that has
+              ended.) The gradient is to the vessel INTERIOR, so it looks like
+              the floor continuing rather than a fade to white. Wall arrangement
+              per Vessel.tsx; the geometry itself is §1d's `.ah-demo-c4`. */}
+          <DemoVessel palette={p4} className="ah-demo-c4">
+            <div className="ah-demo-hrow" style={{ ['--ah-demo-floor' as string]: p4.interior }}>
+              {FEED_4.map((c, i) => (
+                <Card key={i} palette={p4} card={c} />
+              ))}
+            </div>
+            <DemoBar palette={p4} numeral={4} />
+          </DemoVessel>
+        </div>
 
-        <DemoVessel palette={p3} className="ah-demo-c3">
-          {FEED_3.map((c, i) => (
-            <Card key={i} palette={p3} card={c} />
-          ))}
-          <DemoBar palette={p3} numeral={3} />
-        </DemoVessel>
+        <div className="ah-demo-col ah-demo-col-b">
+          {/* Headline density: source + title, on the tighter card padding. */}
+          <DemoVessel palette={p2} className="ah-demo-c2">
+            <div className="ah-demo-stack">
+              {FEED_2.map((c, i) => (
+                <Card key={i} palette={p2} card={c} density="headline" />
+              ))}
+            </div>
+            <DemoBar palette={p2} numeral={2} />
+          </DemoVessel>
 
-        {/* The sideways one. The cards run off the vessel's own right edge under
-            a gradient — a horizontal feed shown statically has to be CLIPPED to
-            read as scrollable; a row that ends tidily reads as a row that has
-            ended. The gradient is to the vessel INTERIOR, so it looks like the
-            floor continuing rather than a fade to white. */}
-        <DemoVessel palette={p4} className="ah-demo-c4">
-          <div className="ah-demo-hrow" style={{ ['--ah-demo-floor' as string]: p4.interior }}>
-            {FEED_4.map((c, i) => (
-              <Card key={i} palette={p4} card={c} />
-            ))}
-          </div>
-          <DemoBar palette={p4} numeral={4} />
-        </DemoVessel>
+          <DemoVessel palette={p3} className="ah-demo-c3">
+            <div className="ah-demo-stack">
+              {FEED_3.map((c, i) => (
+                <Card key={i} palette={p3} card={c} />
+              ))}
+            </div>
+            <DemoBar palette={p3} numeral={3} />
+          </DemoVessel>
+        </div>
       </div>
     </div>
   )

@@ -811,6 +811,89 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    always longer than the viewport, so hugging would be a no-op — and keeps its
    own chassis per departure 1.
 
+7sexies. **The canvas becomes a floor, and it holds a photograph**
+   (2026-07-28). 7quater built `CanvasDemo` right in every respect except the one
+   that governs the rest: it was not a shape the workspace can hold, and it was
+   sized by its contents rather than sizing them. Five changes, and the first two
+   are corrections of fact.
+
+   **The bar IS the bottom of a vessel.** Every demo vessel drew a bottom wall
+   AND a bar, so each feed ended in two bands of two different colours. Per
+   `Vessel.tsx` the bottom wall is *replaced* by `VesselBar`; the wall is gone
+   and `DemoBar` now reaches out through the interior padding to the walls' inner
+   faces, with `margin-top: auto` pinning it to the floor of a stretched vessel.
+   This one thing was most of what made the vessels read wrong.
+
+   **A horizontal feed is a ⊐, not a ⊔** — closed TOP and RIGHT, open on the
+   LEFT where new items arrive, again per `Vessel.tsx`'s `wallStyle`. Feed 4 had
+   been drawing the vertical arrangement while running its cards sideways.
+
+   **The proportions are the real vessel's, as ratios.** Interior padding was
+   *thinner* than the wall, which is why the cards looked crushed against them.
+   Wall / padding / card-gap now hold the floor's 8 / 16 / 12, and the gutter
+   between vessels equals the wall — so a gutter reads as wall / buffer / wall,
+   the floor's own rule (`GRID = WALL`).
+
+   **The arrangement is now a legal floor, built the way the floor is built.**
+   Feed 4 ran as a band across the full width UNDER both columns — a shape no
+   stored column order can express, and the only thing such a band can read as is
+   a footer. It is two flex COLUMNS of slots now, `[1, 4]` and `[2, 3]`, with
+   `flex: 1 1 0` standing in for the floor's `h: null` (take the column's
+   remaining share) and the sideways feed the one slot with a fixed height,
+   because it is the one with a real minimum. An intermediate version used
+   interlocking grid row-spans; it was expressible but steered through `fr`
+   arithmetic, which put the only slot with a hard constraint three divisions
+   away from anything you could set. Columns divide themselves; that is both the
+   ADR's model and the tractable one.
+
+   **The vessels CLIP, and the canvas has a fixed height in `em`.** This is the
+   substantive change and it supersedes 7quater's detail-shed. A vessel on the
+   floor is a fixed rectangle whose cards scroll inside it, so content-sized
+   vessels were never the right picture — and because two columns are always
+   exactly as tall as each other, whichever held less content opened a VOID
+   inside its own feed. Tuning card counts to close it is a losing game: the sum
+   has to come out right at every container width. So every feed is over-filled
+   and clips, which is at once the honest picture and the only stable one.
+   The height is `em` and not an aspect ratio, because card heights are `em`:
+   once the base floors at 8.5px the cards stop shrinking, but a ratio-derived
+   box would keep going with the container and the feeds would quietly close over
+   their own content. **63em ≈ 756px at the cap is also a ceiling**, not just a
+   proportion — an intermediate 86em figure came to 1006px, taller than the
+   landing vessel's scroll area on an ordinary laptop, so the arrangement could
+   never be seen whole; the arrangement is the entire argument, and a feed
+   showing one card fewer is much the cheaper loss.
+
+   **And so 7quater's shed rule GOES.** Hiding card bodies and provenance tags
+   below 430px of container was right for a canvas that sized itself; a clipping
+   canvas has no such failure mode, and the shed halved every card height at one
+   width only — which is precisely the width-dependence a fixed box exists to
+   remove — while leaving the vertical feeds showing bare bylines. Every card is
+   the same card at every size now; only the scale moves. The container query
+   survives with one proportion in it (the sideways cards' flex-basis), so
+   7quater's departure-from-§1c reasoning stands unchanged.
+
+   **Feed 2 runs at HEADLINE density and feed 1 carries a photograph** — the two
+   things the demo claimed and did not show. Feed 2's cards are source + title on
+   the condensed family's tighter padding, and they carry no bodies, so nothing
+   is written that the density silently drops. `DemoPhoto` is a new primitive at
+   `PostMedia`'s "sized" treatment (cropped 16:9, on the vessel interior, square
+   corners). **It is drawn, not photographed, and every tone is a canonical
+   neutral** — `grey-200 → grey-300 → stone-400 → wall-grey → ink-925`, a warm
+   grey ramp already in the registry, so the picture needs no raw hex and no new
+   slug and does not invert under the dark toggle (a feed's surface follows the
+   mode; a photograph in it never does). A stock landscape is a real place owned
+   by someone, dropped onto a page that is selling something, which is 7ter's
+   objection exactly. At ~160×90 CSS px a photograph is read as tone, mass and
+   light rather than detail, so the demo needs only that. **The first draft read
+   as a bar chart**, and the four things that fixed it are worth keeping: a
+   gradient inside every mass rather than a flat fill, blur and lost contrast on
+   the far planes (atmospheric perspective is the strongest single cue that a
+   picture has depth and was not drawn), a glow BEHIND the skyline so the masses
+   are backlit rather than laid on a background, and grain over the frame — which
+   is most of what a small photograph is once its detail has gone.
+
+   **Verified in a browser** — see the retraction under *Still open* 7.
+
 7. **Three logged-in tool surfaces clear the band** — `/write`, `/admin/*`,
    `/traffology/*` — because the row mounts on every non-workspace route and
    they are the only real pages left there (every other platform route is a
@@ -866,17 +949,25 @@ and is rewritten; a "public register" section documents the new chassis.
    `--ah-row-band` and every page's clearance with it). Not attempted here
    because the landing brief was the vessel, and any of the three moves the
    register's own furniture.
-7. **The demos (7ter, then 7quater) have never been in a browser, in either
-   mode.** They compile and `/` still prerenders static, but everything worth
-   looking at is a rendered fact, and 7quater widened the list rather than
-   shortening it: whether `CanvasDemo`'s four seasonal walls still read as four
-   distinct feeds in DARK at a base that now goes as low as 8.5px (the dark
-   variants are a near-shared neutral by design — identity rides the walls, and
-   this is by some way the smallest surface that claim has ever been made at);
-   whether `ReaderDemo`'s floor survives its own blur, i.e. whether four wall
-   colours at `blur(2.6px) saturate(0.55)` still say "your feeds" or just say
-   "grey"; whether the pane's elevation shadow reads as lift against a dark
-   scrim; **container-query support**, the one genuinely new platform feature on
-   the page (fine in current browsers, and the fallback is a fixed 11px base);
-   and at 390px, that the canvas keeps its arrangement while shedding card
-   bodies and tags, and the reader pane keeps a visible margin.
+7. ~~**The demos (7ter, then 7quater) have never been in a browser, in either
+   mode.**~~ **CLOSED by 7sexies (2026-07-28).** They have now been rendered in
+   Chromium at 1440 / 820 / 390px, light and dark, and every question on the list
+   is answered: `CanvasDemo`'s four seasonal walls DO still read as four distinct
+   feeds in dark at the 8.5px base — identity rides the walls exactly as the
+   scheme grammar claims, at the smallest surface that claim has been made at;
+   `ReaderDemo`'s blurred floor still says "your feeds" rather than "grey", and
+   the pane's shadow reads as lift against the dark scrim; the container query
+   resolves as expected. The 390px question is now moot in the form it was asked
+   — the canvas no longer sheds anything (7sexies), and it keeps its arrangement
+   with every card intact at a 330px container.
+
+   **What rendering it actually caught** is the lesson worth keeping, because
+   none of it was on this list and all of it was visible in the first screenshot:
+   the doubled bottom band under every feed, the ⊐ drawn as a ⊔, interior padding
+   thinner than its own wall, and a void half the height of a vessel. Four
+   defects in the chassis, in code that compiled, passed lint and read correctly.
+   The list above was a list of *subtle* risks; what a browser found first were
+   the gross ones. The general rule this is an instance of already stands in
+   CLAUDE.md's memory conventions — "component ≠ feature", a thing is not done
+   until it has been driven for real — and a demo of the product is not exempt
+   from it merely because it is inert markup.

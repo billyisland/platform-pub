@@ -172,7 +172,7 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
             className="font-serif"
             style={{ fontSize: '2.1em', lineHeight: 1, color: palette.cardTitle, marginBottom: '0.6em' }}
           >
-            &pound;0.75
+            &pound;0.40
           </div>
 
           {/* Inert. See the note in LandingFigure: the demos are aria-hidden

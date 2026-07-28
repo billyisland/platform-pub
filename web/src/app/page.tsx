@@ -26,14 +26,14 @@ const HEADLINE =
   'all.haus is a writing platform dedicated to three radical propositions:'
 
 const PROPOSITIONS = [
-  'No one should own the public square.',
-  'Keeping up shouldn’t mean being farmed.',
-  'Writing is work and deserves to be paid as such.',
+  'No one should own the public square',
+  'Keeping up shouldn’t mean being farmed',
+  'Writing is work and deserves to be paid as such',
 ]
 
 const PROSE = [
   'Build omnivorous feeds that pull the whole open social web into one place — Bluesky, Mastodon, Substack, plain old RSS and more. Sort them with rules you set rather than rules set on you. No dopamine hacks, no algorithm optimised for pointless, endless scrolling. A feed is a tool: you need the right one for each job. At all.haus you can create as many as you like.',
-  'Read what’s worth reading and pay a few pence for it. You don’t need to subscribe or make financial commitments you’ll forget to cancel. The money goes to whoever wrote the piece, on terms they set.',
+  'Read what’s worth reading and pay a few pence for it. You don’t have to subscribe or make financial commitments you’ll forget to cancel. The money goes to whoever wrote the piece, on terms they set.',
   'The whole thing runs on Nostr: an open protocol with no company behind it, no servers to seize, and no owner to sell it to someone worse.',
 ]
 
@@ -64,7 +64,7 @@ const FIGURES: Figure[] = [
     key: 'canvas',
     caption: 'Feeds are objects on a canvas — size them, stack them, turn them sideways',
     description:
-      'Four all.haus feeds arranged on one canvas, each framed in a different colour and numbered: a wide one down the left running the full height, two narrow ones stacked in the right-hand column, and a fourth along the bottom whose cards run sideways off the edge of the screen.',
+      'Four all.haus feeds arranged on one canvas, each framed in a different colour and numbered. A wide one fills the left, its top post carrying a photograph of a city skyline at dusk; below it a fourth feed runs sideways, its cards continuing off the right-hand edge. On the right, a narrow feed of headlines alone sits above a second narrow feed of short posts.',
   },
   {
     key: 'omnivore',
@@ -76,7 +76,7 @@ const FIGURES: Figure[] = [
     key: 'reader',
     caption: 'Read it — pay a few pence. No subscription required.',
     description:
-      'A reading pane floating over a blurred workspace of feeds. The article inside it breaks off at a “Keep reading” panel: the price, seventy-five pence, then a button to continue and a link to add a payment card, with a monthly subscription offered underneath as the alternative.',
+      'A reading pane floating over a blurred workspace of feeds. The article inside it breaks off at a “Keep reading” panel: the price, forty pence, then a button to continue and a link to add a payment card, with a monthly subscription offered underneath as the alternative.',
   },
 ]
 
