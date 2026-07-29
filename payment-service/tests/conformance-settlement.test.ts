@@ -389,6 +389,7 @@ vi.mock('@platform-pub/shared/db/client.js', () => ({
 
 vi.mock('@platform-pub/shared/lib/env.js', () => ({
   tributesEnabled: () => false,
+  allocatedFundsEnabled: () => false,
 }))
 
 vi.mock('../src/lib/logger.js', () => ({

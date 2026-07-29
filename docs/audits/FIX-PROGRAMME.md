@@ -23,6 +23,66 @@ starts.
 
 ## Progress
 
+- **2026-07-29 (funds segregation, part 1 — the payout stops being one transfer)** —
+  migration 165 plus the packer, the shared child lifecycle and the writer cycle, all
+  dark behind `STRIPE_ALLOCATED_FUNDS` (default off). Spec:
+  `docs/adr/FUNDS-SEGREGATION-INTEGRATION.md`; **its §10 is the as-built record and is
+  where the code and the spec diverge.** This is a PART, not the item: the publication and
+  tribute cycles, the `charge.refunded` allocation hooks, the reconcile sweep and the
+  residual metric are not built. → CONSOLIDATED-TODO §1.13.
+
+  Under the Stripe beta a charge's funds are locked into an allocated state that can only
+  reach connected accounts, and they move only via a transfer naming the funding charge.
+  One aggregate transfer per writer cannot express that, so the payout unit becomes
+  (payout × funding charge). The structural commitment, which is what makes this safe to
+  merge: **attribution does not change at all.** The claim SQL, the per-read-then-floor
+  net, the subscription leg, the collection gate, the `publication_id IS NULL` exclusion —
+  byte-identical, so no money question is reopened and all four conformance batteries pass
+  untouched. Only *funding* is new.
+
+  - **Migration 165** — `payout_transfers` (the per-child transfer row, polymorphic parent
+    so one lifecycle serves all three cycles), `allocated_draws` (a drawing budget, NOT a
+    ledger — it mirrors no entry and posts no movement), `tab_settlements.allocated_pence`
+    (read BACK from Stripe, never assumed; NULL = "not known to be drawable"),
+    `subscription_events.tab_settlement_id`, and `payout_transfer_id` on the three claim
+    tables — the unit→child mapping without which per-child failure is unimplementable.
+  - **`allocation-packer.ts`** — pure and mutation-verified. First-fit-decreasing over a
+    POOL of charges rather than a per-settlement pairing, because `Σ(read net attributed to
+    S) > charge(S)` is routine, not exotic (the reserve clamp; any pre-paid credit). No unit
+    is ever split, so the design introduces no rounding anywhere. The tribute carve is
+    apportioned with overflow carry and two assertions rather than floored per read — a
+    floor would make `Σ units > lockedAmount`, ratifying an overpay in both Stripe and the
+    ledger.
+  - **`payout-children.ts`** — per-child execute with the row-stable `xfer-<childRowId>`
+    key, the terminal/ambiguous split preserved per child, and **the ledger posted per child
+    inside its own flip transaction**, gated on the flip's `rowCount`. Posting once at parent
+    completion for the parent's full amount was the tempting shape and is wrong: it opens a
+    window where money has moved and the ledger is silent. Refs stay on the PARENT row so
+    `ledger_publication_distribution`'s filter keeps matching and the entries stay inside
+    reconcile-ledger's `ledger_orphans` default-deny catch-all.
+  - **§3.5 re-keying** — `confirmPayout` / `reverseWriterPayout` / `handleFailedPayout`
+    resolve a child by `payout_transfers.stripe_transfer_id` first, falling back to the
+    legacy parent lookup for pre-flip payouts. Without this a `transfer.reversed` for any
+    child but one resolves to nothing and is dropped **silently**, which is the whole
+    argument. Seven new tests cover it (§5 step 7b's unit-level twin).
+  - **Two deliberate departures from the spec**, both recorded in §10.2: a
+    `payout_transfers.reversed_pence` column (per-child cumulative reversal state — the
+    ledger cannot carry it once N children share one parent ref), and failing a parent
+    outright when every child failed rather than leaving it `pending`, which would recreate
+    the `finalisePublicationPayout` zombie the spec itself calls out.
+  - **Found while wiring the tripwire:** `check-ledger-adjacency.sh`'s `payout.ts` registry
+    floor was **4 against 9 actual call sites**, so it would have passed had this change
+    deleted four of them. Now 11, re-read by hand. Registering `payout-children.ts` at a
+    legitimate floor of 0 also exposed a latent bash bug — `grep -c || echo 0` emits "0\n0"
+    into an arithmetic test — fixed here. `INSERT INTO payout_transfers` added to
+    `PAYOUT_MARKER`.
+
+  **Not shippable to prod as a flag flip.** Beyond the unbuilt cycles: the
+  `charge.refunded` allocation hooks are missing, so a partial refund would wedge the
+  packer; `allocated_residual_alert_bps` and `payout_max_slices` are placeholders because
+  §5 step 0 was not run first, contrary to the queue item's own instruction; and the
+  flag-ON assembly has no automated coverage (the packer and the reversal path do).
+
 - **2026-07-29 (the free allowance is a gift, and we stopped billing it back)** —
   migration 164 + a 30-site sweep of the read money path. **P0: readers were
   being charged for reads we had given them.**

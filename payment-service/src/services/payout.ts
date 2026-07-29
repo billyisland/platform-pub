@@ -3,8 +3,8 @@ import type { PoolClient } from 'pg'
 import type { WriterEarnings, ArticleEarnings } from '../types/index.js'
 import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
 import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
-import { tributesEnabled } from '@platform-pub/shared/lib/env.js'
-import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
+import { tributesEnabled, allocatedFundsEnabled } from '@platform-pub/shared/lib/env.js'
+import { readNetSql, perReadNetPence } from '@platform-pub/shared/lib/per-read-net.js'
 import { isConnectPayable } from '../lib/connect-payable.js'
 import { isPayoutsHalted } from '../lib/payout-halt.js'
 import { isTerminalTransferError } from '../lib/charge-errors.js'
@@ -13,6 +13,24 @@ import {
   stripeErrorCode,
   type StripeIdempotentOutcome,
 } from '../lib/stripe-idempotent.js'
+import { createAllocationAwareStripe } from '../lib/stripe-client.js'
+import {
+  packUnits,
+  apportionCarve,
+  type EarningUnit,
+} from '../lib/allocation-packer.js'
+import {
+  lockFundingSources,
+  insertChildren,
+  hasChildren,
+  executePendingChildren,
+  completeParentIfSettled,
+  findChildByTransferId,
+  reverseChild,
+  failChild,
+  type ChildCycleSpec,
+  type ChildRow,
+} from './payout-children.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -193,13 +211,22 @@ export const PUBLICATION_STANDING_MEMBERS_SQL = `SELECT account_id, revenue_shar
          WHERE publication_id = $1 AND removed_at IS NULL AND revenue_share_bps > 0
          ORDER BY created_at ASC, id ASC`
 
+/**
+ * Thrown from inside a reserve transaction when the packing overflow leaves a
+ * payout under the threshold. It exists to ROLL THE TRANSACTION BACK — the claim
+ * must be released, not merely skipped — while telling the caller this is an
+ * ordinary outcome, not a failure worth an error log.
+ */
+class PayoutBelowThresholdError extends Error {}
+
 class PayoutService {
   private stripe: Stripe
 
   constructor() {
-    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2023-10-16',
-    })
+    // Allocation-aware: under STRIPE_ALLOCATED_FUNDS this client speaks the
+    // preview API version, because every transfer it creates draws on a charge's
+    // segregated balance. Flag off ⇒ 2023-10-16, exactly as before.
+    this.stripe = createAllocationAwareStripe()
   }
 
   // ---------------------------------------------------------------------------
@@ -546,7 +573,19 @@ class PayoutService {
     stripeConnectId: string,
     amountPence: number,
   ): Promise<string | null> {
-    const reserved = await this.reserveWriterPayout(writerId, stripeConnectId, amountPence)
+    let reserved: { payoutId: string; amountPence: number } | null
+    try {
+      reserved = await this.reserveWriterPayout(writerId, stripeConnectId, amountPence)
+    } catch (err) {
+      // An ordinary outcome, not a failure: the packing overflowed the slice cap
+      // and what remained was under the threshold, so Txn 1 rolled back whole
+      // and the claim is released. Next cycle picks the writer up again.
+      if (err instanceof PayoutBelowThresholdError) {
+        logger.info({ writerId, reason: err.message }, 'Writer payout skipped this cycle')
+        return null
+      }
+      throw err
+    }
     if (!reserved) return null
 
     await this.completeWriterPayout(
@@ -635,14 +674,26 @@ class PayoutService {
       // payout_id by the unconstrained UPDATE but was absent from the pre-summed
       // amount — the writer was underpaid for rows marked writer_paid. Summing the
       // claimed set closes it.
-      const { rows: claimedReads } = await client.query<{ net_pence: string }>(
+      //
+      // The RETURNING list gained id / chargeable_pence / tab_settlement_id for
+      // the allocation packer (§3.3b): the funding step needs each read as its
+      // own unit. The CLAIM and the net arithmetic are untouched — `readNet` is
+      // still Σ of the same per-row-then-floor net — so no money question is
+      // reopened and every conformance test stays green.
+      const { rows: claimedReads } = await client.query<{
+        id: string
+        net_pence: string
+        chargeable_pence: number
+        tab_settlement_id: string | null
+      }>(
         `UPDATE read_events
          SET writer_payout_id = $1
          WHERE writer_id = $2
            AND state = 'platform_settled'
            AND writer_payout_id IS NULL
            AND publication_id IS NULL
-         RETURNING ${readNetSql('chargeable_pence', '$3')} AS net_pence`,
+         RETURNING id, chargeable_pence, tab_settlement_id,
+                   ${readNetSql('chargeable_pence', '$3')} AS net_pence`,
         [payoutId, writerId, config.platformFeeBps],
       )
       const readNet = claimedReads.reduce((s, r) => s + parseInt(r.net_pence, 10), 0)
@@ -655,7 +706,10 @@ class PayoutService {
       // writer real money (2026-07-06 audit P0). writer_payout_id makes each
       // earning claimed exactly once; rolled back with the reads on a failed
       // transfer (rollbackWriterPayoutRows, which never touches settled_at).
-      const { rows: claimedSubs } = await client.query<{ amount_pence: number }>(
+      const { rows: claimedSubs } = await client.query<{
+        id: string
+        amount_pence: number
+      }>(
         `UPDATE subscription_events
          SET writer_payout_id = $1
          WHERE writer_id = $2
@@ -663,7 +717,7 @@ class PayoutService {
            AND publication_id IS NULL
            AND writer_payout_id IS NULL
            AND settled_at IS NOT NULL
-         RETURNING amount_pence`,
+         RETURNING id, amount_pence`,
         [payoutId, writerId],
       )
       const subNet = claimedSubs.reduce((s, r) => s + r.amount_pence, 0)
@@ -702,18 +756,238 @@ class PayoutService {
         )
       }
 
+      // --- Funding (§3.3) — everything above this line is unchanged ----------
+      // Attribution is settled: `lockedAmountPence` is what this writer is owed
+      // and how it was computed has not moved. What follows only decides WHICH
+      // CHARGES pay it, and splits the payout into one child transfer per charge
+      // drawn on. Flag off ⇒ no children, and completeWriterPayout takes the
+      // single-transfer path exactly as before.
+      const finalAmountPence = allocatedFundsEnabled()
+        ? await this.packWriterPayout(client, {
+            payoutId,
+            writerId,
+            config,
+            claimedReads,
+            claimedSubs,
+            carve,
+            lockedAmountPence,
+          })
+        : lockedAmountPence
+
       await client.query(
         `UPDATE writer_payouts SET amount_pence = $1 WHERE id = $2`,
-        [lockedAmountPence, payoutId],
+        [finalAmountPence, payoutId],
       )
 
       logger.info(
-        { payoutId, writerId, amountPence: lockedAmountPence },
+        { payoutId, writerId, amountPence: finalAmountPence },
         'Writer payout reserved (pending Stripe transfer)',
       )
 
-      return { payoutId, amountPence: lockedAmountPence }
+      return { payoutId, amountPence: finalAmountPence }
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // packWriterPayout — the funding half of Txn 1 (§3.3b/§3.3c).
+  //
+  // Runs INSIDE reserveWriterPayout's transaction, after the claim has committed
+  // its amount in memory and before anything is written back. Returns the amount
+  // actually placed, which may be smaller than the claimed amount in exactly one
+  // legitimate way: the packing overflowed `payout_max_slices` and the overflow
+  // units were un-claimed to roll to the next cycle. That difference MUST happen
+  // inside this transaction, or the ledger and Stripe disagree.
+  // ---------------------------------------------------------------------------
+  private async packWriterPayout(
+    client: PoolClient,
+    input: {
+      payoutId: string
+      writerId: string
+      config: { platformFeeBps: number; payoutMaxSlices: number; writerPayoutThresholdPence: number }
+      claimedReads: Array<{
+        id: string
+        net_pence: string
+        chargeable_pence: number
+        tab_settlement_id: string | null
+      }>
+      claimedSubs: Array<{ id: string; amount_pence: number }>
+      carve: number
+      lockedAmountPence: number
+    },
+  ): Promise<number> {
+    const { payoutId, writerId, config, claimedReads, claimedSubs, carve, lockedAmountPence } = input
+
+    // --- Units: reads ---------------------------------------------------------
+    // A unit's fee is the fee that ALREADY existed on that row — gross minus the
+    // net the claim computed — so the packer introduces no rounding anywhere.
+    // Chargeable, never the list price: the free allowance is a gift, so a gifted
+    // penny is charged to nobody and earns nobody (migration 164).
+    const readUnits: EarningUnit[] = claimedReads.map((r) => {
+      const net = perReadNetPence(r.chargeable_pence, config.platformFeeBps)
+      return {
+        id: r.id,
+        source: 'read_events' as const,
+        netPence: net,
+        feePence: r.chargeable_pence - net,
+        preferredSettlementIds: r.tab_settlement_id ? [r.tab_settlement_id] : [],
+      }
+    })
+
+    // --- Units: subscription earnings ----------------------------------------
+    // `amount_pence` is ALREADY net (logSubscriptionCharge floors the fee per
+    // charge), so the fee must be recovered from the paired subscription_charge.
+    // The pairing key is (subscription_id, period_start, period_end) — both rows
+    // are inserted together by logSubscriptionCharge — and it is required to
+    // match EXACTLY ONE charge. Zero or several ⇒ fee 0, the safe direction: an
+    // unclaimed fee is dust the Balance-Transfer sweep reclaims, while an
+    // over-claimed one over-draws the charge and Stripe rejects the transfer.
+    const subUnits: EarningUnit[] = []
+    if (claimedSubs.length > 0) {
+      const { rows: subRows } = await client.query<{
+        id: string
+        amount_pence: number
+        tab_settlement_id: string | null
+        pair_count: string
+        charge_pence: number | null
+      }>(
+        `SELECT e.id, e.amount_pence, e.tab_settlement_id,
+                p.pair_count, p.charge_pence
+           FROM subscription_events e
+           LEFT JOIN LATERAL (
+             SELECT count(*) AS pair_count, min(c.amount_pence) AS charge_pence
+               FROM subscription_events c
+              WHERE c.subscription_id = e.subscription_id
+                AND c.event_type = 'subscription_charge'
+                AND c.period_start IS NOT DISTINCT FROM e.period_start
+                AND c.period_end   IS NOT DISTINCT FROM e.period_end
+           ) p ON TRUE
+          WHERE e.id = ANY($1)`,
+        [claimedSubs.map((s) => s.id)],
+      )
+      for (const r of subRows) {
+        const paired =
+          parseInt(r.pair_count, 10) === 1 && r.charge_pence !== null
+            ? Math.max(0, r.charge_pence - r.amount_pence)
+            : 0
+        subUnits.push({
+          id: r.id,
+          source: 'subscription_events',
+          netPence: r.amount_pence,
+          feePence: paired,
+          // NULL is correct and expected for a credit-funded earning: no charge
+          // exists, so it has no preference and belongs in the residual.
+          preferredSettlementIds: r.tab_settlement_id ? [r.tab_settlement_id] : [],
+        })
+      }
+    }
+
+    // --- The tribute carve, apportioned across the read units ----------------
+    // Today the carve is one set-level SUM subtracted once. A naive per-read
+    // deduction can drive a unit's net below zero, and flooring it at 0 would
+    // make Σ(units) > lockedAmountPence — the writer overpaid, the carve
+    // under-collected, and the overpay silently ratified in both Stripe and the
+    // ledger, because the parent's amount is restated from the placed units.
+    // apportionCarve carries the overflow instead, and the two assertions below
+    // turn the whole error class into a rolled-back transaction.
+    //
+    // Inert while TRIBUTES_ENABLED is off — which is precisely why the
+    // assertions matter: this is code that will be switched on years from now by
+    // someone who was not here.
+    const { units: carvedReads, zeroed, carveRemaining } = apportionCarve(readUnits, carve)
+
+    if (carveRemaining !== 0) {
+      throw new Error(
+        `Writer payout carve unsatisfiable (payout=${payoutId}, writer=${writerId}, remaining=${carveRemaining}) — rolling back`,
+      )
+    }
+
+    const units = [...carvedReads, ...subUnits]
+    const unitTotal = units.reduce((s, u) => s + u.netPence, 0)
+    if (unitTotal !== lockedAmountPence) {
+      throw new Error(
+        `Writer payout unit sum ${unitTotal} != locked amount ${lockedAmountPence} (payout=${payoutId}, writer=${writerId}) — rolling back`,
+      )
+    }
+
+    // --- Lock the candidate charges, then pack -------------------------------
+    // Locked in one statement in primary-key order, because the PACK order is
+    // data-dependent and must not also be the lock order (two concurrent packers
+    // would take the same rows in opposite orders and deadlock).
+    const settlementIds = [
+      ...new Set(units.flatMap((u) => u.preferredSettlementIds)),
+    ]
+    const sources = await lockFundingSources(client, settlementIds)
+
+    const { slices, overflow } = packUnits(units, sources, {
+      maxSlices: config.payoutMaxSlices,
+    })
+
+    // --- Overflow: un-claim, so it rolls to the next cycle -------------------
+    if (overflow.length > 0) {
+      const overflowReads = overflow.filter((u) => u.source === 'read_events').map((u) => u.id)
+      const overflowSubs = overflow.filter((u) => u.source === 'subscription_events').map((u) => u.id)
+      if (overflowReads.length > 0) {
+        await client.query(
+          `UPDATE read_events SET writer_payout_id = NULL WHERE id = ANY($1)`,
+          [overflowReads],
+        )
+      }
+      if (overflowSubs.length > 0) {
+        await client.query(
+          `UPDATE subscription_events SET writer_payout_id = NULL WHERE id = ANY($1)`,
+          [overflowSubs],
+        )
+      }
+      logger.warn(
+        { payoutId, writerId, overflow: overflow.length, maxSlices: config.payoutMaxSlices },
+        'Writer payout exceeded the slice cap — overflow units un-claimed and rolled to the next cycle',
+      )
+    }
+
+    // --- Children + unit stamps ----------------------------------------------
+    const childIds = await insertChildren(client, 'writer_payouts', payoutId, slices)
+
+    for (let i = 0; i < slices.length; i++) {
+      const childId = childIds[i]
+      const readIds = slices[i].units.filter((u) => u.source === 'read_events').map((u) => u.id)
+      const subIds = slices[i].units.filter((u) => u.source === 'subscription_events').map((u) => u.id)
+      if (readIds.length > 0) {
+        await client.query(
+          `UPDATE read_events SET payout_transfer_id = $1 WHERE id = ANY($2)`,
+          [childId, readIds],
+        )
+      }
+      if (subIds.length > 0) {
+        await client.query(
+          `UPDATE subscription_events SET payout_transfer_id = $1 WHERE id = ANY($2)`,
+          [childId, subIds],
+        )
+      }
+    }
+
+    // A carve-zeroed read keeps its parent claim and gets no child: its money
+    // went to the carve, so there is nothing to transfer for it, and Stripe
+    // rejects amount: 0. It advances to writer_paid at parent completion along
+    // with any other childless claim row.
+    if (zeroed.length > 0) {
+      logger.info(
+        { payoutId, writerId, zeroed: zeroed.length },
+        'Reads fully consumed by the tribute carve — claimed, but no transfer',
+      )
+    }
+
+    const placedPence = slices.reduce((s, sl) => s + sl.netPence, 0)
+
+    // The second place the claimed and paid amounts can legitimately differ.
+    // Under the threshold after overflow, this payout should not happen at all
+    // — throw so Txn 1 rolls back whole and the writer is picked up next cycle.
+    if (placedPence < config.writerPayoutThresholdPence) {
+      throw new PayoutBelowThresholdError(
+        `Writer payout fell below the threshold after slice-cap overflow (placed=${placedPence}, threshold=${config.writerPayoutThresholdPence}, writer=${writerId})`,
+      )
+    }
+
+    return placedPence
   }
 
   // Stripe call + Txn 2: flip 'pending' → 'initiated', advance reserved rows
@@ -726,6 +1000,15 @@ class PayoutService {
     stripeConnectId: string,
     amountPence: number,
   ): Promise<void> {
+    // Keyed on the DATA, not the flag. A payout reserved with segregation ON
+    // must complete through its children even if an operator flips the flag off
+    // mid-flight — the children exist, their draws are recorded, and one
+    // aggregate transfer would double-pay against them.
+    if (await hasChildren('writer_payouts', payoutId)) {
+      await this.completeWriterPayoutChildren(payoutId, writerId, stripeConnectId)
+      return
+    }
+
     const outcome = await executeStripeIdempotent(
       'writer-payout',
       `payout-${payoutId}`,
@@ -809,6 +1092,150 @@ class PayoutService {
     )
   }
 
+  // ---------------------------------------------------------------------------
+  // completeWriterPayoutChildren — the segregated path (§3.3c).
+  //
+  // One transfer per funding charge, each completed or failed independently,
+  // then the parent settled once no child is left pending. Because the packing
+  // committed in Txn 1, this is a REPLAY: it never re-packs, so a crash-resume
+  // reproduces exactly the same transfers under exactly the same keys.
+  // ---------------------------------------------------------------------------
+  private async completeWriterPayoutChildren(
+    payoutId: string,
+    writerId: string,
+    stripeConnectId: string,
+  ): Promise<void> {
+    const spec = this.writerChildSpec(payoutId, writerId, stripeConnectId)
+
+    const result = await executePendingChildren(this.stripe, spec)
+
+    const completion = await withTransaction((client) =>
+      this.finaliseWriterPayoutParent(client, payoutId),
+    )
+
+    logger.info(
+      {
+        payoutId,
+        writerId,
+        children: result,
+        parentCompleted: completion.completed,
+        amountPence: completion.paidPence,
+      },
+      'Writer payout children executed',
+    )
+  }
+
+  /** The writer cycle's money semantics, handed to the shared child lifecycle. */
+  private writerChildSpec(
+    payoutId: string,
+    writerId: string,
+    stripeConnectId: string,
+  ): ChildCycleSpec {
+    return {
+      parentTable: 'writer_payouts',
+      parentId: payoutId,
+      destination: stripeConnectId,
+      metadata: { writer_id: writerId, payout_id: payoutId },
+
+      postLedger: async (client, child) => {
+        // Writer credit — money received. +amount, counterparty = platform
+        // (NULL). One entry PER CHILD, at that child's own completion, for its
+        // own net. The ref stays the PARENT `writer_payouts` row: nothing
+        // forbids N entries per ref (writer_accrual already posts one per read),
+        // and keeping the ref inside the known set is what stops
+        // reconcile-ledger's ledger_orphans default-deny catch-all halting every
+        // payout on an unrecognised ref_table.
+        await recordLedger(client, {
+          accountId: writerId,
+          counterpartyId: null,
+          amountPence: child.net_pence,
+          triggerType: 'writer_payout',
+          refTable: 'writer_payouts',
+          refId: payoutId,
+        })
+      },
+
+      advanceUnits: async (client, child) => {
+        await client.query(
+          `UPDATE read_events
+              SET state = 'writer_paid', state_updated_at = now()
+            WHERE payout_transfer_id = $1
+              AND state = 'platform_settled'`,
+          [child.id],
+        )
+      },
+
+      releaseUnits: async (client, child) => {
+        await this.releaseWriterChildRows(client, child)
+      },
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // releaseWriterChildRows — the per-child twin of rollbackWriterPayoutRows.
+  //
+  // Releases EXACTLY the rows carrying this child's id — siblings and parent
+  // untouched — and reuses the same state filters, which are load-bearing for
+  // the chargeback interaction: a read the planner flipped to 'charged_back'
+  // mid-flight has already been ledger-reversed as if paid, so overwriting it
+  // back to platform_settled would erase the marker and re-pay the writer for a
+  // clawed-back read. It keeps its terminal state and loses only its pointers.
+  // ---------------------------------------------------------------------------
+  private async releaseWriterChildRows(
+    client: PoolClient,
+    child: ChildRow,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE read_events
+          SET state = 'platform_settled',
+              writer_payout_id = NULL,
+              payout_transfer_id = NULL,
+              state_updated_at = now()
+        WHERE payout_transfer_id = $1
+          AND state = 'platform_settled'`,
+      [child.id],
+    )
+
+    await client.query(
+      `UPDATE read_events
+          SET writer_payout_id = NULL,
+              payout_transfer_id = NULL
+        WHERE payout_transfer_id = $1
+          AND state = 'charged_back'`,
+      [child.id],
+    )
+
+    await client.query(
+      `UPDATE subscription_events
+          SET writer_payout_id = NULL,
+              payout_transfer_id = NULL
+        WHERE payout_transfer_id = $1`,
+      [child.id],
+    )
+  }
+
+  /**
+   * Settle the parent once no child is pending, and advance the claim rows that
+   * never had a child at all — reads whose net the tribute carve consumed
+   * entirely. They were claimed and their money went to the carve, so they are
+   * paid in the only sense that applies; leaving them 'platform_settled' would
+   * let the next cycle claim and pay them a second time.
+   */
+  private async finaliseWriterPayoutParent(client: PoolClient, payoutId: string) {
+    const completion = await completeParentIfSettled(client, 'writer_payouts', payoutId)
+    if (completion.completed) {
+      await client.query(
+        `UPDATE read_events
+            SET state = 'writer_paid', state_updated_at = now()
+          WHERE writer_payout_id = $1
+            AND payout_transfer_id IS NULL
+            AND state = 'platform_settled'`,
+        [payoutId],
+      )
+    }
+    return completion
+  }
+
   // Resume any writer_payouts stuck in 'pending' from prior runs. Safe to
   // call repeatedly — the stable idempotency key means Stripe returns the
   // already-created transfer if one exists, or creates it exactly once.
@@ -856,6 +1283,27 @@ class PayoutService {
   // ---------------------------------------------------------------------------
 
   async confirmPayout(stripeTransferId: string): Promise<void> {
+    // §3.5 — resolve a CHILD first. With N transfers per payout,
+    // `writer_payouts.stripe_transfer_id` can hold one id of N, so a handler
+    // keyed on it silently drops every other child's event. Null means the
+    // legacy single-transfer shape (a pre-flip payout), which falls through to
+    // the lookup below unchanged.
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      // Completion is keyed off the create response (F4), so the child is
+      // already 'completed' and its ledger entry posted; this event is a
+      // belt-and-braces re-evaluation of the parent, nothing more.
+      if (child.parent_table !== 'writer_payouts') return
+      await withTransaction((client) =>
+        this.finaliseWriterPayoutParent(client, child.parent_id),
+      )
+      logger.info(
+        { stripeTransferId, childId: child.id, payoutId: child.parent_id },
+        'Writer payout child confirmed',
+      )
+      return
+    }
+
     const { rows } = await pool.query<{ id: string }>(
       `UPDATE writer_payouts
        SET status = 'completed', completed_at = now()
@@ -899,6 +1347,13 @@ class PayoutService {
     stripeTransferId: string,
     amountReversedPence: number | null,
   ): Promise<void> {
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'writer_payouts') return
+      await this.reverseWriterPayoutChild(child, amountReversedPence)
+      return
+    }
+
     await withTransaction(async (client) => {
       const { rows } = await client.query<{ id: string; writer_id: string; amount_pence: number }>(
         `SELECT id, writer_id, amount_pence
@@ -945,11 +1400,110 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
+  // reverseWriterPayoutChild — one child of a multi-child payout was clawed back.
+  //
+  // Reverses THAT CHILD's net only; siblings and the parent's amount are
+  // untouched. Idempotency is the child's own `reversed_pence` under its row lock
+  // (see reverseChild) rather than the parent-level cumulative-SUM guard the
+  // legacy path uses — that guard sums `writer_payout_reversal` entries against
+  // the payout row, and now N children share that ref, so it cannot tell them
+  // apart. Its `ref_table` scope stays load-bearing either way: the trigger type
+  // is multi-table (F5 posts it against publication_payout_splits, the chargeback
+  // planner against tab_settlements).
+  //
+  // The reads stay `writer_paid` — they WERE paid, then clawed back — so there is
+  // no re-pay loop and the writer's earned total simply goes negative, the same
+  // posture as a chargeback. The parent flips to 'reversed' only when every child
+  // is fully reversed.
+  // ---------------------------------------------------------------------------
+  private async reverseWriterPayoutChild(
+    child: ChildRow,
+    amountReversedPence: number | null,
+  ): Promise<void> {
+    await withTransaction(async (client) => {
+      const { rows: payoutRows } = await client.query<{ id: string; writer_id: string }>(
+        `SELECT id, writer_id FROM writer_payouts WHERE id = $1 FOR UPDATE`,
+        [child.parent_id],
+      )
+      if (payoutRows.length === 0) {
+        logger.warn({ childId: child.id }, 'reverseWriterPayout: child has no parent payout')
+        return
+      }
+      const { id: payoutId, writer_id: writerId } = payoutRows[0]
+
+      const delta = await reverseChild(client, child, amountReversedPence)
+      if (delta <= 0) {
+        logger.info(
+          { payoutId, childId: child.id },
+          'reverseWriterPayout: already posted — no-op (redelivery)',
+        )
+        return
+      }
+
+      await recordLedger(client, {
+        accountId: writerId,
+        counterpartyId: null,
+        amountPence: -delta,
+        triggerType: 'writer_payout_reversal',
+        refTable: 'writer_payouts',
+        refId: payoutId,
+      })
+
+      // The parent is 'reversed' only when nothing of it is left standing.
+      const { rows: [tally] } = await client.query<{ outstanding: string }>(
+        `SELECT COALESCE(SUM(net_pence - reversed_pence), 0) AS outstanding
+           FROM payout_transfers
+          WHERE parent_table = 'writer_payouts' AND parent_id = $1
+            AND status IN ('completed', 'reversed')`,
+        [payoutId],
+      )
+      if (parseInt(tally.outstanding, 10) <= 0) {
+        await client.query(
+          `UPDATE writer_payouts SET status = 'reversed' WHERE id = $1`,
+          [payoutId],
+        )
+      }
+
+      logger.warn(
+        {
+          payoutId,
+          childId: child.id,
+          writerId,
+          reversedPence: delta,
+          stripeTransferId: child.stripe_transfer_id,
+        },
+        'Writer payout child reversed by Stripe',
+      )
+    })
+  }
+
+  // ---------------------------------------------------------------------------
   // handleFailedPayout — called from Stripe webhook on transfer.failed
   // Rolls reads back to platform_settled so they are retried on next cycle
   // ---------------------------------------------------------------------------
 
   async handleFailedPayout(stripeTransferId: string, reason: string): Promise<void> {
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'writer_payouts') return
+      await withTransaction(async (client) => {
+        if (!(await failChild(client, child.id, reason))) return
+        await this.releaseWriterChildRows(client, child)
+      })
+      // Re-evaluate the parent in its own transaction: with this child no longer
+      // pending, the payout may now be settled at a smaller, restated amount.
+      // "No child PENDING" — never "every child completed" — is what stops a
+      // single failure zombifying the parent forever.
+      await withTransaction((client) =>
+        this.finaliseWriterPayoutParent(client, child.parent_id),
+      )
+      logger.warn(
+        { stripeTransferId, childId: child.id, payoutId: child.parent_id, reason },
+        'Writer payout child transfer failed — its units released for re-pay',
+      )
+      return
+    }
+
     await withTransaction(async (client) => {
       // A payout that previously reached 'completed' (e.g. a transfer.paid
       // webhook that later reversed) needs completed_at nulled out alongside

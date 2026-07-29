@@ -56,6 +56,32 @@ export function pledgesEnabled(): boolean {
   return process.env.PLEDGES_ENABLED === "1"
 }
 
+// Stripe funds segregation / allocated funds (FUNDS-SEGREGATION-INTEGRATION.md).
+// Default OFF — the beta is sandbox-only until Stripe enables it on the live
+// account, and flipping it changes how every payout transfer is funded. When on:
+// settlement PaymentIntents are created with allocated_funds enabled, the
+// allocation-sync sweep reads each charge's locked balance back from Stripe, and
+// the payout cycles pack their earnings onto charges as N child transfers each
+// carrying source_transaction + an explicit application_fee_amount. When off,
+// behaviour is byte-identical to today (one aggregate transfer per payout, the
+// fee left implicit in the platform balance) and nothing writes the segregation
+// tables. Read by payment-service (settlement, payout, webhook clients) and the
+// gateway; auth.ts's Stripe client is deliberately NOT on the preview API
+// version — it drives Connect onboarding and reader card setup, neither of which
+// carries allocation, and a preview version moving under those paths locks
+// writers out of onboarding or readers out of attaching a card. Same shape as
+// TRUST_SYSTEM_ENABLED. No web twin — this is entirely server-side.
+export function allocatedFundsEnabled(): boolean {
+  return process.env.STRIPE_ALLOCATED_FUNDS === "1"
+}
+
+// The preview API version the allocated-funds beta requires on every Stripe API
+// request. Runtime behaviour is governed by this header string, not by the
+// stripe-node version (pinned at 2023-10-16 types), so the four call sites cast
+// it rather than taking a v14→v18 major on this critical path.
+export const ALLOCATED_FUNDS_API_VERSION =
+  "2026-06-24.preview; allocated_funds_preview=v1"
+
 // Cross-source identity-link detection (Slice 8 P3). Default OFF — the daily
 // detection task writes GLOBAL links that suppress cross-posted duplicates in
 // everyone's feed, so it ships dark behind this switch. When off, feed-ingest

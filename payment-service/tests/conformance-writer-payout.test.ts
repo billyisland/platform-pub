@@ -83,6 +83,7 @@ const db = {
   reads: [] as ReadRow[],
   ledger: [] as LedgerRow[],
   seq: 0,
+  children: [] as Array<{ parent_table: string; parent_id: string }>,
   crashers: [] as RegExp[],
   mutators: [] as Array<{ re: RegExp; fn: () => void }>,
 }
@@ -93,6 +94,7 @@ function reset() {
   db.reads = []
   db.ledger = []
   db.seq = 0
+  db.children = []
   db.crashers = []
   db.mutators = []
   transfers._reset()
@@ -248,6 +250,19 @@ function query(sql: string, params: unknown[] = []) {
     return Promise.resolve({ rows: [], rowCount: 0 })
   }
 
+  // --- payout_transfers (segregation children) ---
+  // Answered from the fake table rather than hard-coded: with
+  // STRIPE_ALLOCATED_FUNDS off no child is ever inserted, so hasChildren() must
+  // report 0 and completeWriterPayout must take the single-transfer path — which
+  // is exactly the flag-off regression this battery pins (§5.13).
+  if (/count\(\*\) AS n FROM payout_transfers/.test(sql)) {
+    const n = db.children.filter((c) => c.parent_table === params[0] && c.parent_id === params[1]).length
+    return Promise.resolve(ok([{ n: String(n) }]))
+  }
+  if (/FROM payout_transfers/.test(sql)) {
+    return Promise.resolve(ok([]))
+  }
+
   // --- resume pending list ---
   if (/FROM writer_payouts\s+WHERE status = 'pending'/.test(sql)) {
     const rows = [...db.payouts.values()].filter((p) => p.status === 'pending').sort((a, b) => a.seq - b.seq)
@@ -264,7 +279,10 @@ vi.mock('@platform-pub/shared/db/client.js', () => ({
   withTransaction: (cb: (c: { query: typeof query }) => Promise<unknown>) =>
     cb({ query: (sql: string, params: unknown[] = []) => query(sql, params) }),
 }))
-vi.mock('@platform-pub/shared/lib/env.js', () => ({ tributesEnabled: () => false }))
+vi.mock('@platform-pub/shared/lib/env.js', () => ({
+  tributesEnabled: () => false,
+  allocatedFundsEnabled: () => false,
+}))
 vi.mock('../src/lib/logger.js', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import { payoutService } from '../src/services/payout.js'

@@ -4,6 +4,7 @@ import { pool } from '@platform-pub/shared/db/client.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
 import { isConnectPayable } from '../lib/connect-payable.js'
+import { createAllocationAwareStripe } from '../lib/stripe-client.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -17,9 +18,13 @@ import logger from '../lib/logger.js'
 // for signature verification — do not use JSON body parser on this route.
 // =============================================================================
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16',
-})
+// Allocation-aware (FUNDS-SEGREGATION §3.1): this client both verifies webhook
+// signatures and constructs the event objects describing PaymentIntents and
+// Transfers — i.e. it READS objects the settlement and payout clients wrote. A
+// client on the wrong API version reading objects written by another is the
+// failure mode the flag exists to keep in step, so all three move together.
+// Flag off ⇒ 2023-10-16, exactly as before.
+const stripe = createAllocationAwareStripe()
 
 export async function webhookRoutes(app: FastifyInstance) {
   // Raw body needed for Stripe signature verification

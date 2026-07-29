@@ -149,6 +149,14 @@ services:
       # web twin is the build-time NEXT_PUBLIC_PLEDGES_ENABLED (web build.args).
       # Revive by flipping both to 1 (+ rebuild web). See FIX-PROGRAMME 2026-07-13.
       PLEDGES_ENABLED: ${PLEDGES_ENABLED:-0}
+      # Stripe funds segregation — see the payment service for the full note.
+      # Present here so the flag has ONE value across the deployment, not because
+      # the gateway uses it today: its only Stripe client (auth.ts) drives Connect
+      # onboarding and reader card setup, and is DELIBERATELY excluded from the
+      # preview API version — neither carries allocation, and a preview version
+      # moving under those paths locks writers out of onboarding or readers out of
+      # attaching a card. Anything here that grows a charge or transfer joins in.
+      STRIPE_ALLOCATED_FUNDS: ${STRIPE_ALLOCATED_FUNDS:-0}
       # Resonance glyph on feed cards (SOCIAL-PROOF-RESONANCE-ADR D7, step 4,
       # shipped 2026-07-20). Ships dark: flag off ⇒ the post mapper nulls
       # Post.resonanceBand on every read path, so the band never leaves the
@@ -191,6 +199,16 @@ services:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
       DB_POOL_MAX: 10
+      # Stripe funds segregation / allocated funds (FUNDS-SEGREGATION-INTEGRATION.md).
+      # Ships dark: flag off ⇒ settlement PaymentIntents carry no allocated_funds,
+      # the allocation-sync sweep is a no-op, and each payout is one aggregate
+      # transfer with the platform fee left implicit — byte-identical to today.
+      # Flag on ⇒ each charge's funds are LOCKED to connected-account payouts and
+      # a payout becomes N child transfers, one per funding charge, each naming it
+      # via source_transaction with an explicit application_fee_amount.
+      # DO NOT FLIP until Stripe enables the beta on the LIVE account and the
+      # sandbox test plan (ADR §5) is green. No web twin — entirely server-side.
+      STRIPE_ALLOCATED_FUNDS: ${STRIPE_ALLOCATED_FUNDS:-0}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
       interval: 10s

@@ -235,3 +235,38 @@ INSERT INTO platform_config (key, value, description) VALUES
   ('tax_corp_main_rate_pence',      '25000000', 'Corporation tax main rate threshold (£250,000 PROFIT). 25% above; marginal relief between the two thresholds.'),
   ('regulatory_holding_warning_days','14',      'Days of custodial holding (platform_settled reads not yet paid out) before the dashboard warns about PSR/EMR exposure.')
 ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Stripe funds segregation / allocated funds (FUNDS-SEGREGATION-INTEGRATION.md
+-- §3.3b, §3.3c, §3.3d; migration 165). Read by payment-service's payout cycles
+-- and the allocation-sync sweep. All three are dials rather than constants for
+-- the reason the tuning-dials invariant gives: their right values are only
+-- knowable by measuring live distributions, so retuning must be an UPDATE and
+-- not a deploy. They are inert while STRIPE_ALLOCATED_FUNDS is off.
+--
+-- `allocated_residual_alert_bps` IS A PLACEHOLDER AND MUST BE RE-SET BEFORE THE
+-- LIVE FLIP. The residual has a STRUCTURAL floor, not an exceptional one: every
+-- credit-funded penny lands there by construction, forever (a subscription
+-- charge covered by pre-paid credit has no settlement and therefore no charge to
+-- draw on). Set it from 30 days of production data — Σ subscription_credit plus
+-- charge-time-stamped subscription_earning, over Σ writer payouts for the same
+-- window — with headroom above that floor. A threshold chosen without the
+-- baseline fires on day one and gets muted, which is worse than no alert. Note
+-- the spend→subscription conversion has been dark since 2026-07-16
+-- (SUBSCRIPTION_CONVERT_ENABLED), so a trailing window measures only the live
+-- logSubscriptionCharge branch — the honest CURRENT floor — and this dial must
+-- be revisited if that flag is ever re-lit.
+--
+-- `payout_max_slices` bounds the tail, not the ordinary case: transfer volume
+-- grows from O(writers) to roughly O(writers × charges drawn), and a writer
+-- whose earnings span hundreds of charges should roll the excess to the next
+-- cycle rather than be paid in hundreds of transfers. Pick the starting value
+-- from the real distribution (`SELECT count(DISTINCT tab_settlement_id)` per
+-- unpaid writer balance) — 20 covers the dev distribution and is a guess about
+-- production.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('payout_max_slices',                '20',   'Max child transfers per payout under funds segregation. Units past the cap are un-claimed inside the reserve transaction and roll to the next cycle (payout.ts / allocation-packer.ts).'),
+  ('allocated_residual_alert_bps',     '2000', 'PLACEHOLDER — re-set from a 30-day production baseline before the live flip. Rolling-30-day share of payout value funded from platform balance rather than allocated funds, above which the residual metric alerts. Alert only; never halts payouts (a large residual means the money is right and the SEGREGATION COVERAGE is poor).'),
+  ('allocation_sync_freshness_hours',  '24',   'How stale a settlement''s allocated_pence may be before the allocation-sync sweep re-reads it from Stripe. Lower = more Stripe calls, fresher drawing budget (settlement.ts::syncAllocations).')
+ON CONFLICT (key) DO NOTHING;

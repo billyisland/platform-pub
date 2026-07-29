@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jWFIbaF6rC7u55U0i2hsggw5tKPg4PBniLwSt7Iz8y1MgzdllZAv3j0b09tMKPC
+\restrict azymKBIDOkbGOiqYZeghNyTc0hxQ4NThbAPs9b2yLaOuBuLr5uuVAqzcEeudWjA
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -774,6 +774,29 @@ CREATE TABLE public.activitypub_instance_health (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: allocated_draws; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.allocated_draws (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    settlement_id uuid NOT NULL,
+    kind text NOT NULL,
+    ref_table text NOT NULL,
+    ref_id uuid NOT NULL,
+    gross_pence integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT allocated_draws_kind_check CHECK ((kind = ANY (ARRAY['transfer'::text, 'refund'::text, 'reversal'::text])))
+);
+
+
+--
+-- Name: TABLE allocated_draws; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.allocated_draws IS 'Drawing budget against a charge''s Stripe allocation (migration 165). One row per claim: transfer (+), refund (−, allocation consumed by a refund), reversal (−, funds returned to allocated state). NOT a ledger — it records no money movement and mirrors no ledger_entries row.';
 
 
 --
@@ -1729,6 +1752,49 @@ CREATE TABLE public.outbound_posts (
 
 
 --
+-- Name: payout_transfers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.payout_transfers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    parent_table text NOT NULL,
+    parent_id uuid NOT NULL,
+    settlement_id uuid,
+    stripe_charge_id text,
+    funding text NOT NULL,
+    net_pence integer NOT NULL,
+    fee_pence integer DEFAULT 0 NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    stripe_transfer_id text,
+    reversed_pence integer DEFAULT 0 NOT NULL,
+    failure_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT payout_transfers_allocated_has_charge CHECK ((((funding = 'allocated'::text) AND (settlement_id IS NOT NULL) AND (stripe_charge_id IS NOT NULL)) OR ((funding = 'platform_balance'::text) AND (settlement_id IS NULL) AND (stripe_charge_id IS NULL)))),
+    CONSTRAINT payout_transfers_fee_non_negative CHECK ((fee_pence >= 0)),
+    CONSTRAINT payout_transfers_funding_check CHECK ((funding = ANY (ARRAY['allocated'::text, 'platform_balance'::text]))),
+    CONSTRAINT payout_transfers_net_positive CHECK ((net_pence > 0)),
+    CONSTRAINT payout_transfers_parent_table_check CHECK ((parent_table = ANY (ARRAY['writer_payouts'::text, 'publication_payout_splits'::text, 'tribute_payouts'::text]))),
+    CONSTRAINT payout_transfers_reversed_bounded CHECK (((reversed_pence >= 0) AND (reversed_pence <= net_pence))),
+    CONSTRAINT payout_transfers_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text, 'reversed'::text])))
+);
+
+
+--
+-- Name: TABLE payout_transfers; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.payout_transfers IS 'One child Stripe transfer per payout slice (migration 165). Under funds segregation a payout becomes N transfers, one per funding charge drawn on; this is the per-transfer row the webhook handlers key on. Shared by all three payout cycles via (parent_table, parent_id).';
+
+
+--
+-- Name: COLUMN payout_transfers.funding; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.payout_transfers.funding IS 'allocated = drawn from a charge''s segregated balance via source_transaction; platform_balance = the residual path (§3.3d), an ordinary transfer for earnings with no charge behind them (credit-funded subscriptions, pre-flip earnings).';
+
+
+--
 -- Name: platform_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1939,7 +2005,8 @@ CREATE TABLE public.read_events (
     is_subscription_read boolean DEFAULT false NOT NULL,
     publication_id uuid,
     allowance_consumed_pence integer DEFAULT 0 NOT NULL,
-    chargeable_pence integer GENERATED ALWAYS AS ((amount_pence - allowance_consumed_pence)) STORED
+    chargeable_pence integer GENERATED ALWAYS AS ((amount_pence - allowance_consumed_pence)) STORED,
+    payout_transfer_id uuid
 );
 
 
@@ -1955,6 +2022,13 @@ COMMENT ON COLUMN public.read_events.amount_pence IS 'The article''s list price 
 --
 
 COMMENT ON COLUMN public.read_events.chargeable_pence IS 'What the reader owes for this read and what the writer earns on: list price minus the free-allowance gift. Every money query uses this; amount_pence is the list price only (migration 164).';
+
+
+--
+-- Name: COLUMN read_events.payout_transfer_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.read_events.payout_transfer_id IS 'Which payout_transfers child slice funds this read''s earning unit. Parent claim stays writer_payout_id; this is the per-child grain that makes one Stripe rejection out of N an ordinary event (migration 165).';
 
 
 --
@@ -2070,9 +2144,18 @@ CREATE TABLE public.subscription_events (
     writer_payout_id uuid,
     settled_at timestamp with time zone,
     publication_payout_id uuid,
+    tab_settlement_id uuid,
+    payout_transfer_id uuid,
     CONSTRAINT subscription_events_event_type_check CHECK ((event_type = ANY (ARRAY['subscription_charge'::text, 'subscription_earning'::text, 'subscription_read'::text, 'expiry_warning_sent'::text]))),
     CONSTRAINT subscription_events_target_check CHECK (((writer_id IS NOT NULL) OR (publication_id IS NOT NULL)))
 );
+
+
+--
+-- Name: COLUMN subscription_events.tab_settlement_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.subscription_events.tab_settlement_id IS 'The settlement whose confirm stamped settled_at on this earning — the packer''s preferred funding charge. NULL = funded by pre-paid credit, no charge exists (migration 165).';
 
 
 --
@@ -2165,9 +2248,18 @@ CREATE TABLE public.tab_settlements (
     vat_pence integer,
     vat_rate_bps integer,
     tax_point timestamp with time zone,
+    allocated_pence integer,
+    allocation_synced_at timestamp with time zone,
     CONSTRAINT tab_settlements_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text]))),
     CONSTRAINT tab_settlements_trigger_type_check CHECK ((trigger_type = ANY (ARRAY['threshold'::text, 'monthly_fallback'::text])))
 );
+
+
+--
+-- Name: COLUMN tab_settlements.allocated_pence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tab_settlements.allocated_pence IS 'What Stripe reports locked in allocated state for this charge (pending + available), read back by the allocation-sync sweep. NULL = not known to be drawable; never assumed (migration 165).';
 
 
 --
@@ -2193,6 +2285,7 @@ CREATE TABLE public.tribute_accruals (
     state text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     tribute_payout_id uuid,
+    payout_transfer_id uuid,
     CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['released'::text, 'paid'::text, 'voided'::text])))
 );
 
@@ -2745,6 +2838,22 @@ ALTER TABLE ONLY public.activitypub_instance_health
 
 
 --
+-- Name: allocated_draws allocated_draws_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocated_draws
+    ADD CONSTRAINT allocated_draws_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: allocated_draws allocated_draws_ref_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocated_draws
+    ADD CONSTRAINT allocated_draws_ref_unique UNIQUE (ref_table, ref_id, kind);
+
+
+--
 -- Name: article_drafts article_drafts_nostr_draft_event_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3230,6 +3339,14 @@ ALTER TABLE ONLY public.reading_tabs
 
 ALTER TABLE ONLY public.outbound_posts
     ADD CONSTRAINT outbound_posts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_transfers payout_transfers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payout_transfers
+    ADD CONSTRAINT payout_transfers_pkey PRIMARY KEY (id);
 
 
 --
@@ -3952,6 +4069,13 @@ CREATE INDEX idx_accounts_username_trgm ON public.accounts USING gin (username p
 
 
 --
+-- Name: idx_allocated_draws_settlement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_allocated_draws_settlement ON public.allocated_draws USING btree (settlement_id);
+
+
+--
 -- Name: idx_ap_instance_health_updated; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4645,6 +4769,34 @@ CREATE INDEX idx_outbound_posts_pending ON public.outbound_posts USING btree (st
 
 
 --
+-- Name: idx_payout_transfers_parent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_payout_transfers_parent ON public.payout_transfers USING btree (parent_table, parent_id);
+
+
+--
+-- Name: idx_payout_transfers_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_payout_transfers_pending ON public.payout_transfers USING btree (created_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: idx_payout_transfers_settlement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_payout_transfers_settlement ON public.payout_transfers USING btree (settlement_id);
+
+
+--
+-- Name: idx_payout_transfers_stripe_transfer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_payout_transfers_stripe_transfer ON public.payout_transfers USING btree (stripe_transfer_id) WHERE (stripe_transfer_id IS NOT NULL);
+
+
+--
 -- Name: idx_pledges_drive; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4796,6 +4948,13 @@ CREATE INDEX idx_read_events_article_id ON public.read_events USING btree (artic
 --
 
 CREATE INDEX idx_read_events_gifted ON public.read_events USING btree (reader_id, read_at) WHERE (allowance_consumed_pence > 0);
+
+
+--
+-- Name: idx_read_events_payout_transfer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_read_events_payout_transfer ON public.read_events USING btree (payout_transfer_id) WHERE (payout_transfer_id IS NOT NULL);
 
 
 --
@@ -4967,10 +5126,24 @@ CREATE INDEX idx_subscription_events_earning_unpaid ON public.subscription_event
 
 
 --
+-- Name: idx_subscription_events_payout_transfer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_subscription_events_payout_transfer ON public.subscription_events USING btree (payout_transfer_id) WHERE (payout_transfer_id IS NOT NULL);
+
+
+--
 -- Name: idx_subscription_events_publication; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_subscription_events_publication ON public.subscription_events USING btree (publication_id) WHERE (publication_id IS NOT NULL);
+
+
+--
+-- Name: idx_subscription_events_tab_settlement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_subscription_events_tab_settlement ON public.subscription_events USING btree (tab_settlement_id) WHERE (tab_settlement_id IS NOT NULL);
 
 
 --
@@ -5023,6 +5196,13 @@ CREATE INDEX idx_subscriptions_writer ON public.subscriptions USING btree (write
 
 
 --
+-- Name: idx_tab_settlements_allocation_sync; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tab_settlements_allocation_sync ON public.tab_settlements USING btree (allocation_synced_at NULLS FIRST, settled_at) WHERE ((status = 'completed'::text) AND (stripe_charge_id IS NOT NULL));
+
+
+--
 -- Name: idx_tab_settlements_pending; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5048,6 +5228,13 @@ CREATE INDEX idx_tab_settlements_settled_at ON public.tab_settlements USING btre
 --
 
 CREATE INDEX idx_tags_name ON public.tags USING btree (name);
+
+
+--
+-- Name: idx_tribute_accruals_payout_transfer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tribute_accruals_payout_transfer ON public.tribute_accruals USING btree (payout_transfer_id) WHERE (payout_transfer_id IS NOT NULL);
 
 
 --
@@ -5615,6 +5802,14 @@ CREATE TRIGGER tribute_accruals_protect_stmt_trg BEFORE TRUNCATE ON public.tribu
 --
 
 CREATE TRIGGER trust_polls_touch_updated_at BEFORE UPDATE ON public.trust_polls FOR EACH ROW EXECUTE FUNCTION public.trust_polls_touch_updated_at();
+
+
+--
+-- Name: allocated_draws allocated_draws_settlement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocated_draws
+    ADD CONSTRAINT allocated_draws_settlement_id_fkey FOREIGN KEY (settlement_id) REFERENCES public.tab_settlements(id);
 
 
 --
@@ -6394,6 +6589,14 @@ ALTER TABLE ONLY public.outbound_posts
 
 
 --
+-- Name: payout_transfers payout_transfers_settlement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payout_transfers
+    ADD CONSTRAINT payout_transfers_settlement_id_fkey FOREIGN KEY (settlement_id) REFERENCES public.tab_settlements(id);
+
+
+--
 -- Name: pledge_drives pledge_drives_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6578,6 +6781,14 @@ ALTER TABLE ONLY public.read_events
 
 
 --
+-- Name: read_events read_events_payout_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.read_events
+    ADD CONSTRAINT read_events_payout_transfer_id_fkey FOREIGN KEY (payout_transfer_id) REFERENCES public.payout_transfers(id);
+
+
+--
 -- Name: read_events read_events_reader_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6658,6 +6869,14 @@ ALTER TABLE ONLY public.subscription_events
 
 
 --
+-- Name: subscription_events subscription_events_payout_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_payout_transfer_id_fkey FOREIGN KEY (payout_transfer_id) REFERENCES public.payout_transfers(id);
+
+
+--
 -- Name: subscription_events subscription_events_publication_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6687,6 +6906,14 @@ ALTER TABLE ONLY public.subscription_events
 
 ALTER TABLE ONLY public.subscription_events
     ADD CONSTRAINT subscription_events_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: subscription_events subscription_events_tab_settlement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_tab_settlement_id_fkey FOREIGN KEY (tab_settlement_id) REFERENCES public.tab_settlements(id);
 
 
 --
@@ -6791,6 +7018,14 @@ ALTER TABLE ONLY public.tab_settlements
 
 ALTER TABLE ONLY public.tab_settlements
     ADD CONSTRAINT tab_settlements_tab_id_fkey FOREIGN KEY (tab_id) REFERENCES public.reading_tabs(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tribute_accruals tribute_accruals_payout_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_accruals
+    ADD CONSTRAINT tribute_accruals_payout_transfer_id_fkey FOREIGN KEY (payout_transfer_id) REFERENCES public.payout_transfers(id);
 
 
 --
@@ -7181,12 +7416,8 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jWFIbaF6rC7u55U0i2hsggw5tKPg4PBniLwSt7Iz8y1MgzdllZAv3j0b09tMKPC
+\unrestrict azymKBIDOkbGOiqYZeghNyTc0hxQ4NThbAPs9b2yLaOuBuLr5uuVAqzcEeudWjA
 
-
---
--- Seed _migrations so migrate.ts treats every baked-in migration as applied
--- on a fresh schema.sql-bootstrapped database.
 --
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7353,4 +7584,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('161_feed_proof_floor.sql'),
     ('162_waitlist.sql'),
     ('163_waitlist_admission.sql'),
-    ('164_read_chargeable_pence.sql');
+    ('164_read_chargeable_pence.sql'),
+    ('165_funds_segregation.sql');

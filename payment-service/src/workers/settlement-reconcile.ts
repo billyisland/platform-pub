@@ -75,6 +75,20 @@ export function startSettlementReconcileWorker(): void {
         }
       } catch (err) {
         logger.error({ err }, "Threshold settlement sweep failed");
+      }
+      // Allocation sync (FUNDS-SEGREGATION §3.3a): read each charge's segregated
+      // balance back from Stripe into tab_settlements.allocated_pence, which is
+      // the payout packer's drawing budget. A no-op while STRIPE_ALLOCATED_FUNDS
+      // is off. Same isolation as the other sweeps — and it must not be able to
+      // skip the reschedule, since a stale budget only ever makes the packer
+      // UNDER-draw (safe) while a dead worker freezes it forever (not).
+      try {
+        const result = await settlementService.syncAllocations();
+        if (result.checked > 0) {
+          logger.info(result, "Allocation sync sweep complete");
+        }
+      } catch (err) {
+        logger.error({ err }, "Allocation sync sweep failed");
       } finally {
         scheduleNext();
       }

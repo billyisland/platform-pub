@@ -33,7 +33,7 @@
 #      applyLedgerDelta.
 #   3. PAYOUT-INSERT SCAN — any backend file that INSERTs into a charge/payout
 #      money table (writer_payouts / publication_payout_splits / tribute_accruals
-#      / tribute_payouts) but is NOT in the registry trips the scan: a new
+#      / tribute_payouts / payout_transfers) but is NOT in the registry trips the scan: a new
 #      money path appeared unwired. Register it AND add the ledger call. The scan
 #      covers all four backend source roots: gateway/src, payment-service/src,
 #      feed-ingest/src, shared/src.
@@ -82,10 +82,31 @@ LEDGER_PRIMITIVE="shared/src/lib/ledger.ts"
 #   upstream-edges.ts        2  (dispute stake debit + withdrawal refund — applyLedgerDelta)
 #   subscriptions/shared.ts  2  (subscription_charge tab debit via applyLedgerDelta +
 #                                subscription_earning writer credit via recordLedger)
+#
+# Funds segregation (migration 165) added two payout.ts call sites — the
+# per-child writer_payout entry and the per-child reversal — taking the file
+# from 9 actual sites to 11. Both numbers are RE-READ BY HAND against the call
+# sites, not derived, and the exercise is the point: the floor stood at 4 while
+# the file had 9, so it would have gone on passing had the segregation change
+# DELETED four of them. Guard 1 is a per-file COUNT — it never notices a
+# lifecycle change (moving the writer entry from completeWriterPayout to
+# per-child completion left the count untouched), only a deletion, and only
+# below the floor. Do not rely on it to review this kind of change.
+#
+#   payout-children.ts       0  (the shared child lifecycle inserts
+#                                payout_transfers rows — hence its Guard-3
+#                                registration — but posts no ledger entry of its
+#                                own: each cycle supplies the entry through
+#                                ChildCycleSpec.postLedger, which the execute loop
+#                                runs inside the child's completion transaction.
+#                                A floor of 0 registers the file for Guard 3
+#                                without asserting a call that correctly is not
+#                                there.)
 REGISTRY=(
   "payment-service/src/services/accrual.ts::2"
   "payment-service/src/services/settlement.ts::4"
-  "payment-service/src/services/payout.ts::4"
+  "payment-service/src/services/payout.ts::11"
+  "payment-service/src/services/payout-children.ts::0"
   "gateway/src/routes/drives.ts::1"
   "gateway/src/routes/articles/subscription-convert.ts::1"
   "gateway/src/routes/upstream-edges.ts::2"
@@ -96,7 +117,11 @@ REGISTRY=(
 BAL_MARKER='balance_pence = balance_pence [-+]|balance_pence = reading_tabs\.balance_pence|balance_pence = GREATEST'
 
 # Charge/payout money-table INSERT marker (Guard 3), registry-scoped.
-PAYOUT_MARKER='INSERT INTO writer_payouts|INSERT INTO publication_payout_splits|INSERT INTO tribute_accruals|INSERT INTO tribute_payouts'
+# `payout_transfers` joined the marker with migration 165: under funds
+# segregation it is the row that actually moves money (one Stripe transfer per
+# child), so a future out-of-registry writer of it must trip the scan exactly as
+# one of the four parent tables would.
+PAYOUT_MARKER='INSERT INTO writer_payouts|INSERT INTO publication_payout_splits|INSERT INTO tribute_accruals|INSERT INTO tribute_payouts|INSERT INTO payout_transfers'
 
 failed=0
 
@@ -110,7 +135,11 @@ for entry in "${REGISTRY[@]}"; do
     failed=1
     continue
   fi
-  count="$(grep -cE 'applyLedgerDelta\(|recordLedger\(' "$file" 2>/dev/null || echo 0)"
+  # `grep -c` already prints 0 on no match — it just EXITS 1, so the old
+  # `|| echo 0` appended a second line and `[[ ]]` saw "0\n0". Harmless while
+  # every registered file had at least one call; a legitimate 0-floor entry
+  # (payout-children.ts) is what surfaced it. Swallow the exit status instead.
+  count="$(grep -cE 'applyLedgerDelta\(|recordLedger\(' "$file" 2>/dev/null)" || true
   if [[ "$count" -lt "$min" ]]; then
     echo "✗ LEDGER ADJACENCY — $file has $count ledger-funnel call(s), expected >= $min"
     echo "  A money write here lost its applyLedgerDelta/recordLedger call — it will"

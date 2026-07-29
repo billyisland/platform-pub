@@ -2,9 +2,16 @@
 
 **Status:** Sandbox enabled (2026-07). Live enablement expected from Stripe ~w/c 2026-08-03.
 **Docs:** https://docs.stripe.com/connect/funds-segregation
-**Revision:** rev 3 (2026-07-29) — rev 2's design was sound but specified the *packing* in
-detail and the *lifecycle* by assertion; §3.3c, §3.5 and §5 are rewritten around per-child
-state. Rev 1's per-settlement slice model remains withdrawn. See §9. Read §3.3 fresh.
+**Revision:** rev 3.1 (2026-07-29) — verification pass: every §2 Stripe fact re-checked
+against the live docs (all hold, verbatim); two substantive corrections (§3.5's reversal
+claim was stale, §3.6 misstated the halt scope), citation fixes, and the GB cross-border
+open question (§7.5). Rev 3 rewrote §3.3c, §3.5 and §5 around per-child state; rev 1's
+per-settlement slice model remains withdrawn. See §9. Read §3.3 fresh.
+**Build status:** partially built, 2026-07-29 — migration 165, the packer, the shared child
+lifecycle and the **writer** cycle are in, dark behind `STRIPE_ALLOCATED_FUNDS=0`. The
+publication and tribute cycles, the refund/allocation hooks and the reconcile sweep are
+NOT. **Read §10 before doing anything else**: it is the as-built record, and it is where
+the code and this spec diverge.
 **Owner context:** Segregation locks pooled reader funds into a holding state on the platform
 account so they can only move to connected accounts — the regulatory point of the whole
 exercise. Everything below is gated behind `STRIPE_ALLOCATED_FUNDS=1` so live behaviour is
@@ -35,12 +42,18 @@ unchanged until Stripe flips our live account.
 > **platform-account** endpoint. A Transfer is a platform-account object and Stripe
 > documents reversal semantics from the platform's perspective, so the configuration is
 > very likely right and `DEPLOYMENT.md` is wrong for `transfer.*` (it is correct for
-> `account.*`) — but if it is the other way round, transfer reversals are silently never
-> delivered, and §3.5's ledger semantics never fire. Verify in the dashboard (send a test
-> reversal in the sandbox and observe which endpoint receives it), then correct whichever
-> document is wrong. This is a pre-existing defect, not one segregation introduces;
-> segregation just raises the cost of getting it wrong, because reversed funds now return
-> to the **allocated** state and our own allocation model (§3.3a) must learn about it.
+> `account.*`). Stripe's Connect-webhooks page supports this reading — its routing rule
+> sends "events triggered by resources that exist in your account" to the **Your account**
+> scope, and a Transfer is such a resource — but it never names `transfer.*` explicitly,
+> so the empirical check stands: if it is the other way round, transfer reversals are
+> silently never delivered, and §3.5's ledger semantics never fire. Verify in the
+> dashboard (send a test reversal in the sandbox and observe which endpoint receives it),
+> then correct whichever document is wrong — noting `DEPLOYMENT.md` also describes a
+> ONE-endpoint shape (connected-account listening on, `STRIPE_CONNECT_WEBHOOK_SECRET`
+> optional) rather than the two destinations above, so it needs updating beyond line 794
+> either way. This is a pre-existing defect, not one segregation introduces; segregation
+> just raises the cost of getting it wrong, because reversed funds now return to the
+> **allocated** state and our own allocation model (§3.3a) must learn about it.
 
 ---
 
@@ -85,12 +98,20 @@ There is no charge behind every penny, and this is coded behaviour, not drift:
   (`gateway/src/routes/subscriptions/shared.ts:83`) — "fully funded by pre-paid credit …
   no settlement will ever fire for it". That earning is payable with **no
   `tab_settlements` row and no `stripe_charge_id` in existence**.
-- **Spend→subscription conversion.** `gateway/src/routes/articles/subscription-convert.ts`
-  credits the reader's tab down by up to the subscription price against a month's reads,
-  *whatever state those reads are in* — including reads already settled and already earned
-  by their writers. The writers keep their accruals; the reader is charged less. The
-  platform absorbs the difference, which surfaces later as a settlement charge smaller than
-  the reads it settles (i.e. as §1.1's second mechanism).
+- **Spend→subscription conversion — currently dark, but coded and revivable.**
+  `gateway/src/routes/articles/subscription-convert.ts` credits the reader's tab down by up
+  to the subscription price against a month's reads, *whatever state those reads are in* —
+  including reads already settled and already earned by their writers. The writers keep
+  their accruals; the reader is charged less. The platform absorbs the difference, which
+  surfaces later as a settlement charge smaller than the reads it settles (i.e. as §1.1's
+  second mechanism). The route has been 503-gated behind `SUBSCRIPTION_CONVERT_ENABLED`
+  (default off) since 2026-07-16 (deep-audit H2), so it contributes *historical*
+  `subscription_credit` entries but no new ones while dark — read the §3.3d baseline with
+  that window in mind, and revisit the dial if the flag is ever re-lit. (Found while
+  verifying, unrelated to segregation: the route's credit SQL sums bare `amount_pence`
+  with no state filter — a pre-164 chargeable-rule violation invisible to
+  `check-read-chargeable.sh` Guard 2, which only matches `r.`/`re.`-aliased forms. Queue
+  it; do not fix it here.)
 
 So a platform-subsidised earnings path **does exist**, and a plain-transfer fallback **is**
 required. Rev 1's "no residual bucket, no plain-transfer fallback needed" was wrong. §3.3d
@@ -107,8 +128,8 @@ computes from the latter, CI-enforced by `scripts/check-read-chargeable.sh`.
 **Structural impact on segregation: none, and it slightly shrinks §1.2's residual.** Gifted
 pence never enter a tab, so they were never charged, never allocated and never payable — the
 packer simply sees smaller units. Two consequences worth carrying forward: the payout claim
-SQL already reads `chargeable_pence` (`payout.ts:564`), so §3.3b's unit arithmetic inherits
-it for free; and the *historical* population (readers billed for gifts before 164) was
+SQL already reads `chargeable_pence` (`payout.ts:645`; also `:586`, `:588`), so §3.3b's
+unit arithmetic inherits it for free; and the *historical* population (readers billed for gifts before 164) was
 deliberately left unrestated, so if it is ever refunded those refunds are ordinary tab
 credits and appear as exactly the kind of credit-funded earning §1.2 describes.
 
@@ -170,6 +191,17 @@ Also inherited from the beta:
 - A charge's allocated funds become transferable only after capture **and** payment-method
   settlement. `source_transaction` transfers queue against that automatically — which is a
   feature for us (§3.3e), not a constraint to engineer around.
+- Unsupported alongside allocation: **overcapture, multicapture, incremental
+  authorization**. We use none of them (settlement is a plain off-session card PI);
+  recorded so nobody re-derives it.
+- **Currency is an implicit constraint**, stated here because it is nowhere else: a
+  `source_transaction` transfer must match the currency of the charge's balance
+  transaction, and a Balance Transfer (§3.3f) must match the charge's settlement currency.
+  All-GBP today, so inert — but it is an assumption, not a fact of nature.
+- Availability is BE/CH/DE/DK/ES/FR/GB/NL/SE/US — GB is in. The docs' only cross-border
+  statement is US-scoped ("you can only transfer allocated funds to US connected
+  accounts"); whether a GB platform can transfer allocated funds to a non-GB connected
+  account is **undocumented**. Open question §7.5; probed in §5 step 0.
 - Testing works only in a **Sandbox**, not classic test mode.
 
 ## 3. Code changes
@@ -184,9 +216,13 @@ Also inherited from the beta:
   objects (PaymentIntents, Transfers, and the events describing both) and **must** take the
   flag — a client on the wrong API version reading objects written by another is the failure
   mode. **`auth.ts` is deliberately excluded:** it constructs Connect onboarding objects
-  (`accounts`, `accountLinks`) that carry no allocation and gain nothing from the preview
-  version, while a *preview* API version can move under us on the account-onboarding path,
-  which is the one path whose breakage locks writers out of getting paid at all. If a future
+  (`accounts`, `accountLinks`) **and reader card-setup objects** (`customers.*`,
+  `setupIntents.*`, `auth.ts:465–567`) — none of which carry allocation or gain anything
+  from the preview version, while a *preview* API version can move under us on paths whose
+  breakage locks writers out of onboarding or readers out of attaching a card at all. The
+  card-setup seam is safe across the version split because this client only *mints*
+  Customers and PaymentMethods that the preview-version client later references by id — an
+  API version governs request/response shapes, never the objects themselves. If a future
   change makes `auth.ts` touch a charge or transfer, it joins the other three.
 - Brake conventions (CLAUDE.md): add a `DEPLOYMENT.md` env-table row and a
   `docker-compose.yml` default in the same commit. The flip is gated on evidence — Stripe
@@ -260,8 +296,12 @@ order, held for the whole of Txn 1.
 > residual path (§3.3d) and never to an over-transfer. Stripe's own accounting stays
 > authoritative; §3.6 is what catches divergence between the two.
 
-**`allocation-sync` sweep** (new worker task, modelled on `reconcileSettlements`, which is
-the existing shape for "re-read the truth from Stripe"): for each `completed` settlement
+**`allocation-sync` sweep**, modelled on `reconcileSettlements` — which is a *service
+method* (`settlement.ts:1136`), not a worker: the worker is
+`payment-service/src/workers/settlement-reconcile.ts`, a self-rescheduling loop running
+three isolated try/catch sweeps at 00:15/08:15/16:15 UTC, and allocation-sync is most
+naturally its fourth sweep (or a sibling worker file + one line in `index.ts`), inheriting
+the `LIMIT 200` batch + one-hour-grace shape. For each `completed` settlement
 with `stripe_charge_id IS NOT NULL` and (`allocated_pence IS NULL` OR
 `allocation_synced_at` older than the freshness window), retrieve the PaymentIntent with
 `expand[]=latest_charge.allocated_funds.balance` and stamp
@@ -300,7 +340,7 @@ Until the column is backfilled-by-nature (it only fills going forward), a NULL s
 
 **The tribute carve is apportioned, never allowed to go negative.** Today the carve is a
 single set-level `SUM` subtracted once (`lockedAmountPence = readNet + subNet − carve`,
-`payout.ts:564`). Making it a per-read deduction — as rev 2 did — can drive an individual
+`payout.ts:687` — `:564` is the `reserveWriterPayout` signature, a rev-3 miscitation). Making it a per-read deduction — as rev 2 did — can drive an individual
 unit's net below zero, and flooring at 0 would make `Σ units > lockedAmountPence`: the
 writer overpaid, the carve under-collected, and (because §3.3c restates the parent amount
 from placed units) the overpay silently ratified in both Stripe and the ledger. Instead:
@@ -371,10 +411,13 @@ net_pence, fee_pence, status ('pending'|'completed'|'failed'|'reversed'),
 stripe_transfer_id, failure_reason, created_at
 ```
 
-`status` is a text CHECK, deliberately **not** the `payout_status` enum: adding a value to
-that enum would be an `ALTER TYPE … ADD VALUE` migration, which the runner routes down the
-no-transaction path, and the new value cannot be used until commit. Nothing here needs to
-join the enum's fate.
+`status` is a text CHECK, deliberately **not** the `payout_status` enum. Not because a
+value is missing — all four child states already exist in that enum
+(`pending`/`initiated`/`completed`/`failed`/`reversed`, `schema.sql:145`) — but to
+decouple: the child lifecycle should be able to grow a state without an
+`ALTER TYPE … ADD VALUE` migration (which the runner routes down the no-transaction path,
+its new value unusable until commit) rippling through the three parent tables that share
+the enum.
 
 Indexes on `(parent_table, parent_id)`, `(settlement_id)`, `(stripe_transfer_id)` — the
 webhook lookup key, see §3.5 — and a **partial** index on `status` where `status = 'pending'`,
@@ -412,8 +455,12 @@ without it, per-child failure is unimplementable and §5.3 cannot pass.
   Preserve the reserve→create→confirm discipline and `isTerminalTransferError` handling
   **per child**.
 - **Complete a child (Txn 2, once per child):** flip the child `pending → completed` with
-  its `stripe_transfer_id`, and **post that child's ledger entry in the same transaction,
-  gated on the flip's `rowCount`**. This is `processPublicationSplits`' existing shape
+  its `stripe_transfer_id` — the guard is `WHERE status = 'pending'`, never merely
+  `<> 'completed'` (today's `confirmPublicationSplit` guards only `<> 'completed'`,
+  `payout.ts:2241`, so a stray `transfer.paid` can resurrect a `failed` split and even
+  complete its parent; the child lifecycle must not copy that hole) — and **post that
+  child's ledger entry in the same transaction, gated on the flip's `rowCount`**. This is
+  `processPublicationSplits`' existing shape
   (`payout.ts:1405–1526`), whose own comment explains why: if the flip committed but the
   entry didn't, the child would never be re-selected and the credit would be lost.
   **Rev 2's "post once at parent completion for the parent's full amount" is withdrawn** —
@@ -470,7 +517,10 @@ structural floor: every credit-funded penny lands there by construction. Set the
 `subscription_earning` (those with `settled_at` stamped at charge time), over `Σ` writer
 payouts for the same window — with headroom above it. A threshold chosen without that
 baseline fires on day one and gets muted, which is worse than not having the alert. The
-query is §5 step 0 and can be run today.
+query is §5 step 0 and can be run today. Read it knowing `subscription_credit` has been
+dark since 2026-07-16 (`SUBSCRIPTION_CONVERT_ENABLED`, §1.2): a trailing-30-day window
+measures only the live `logSubscriptionCharge` branch — the honest *current* floor — and
+the dial must be revisited if that flag is ever re-lit.
 
 Do **not** halt payouts on it. `haltPayouts` (`payment-service/src/lib/payout-halt.ts`) is
 reserved for the reader-tab parity break, where the money is provably wrong; a large
@@ -566,17 +616,28 @@ handler needs re-keying**, which rev 2 missed entirely.
 **Re-key the transfer handlers — this is not optional.** `confirmPayout` (`payout.ts:858`),
 `reverseWriterPayout` (`:898`) and `handleFailedPayout` (`:952`) all resolve the payout by
 `writer_payouts.stripe_transfer_id = $1`. With N transfers per payout that column can hold
-one id, so a `transfer.reversed` for any other child finds nothing and is silently dropped —
-and if it *did* match, `reverseWriterPayout` would reverse the parent's **full
-`amount_pence`** for one child's reversal. All three must look up
+one id, so a `transfer.reversed` for any other child finds nothing and is **silently
+dropped** — that alone is the whole argument. (Rev 3 added "and if it did match it would
+reverse the parent's full `amount_pence`"; **stale** — the handler has been delta-aware
+since 2026-07-06, posting only the cumulative `amount_reversed` delta capped at
+`amount_pence` and flipping `reversed` only on full reversal, `payout.ts:916–939`, its own
+comment at `:884` naming the full-amount behaviour as the *fixed* bug. Today's handlers
+are partial-safe but child-blind.) All three must look up
 `payout_transfers.stripe_transfer_id` (hence its index, §3.3c), act on that child's
 `net_pence`, and flip the child `completed → reversed`; the reversal ledger entry keeps the
 parent ref (§3.3c) and takes its idempotency from that flip's `rowCount`, replacing the
-current `SUM(writer_payout_reversal) WHERE ref_id = payoutId` guard, which cannot distinguish
-children. `writer_payouts.stripe_transfer_id` becomes vestigial for multi-child payouts —
-leave it NULL there rather than storing an arbitrary child's id, which would read as
-authoritative and isn't. The tribute (`:1953`, `:1984`, `:2085`) and publication (`:2236`,
-`:2282`, `:2346`) equivalents take the same treatment.
+current cumulative-SUM guard — `SUM(writer_payout_reversal) WHERE ref_table =
+'writer_payouts' AND ref_id = payoutId` (`payout.ts:917–923`; the `ref_table` scope is
+load-bearing, that trigger type being multi-table — F5 posts it against
+`publication_payout_splits`, the chargeback planner against `tab_settlements`) — which
+cannot distinguish children. Confirm-side flips stay `pending`-guarded per §3.3c.
+`writer_payouts.stripe_transfer_id` becomes vestigial for multi-child payouts — leave it
+NULL there rather than storing an arbitrary child's id, which would read as authoritative
+and isn't (its UNIQUE constraint admits any number of NULLs; the three
+`conformance-*-payout` tests pin the old single-transfer semantics and move with this
+change — nothing in `gateway/`, `web/` or `shared/` reads the column). The tribute
+(`:1953`, `:1984`, `:2085`) and publication (`:2236`, `:2282`, `:2346`) equivalents take
+the same treatment, noting `reversePublicationSplit` is likewise already delta-aware.
 
 Allocation hooks:
 
@@ -612,11 +673,20 @@ Alert on divergence beyond a small tolerance.
 
 Two things this must respect, both learned the hard way in this repo:
 
-- **Alert, do not halt.** `reconcile-ledger.ts` halts payouts only on the reader-tab parity
-  break, and its header explains why a false halt elsewhere is worse than the gap it would
-  catch. Allocation divergence means our *drawing budget* is stale, and the packer's
-  response to a stale budget is already safe (§3.3a). Halting every payout because a
-  webhook was slow would be the same false-halt mistake in new clothes.
+- **Alert, do not halt — and know what already halts.** Rev 3 said `reconcile-ledger.ts`
+  halts only on the reader-tab parity break; **wrong**. Its `CRITICAL_CHECKS` holds five
+  halting checks — reader parity, two magnitude checks, dispute-stake integrity, and
+  `ledger_orphans` — and the header's "reader-tab side only" excludes only the *aggregate
+  earnings-vs-table comparison*, not orphan/ref integrity. Two consequences. First,
+  `ledger_orphans` ends in a **default-deny catch-all**: a reversal entry whose
+  `ref_table` is outside the known set halts ALL payouts — §3.3c's keep-refs-on-parents
+  decision is what keeps the new per-child entries inside that set, so it is load-bearing
+  twice over, and any future entry with a new `ref_table` must extend the catch-all in the
+  same change. Second, verify before the first live cycle that `ledger_orphans` tolerates
+  N entries per parent and per-child reversal deltas (§5 steps 2 and 7b assert it). With
+  that understood, the original point stands: allocation divergence means our *drawing
+  budget* is stale, the packer's response to a stale budget is already safe (§3.3a), and
+  halting every payout because a webhook was slow would be a false halt.
 - **A watermark over `allocation_synced_at` must round-trip at Postgres precision** —
   carry it as `::text` and compare with `$1::timestamptz`, never through a JS `Date`
   (CLAUDE.md timeline-precision invariant; three prior instances, all shipping green
@@ -653,7 +723,8 @@ above are precisely its residual blind spot, so the mechanical
 dump-and-re-append-in-one-step discipline is what covers them.
 
 **The ledger tripwire will NOT flag this, and rev 2 said it would.**
-`scripts/check-ledger-adjacency.sh` Guard 2 is a per-file `recordLedger` *count*
+`scripts/check-ledger-adjacency.sh` Guard **1** (rev 3 miscounted it as Guard 2; Guard 2
+is the raw-balance scan) is a per-file `recordLedger` *count*
 (`payment-service/src/services/payout.ts::4`); moving the writer entry from
 `completeWriterPayout` to the per-child completion leaves the count at 4 and trips nothing.
 Guard 3's `PAYOUT_MARKER` matches `INSERT INTO writer_payouts|publication_payout_splits|
@@ -677,8 +748,12 @@ cost and two of them produce numbers the design needs as inputs:
   re-keying requirement, and it is a fifteen-minute test.
 - Run the §3.3d residual baseline query against **production** (read-only): 30 days of
   `subscription_credit` + charge-time-stamped `subscription_earning` over writer payouts.
-  That number sets `allocated_residual_alert_bps`.
+  That number sets `allocated_residual_alert_bps` (read with §3.3d's dark-flag caveat).
 - Run the §7.2 distribution query for `payout_max_slices`.
+- Enumerate the countries of all live connected accounts (Stripe `accounts.list`, or the
+  accounts behind our stored connect ids). All GB → record that as the §7.5 standing
+  assumption. Any non-GB → §7.5 is live: probe in the sandbox whether a GB platform's
+  allocated funds transfer cross-border, before the flip.
 
 Sequence (assert ledger + our allocation model + Stripe all agree at every step):
 
@@ -689,7 +764,8 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
    cycle emits one transfer per drawn charge with correct `source_transaction` and
    `application_fee_amount`; app fees appear in platform balance; each child posts **its own**
    ledger entry at its own completion, refs pointing at the parent; the parent completes once
-   with `amount_pence == SUM(completed children)`.
+   with `amount_pence == SUM(completed children)`; then run the ledger-reconcile cycle and
+   assert it stays green — `ledger_orphans` must tolerate N entries per parent (§3.6).
 3. **Forced over-transfer** — bypass the packer (or hand-edit an `allocated_draws` row) to
    emit a slice exceeding the charge's remaining allocation → Stripe rejects; the worker
    marks that child `failed`, DELETEs its draw row, releases exactly its units
@@ -709,7 +785,9 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
 7b. **Reversal of one child among several** → the handler resolves via
    `payout_transfers.stripe_transfer_id`, reverses **that child's** `net_pence` only,
    siblings and parent amount untouched, and a redelivery of the same webhook is a no-op
-   (the child's `completed → reversed` flip is the idempotency guard).
+   (the child's `completed → reversed` flip is the idempotency guard); ledger-reconcile
+   stays green after the per-child reversal entry (§3.6's catch-all sees
+   `ref_table = 'writer_payouts'`, inside the known set).
 8. **Credit-funded earning** — drive a `subscription-convert` credit-back, then a payout
    → the earning packs to `funding = 'platform_balance'`, the transfer carries no
    `source_transaction`, and the residual metric moves.
@@ -759,6 +837,11 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
    before building the publication cycle, so it isn't written twice.
 4. **Not this work, but decide it:** whether to refund the pre-164 gifted-read population
    (§1.3).
+5. **Cross-border allocated transfers from a GB platform** — Stripe documents the
+   restriction only for US platforms ("you can only transfer allocated funds to US
+   connected accounts"); the GB case is undocumented. §5 step 0 enumerates connected-account
+   countries: all GB → record that as the standing assumption here; any non-GB → ask
+   Stripe / probe the sandbox before the flip.
 
 Closed since rev 2: the four-client question (§3.1 — three yes, `auth.ts` deliberately no);
 stripe-node upgrade vs casting (**cast**, behind a single typed wrapper — the `apiVersion`
@@ -794,6 +877,41 @@ Stated plainly so a later reader doesn't mistake silence for coverage:
   transfer for this payout" must move to `payout_transfers`.
 
 ## 9. Revision history
+
+**rev 3.1 (2026-07-29)** — verification pass against the live Stripe docs and the code;
+the design is unchanged. Every §2 external fact held verbatim (preview header string,
+brand set, multi-transfer split wording, Balance-Transfer reclaim shape, the `expand[]`
+read-back with `pending`/`available`, refund/reversal/dispute semantics, sandbox-only,
+and the queue-until-settlement behaviour of `source_transaction` transfers). Corrections:
+
+- **§3.5's "would reverse the parent's full `amount_pence`" was stale** —
+  `reverseWriterPayout` has been delta-aware since 2026-07-06 (`payout.ts:916–939`); the
+  re-keying requirement stands on the dropped-event half alone. (The rev 3 entry below
+  repeats the stale clause; corrected here, not rewritten there.) The guard being replaced
+  is also `ref_table`-scoped, which rev 3 omitted and which is load-bearing.
+- **§3.6 claimed `reconcile-ledger.ts` halts only on reader-tab parity** — five checks
+  halt, including `ledger_orphans` with a default-deny catch-all over reversal
+  `ref_table`s, making §3.3c's parent-ref decision load-bearing twice over; §5 steps 2/7b
+  gain the matching assertions.
+- **§1.2's spend→subscription mechanism is dark** — 503-gated behind default-off
+  `SUBSCRIPTION_CONVERT_ENABLED` since 2026-07-16, so it contributes historical entries
+  only; the §3.3d baseline reading is annotated. (Side finding for the queue, not this
+  work: its credit SQL violates the migration-164 chargeable rule invisibly to the
+  tripwire.)
+- **§3.3c's enum-avoidance rationale was moot** (all four child states already exist in
+  `payout_status`); restated as a decoupling choice. The child completion flip is now
+  specified `pending`-guarded, closing the resurrect hole `confirmPublicationSplit` has
+  today (`payout.ts:2241` guards only `<> 'completed'`).
+- **Citations:** the carve formula is `payout.ts:687` and the `chargeable_pence` claim SQL
+  `payout.ts:645` (both were cited as `:564`, the `reserveWriterPayout` signature); the
+  ledger-adjacency registry count is Guard **1**, not 2; `reconcileSettlements` is a
+  service method whose worker is `settlement-reconcile.ts` (§3.3a); `auth.ts`'s client
+  also drives reader card setup, not only onboarding (§3.1).
+- **Added:** the beta's unsupported-features list and currency-match constraints (§2); the
+  GB cross-border open question (§7.5, probed in §5 step 0); the Connect-webhooks routing
+  rule supporting (but not settling) the §0 `transfer.*` scope question, and the note that
+  `DEPLOYMENT.md` needs updating either way; the conformance-test / no-other-readers facts
+  behind leaving `writer_payouts.stripe_transfer_id` NULL (§3.5).
 
 **rev 3 (2026-07-29)** — rev 2's analysis stands and its external Stripe facts were
 re-verified against the published docs (all six correct, verbatim). Its design specified the
@@ -854,3 +972,99 @@ different grouping" (§3.4); `application_fee_amount` must floor, never round (�
 idempotency keys must be row-stable (§3.3c); the resume sweep needs a partial index (§4);
 the brake needs its `DEPLOYMENT.md` row and compose default (§3.1); and the
 `DEPLOYMENT.md:794` webhook-scope contradiction needs settling (§0).
+
+## 10. As built (2026-07-29) — what exists, what diverges, what is missing
+
+Everything below is behind `STRIPE_ALLOCATED_FUNDS` (default off). Flag off is
+byte-identical to before: the four conformance batteries pass unchanged, which is §5.13.
+
+### 10.1 Built
+
+- **Migration 165** (`payout_transfers`, `allocated_draws`, the two `tab_settlements`
+  columns, `subscription_events.tab_settlement_id`, the three `payout_transfer_id`
+  stamps). `schema.sql` regenerated by pg_dump-and-re-append from a throwaway built off
+  the committed file; `check-schema-drift.sh` green on all seven checks.
+- **`STRIPE_ALLOCATED_FUNDS`** + `ALLOCATED_FUNDS_API_VERSION` in `shared/src/lib/env.ts`;
+  `DEPLOYMENT.md` row and `docker-compose.yml` defaults (payment + gateway).
+- **`payment-service/src/lib/stripe-client.ts`** — the single cast site (§7's closed
+  question 2). Three clients switched (`settlement.ts`, `payout.ts`, `routes/webhook.ts`);
+  `gateway/src/routes/auth.ts` deliberately not, per §3.1.
+- **§3.2 settlement** — `allocated_funds[enabled]` + `transfer_group` on the PI.
+- **§3.3a allocation sync** — `settlementService.syncAllocations()`, wired as the
+  settlement-reconcile worker's fourth sweep, `LIMIT 200`, oldest-unsynced first, `0`
+  (not NULL) for a charge carrying no allocation.
+- **§3.3b packer** — `payment-service/src/lib/allocation-packer.ts`: `packUnits`,
+  `apportionCarve`, `prorateWithheldFee`. Pure, 20 tests, and three mutations were run
+  against it (gross ignoring the fee; the carve's `min` clamp; floor→ceil on the fee
+  proration) — each turns the suite red.
+- **§3.3c lifecycle** — `payment-service/src/services/payout-children.ts`: lock-in-id-order
+  funding sources, child insert + draw, the execute loop with per-child terminal/ambiguous
+  handling and the `xfer-<childRowId>` key, per-child completion posting its own ledger
+  entry inside the flip transaction, per-child terminal failure, parent completion on "no
+  child pending", and the webhook-side child resolution + reversal.
+- **The writer cycle end to end** — packing inside Txn 1 (both §3.3b assertions live),
+  slice-cap overflow un-claimed in the same transaction with a threshold re-test, per-child
+  execute/complete/fail, and §3.5's re-keying of `confirmPayout` / `reverseWriterPayout` /
+  `handleFailedPayout`.
+- **§4 tripwire** — `INSERT INTO payout_transfers` added to `PAYOUT_MARKER`;
+  `payout-children.ts` registered.
+
+### 10.2 Divergences from the spec above — read these, they are deliberate
+
+1. **`payout_transfers.reversed_pence` is a column the spec does not name, and the design
+   needs it.** §3.5 says per-child reversal "takes its idempotency from that flip's
+   `rowCount`", which is true only for a full reversal. Stripe reports `amount_reversed`
+   CUMULATIVELY, so a staged partial must post a delta — and the existing handlers derive
+   that delta by SUMming reversal ledger entries against the payout row, which cannot work
+   here: §3.3c keeps the ledger ref on the PARENT, so N children share one ref and their
+   reversals are indistinguishable in it. Per-child cumulative state is the only place the
+   figure can live. `reverseChild` reads and writes it under the child's row lock.
+2. **A parent whose children ALL failed is flipped `failed`, not left `pending`.**
+   §3.3c specifies completion on "no child pending" and is silent on the zero-completed
+   case; leaving it `pending` recreates exactly the `finalisePublicationPayout` zombie the
+   same section calls out — the resume sweep would revisit it every cycle, find nothing
+   pending, and never resolve it. Its units were already released child by child, so the
+   next cycle re-pays them under a fresh parent.
+3. **Completion branches on whether the payout HAS children, not on the flag.** A payout
+   reserved with segregation on must complete through its children even if an operator
+   flips the flag off mid-flight — the children exist and their draws are recorded, so one
+   aggregate transfer would double-pay against them.
+4. **The §4 tripwire claim needed correcting in the code, not just in prose.** §4 is right
+   that the guard would not have flagged this, but `payout.ts`'s registry floor stood at
+   **4 against 9 actual call sites**, so it would equally not have flagged deleting four of
+   them. The floor is now 11, re-read by hand. `payout-children.ts` is registered at a floor
+   of **0** — it inserts `payout_transfers` (hence Guard 3) but correctly posts no ledger
+   entry of its own, each cycle supplying one through `ChildCycleSpec.postLedger`. That
+   legitimate 0-floor exposed a latent bash bug in the script (`grep -c || echo 0` emitting
+   two lines into an arithmetic test); fixed in the same commit.
+5. **§7 question 1 answered: the pairing key holds.** `logSubscriptionCharge` inserts the
+   charge and the earning together with the same `(subscription_id, period_start,
+   period_end)`, so the fee is recoverable — but the lookup REQUIRES exactly one match and
+   takes fee 0 otherwise, per the safe direction §3.3b names.
+6. **§7 question 3 answered ahead of the publication cycle.** `EarningUnit` carries
+   `preferredSettlementIds: string[]`, not a scalar, so the preference-set generalisation
+   §3.4 needs is already in the packer's signature and tested. The publication cycle will
+   not rewrite it.
+
+### 10.3 Not built — the honest remainder
+
+- **§3.4 both remaining cycles.** Publication: `prorateWithheldFee` is written and tested
+  but nothing calls it, so the pooled fee would still strand. Tribute: untouched.
+- **The legacy `finalisePublicationPayout` zombie is still live.** The "no child pending"
+  rule is implemented for parents that HAVE children; §3.3c asks for it on the publication
+  parent "in the same change" and that has not happened.
+- **§3.5 allocation hooks.** `charge.refunded` (full and partial) must insert
+  `allocated_draws` refund rows. Until it does, a partial refund wedges the packer once the
+  flag is on — this is a flip blocker, not a nicety.
+- **§3.6 reconcile**, **§3.3d residual metric** (the dial exists; nothing reads it),
+  **§3.3f Balance-Transfer dust script**.
+- **Test coverage gap, stated plainly.** The packer is unit-tested and mutation-verified and
+  the per-child reversal has seven tests (§5 step 7b's unit-level twin). The flag-ON
+  reserve→pack→execute→complete assembly has NO automated coverage.
+- **§5 step 0 was not run, and the design consumed placeholders in its place.**
+  `allocated_residual_alert_bps` ships at 2000 as an explicit placeholder and WILL fire
+  spuriously; `payout_max_slices` ships at 20 as a guess. Both are dials, so both are an
+  UPDATE — but §3.3d's warning stands: a threshold set without the baseline gets muted, and
+  a muted alert is worse than none.
+- **§0's `DEPLOYMENT.md:794` webhook-scope contradiction is untouched.** It needs the
+  dashboard observation, not an edit.

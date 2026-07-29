@@ -222,7 +222,13 @@ vi.mock('@platform-pub/shared/db/client.js', () => ({
   withTransaction: (cb: (c: { query: typeof query }) => Promise<unknown>) =>
     cb({ query: (sql: string, params: unknown[] = []) => query(sql, params) }),
 }))
-vi.mock('@platform-pub/shared/lib/env.js', () => ({ tributesEnabled: () => true }))
+vi.mock('@platform-pub/shared/lib/env.js', () => ({
+  tributesEnabled: () => true,
+  // Flag-off regression (FUNDS-SEGREGATION §5.13): these conformance tests pin
+  // the single-transfer semantics, which must be byte-identical with
+  // segregation off.
+  allocatedFundsEnabled: () => false,
+}))
 vi.mock('../src/lib/logger.js', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import { payoutService } from '../src/services/payout.js'

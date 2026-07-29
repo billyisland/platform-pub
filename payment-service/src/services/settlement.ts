@@ -6,9 +6,15 @@ import {
   loadConfig,
 } from "@platform-pub/shared/db/client.js";
 import { recordLedger, applyLedgerDelta } from "@platform-pub/shared/lib/ledger.js";
-import { tributesEnabled } from "@platform-pub/shared/lib/env.js";
 import { readNetSql } from "@platform-pub/shared/lib/per-read-net.js";
 import { isTerminalChargeError } from "../lib/charge-errors.js";
+import {
+  createAllocationAwareStripe,
+  allocatedFundsParam,
+  readAllocatedBalance,
+  type ChargeWithAllocatedFunds,
+} from "../lib/stripe-client.js";
+import { tributesEnabled, allocatedFundsEnabled } from "@platform-pub/shared/lib/env.js";
 import {
   executeStripeIdempotent,
   stripeErrorCode,
@@ -42,9 +48,12 @@ class SettlementService {
   private stripe: Stripe;
 
   constructor() {
-    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-      apiVersion: "2023-10-16",
-    });
+    // Allocation-aware: under STRIPE_ALLOCATED_FUNDS this client speaks the
+    // preview API version, because it both WRITES allocation (the settlement PI)
+    // and READS it back (the allocation-sync sweep). Flag off ⇒ 2023-10-16,
+    // exactly as before. See lib/stripe-client.ts for why the version is cast
+    // rather than the SDK upgraded.
+    this.stripe = createAllocationAwareStripe();
   }
 
   // ---------------------------------------------------------------------------
@@ -274,9 +283,25 @@ class SettlementService {
             amount: amountPence,
             currency: "gbp",
             customer: stripeCustomerId,
+            // Deliberately BROADER than the allocated-funds beta's eligible brand
+            // set (Visa/Mastercard/Amex/Discover/Swish) — in GBP this also admits
+            // JCB, Diners and UnionPay. A brand allow-list would refuse a reader's
+            // card at settlement time, turning a compliance nicety into lost
+            // revenue; instead we never ASSUME allocation. An ineligible brand
+            // simply yields a charge whose allocated balance syncs to 0, which the
+            // packer routes around identically to a not-yet-settled one. NEVER
+            // switch this to automatic_payment_methods.
             payment_method_types: ["card"],
             confirm: true,
             off_session: true,
+            // Lock this charge's funds into the allocated state (flag on only).
+            // Wire form: allocated_funds[enabled]=true.
+            ...allocatedFundsParam(),
+            // Grouping only — it buys legibility in the dashboard and nothing
+            // else; source_transaction on the transfer is what does the work.
+            ...(allocatedFundsEnabled()
+              ? { transfer_group: `settlement-${settlementId}` }
+              : {}),
             metadata: {
               platform: "all.haus",
               reader_id: readerId,
@@ -614,9 +639,20 @@ class SettlementService {
       // credit were stamped at charge time (logSubscriptionCharge). No ledger
       // row: the subscription_earning entry posted at charge time — this is
       // claim-state, not a money movement.
+      //
+      // tab_settlement_id (migration 165) is stamped in the SAME update that
+      // sets settled_at, because it is the only moment the pairing is knowable:
+      // afterwards the row carries a bare timestamp, and recovering "which
+      // settlement stamped it" would need a time-join — reintroducing the
+      // approximate read↔settlement attribution above at a second site. It is
+      // the allocation packer's preferred funding charge. The charge-time
+      // credit-funded branch (logSubscriptionCharge, post-charge balance <= 0)
+      // leaves it NULL, which is correct: that earning has no charge behind it
+      // and belongs in the residual.
       await client.query(
         `UPDATE subscription_events
-         SET settled_at = now()
+         SET settled_at = now(),
+             tab_settlement_id = $2
          WHERE reader_id = $1
            AND event_type = 'subscription_earning'
            AND settled_at IS NULL
@@ -1204,6 +1240,114 @@ class SettlementService {
       );
     }
     return { checked: candidates.length, confirmed };
+  }
+
+  // ---------------------------------------------------------------------------
+  // syncAllocations — read each charge's segregated balance BACK from Stripe.
+  //
+  // Spec: FUNDS-SEGREGATION-INTEGRATION.md §3.3a. The fourth sweep of the
+  // settlement-reconcile worker, sharing its LIMIT 200 batch + oldest-first
+  // shape.
+  //
+  // NEVER ASSUME ALLOCATION. Stripe gives us no queryable view of a charge's
+  // remaining allocation, and several ordinary things make a charge carry LESS
+  // than its amount — or none at all. This one mechanism disposes of three
+  // separate problems, because in every case the charge is simply not drawable
+  // and the packer routes around it identically:
+  //
+  //   • an ineligible card brand (payment_method_types: ['card'] is broader than
+  //     the beta's Visa/MC/Amex/Discover/Swish, and such a charge carries NO
+  //     allocated funds while a source_transaction transfer against it would
+  //     still succeed from ordinary balance — the guarantee would lapse silently,
+  //     with no error anywhere)
+  //   • payment-method settlement timing (allocation becomes transferable after
+  //     capture AND settlement; `pending` counts here because a
+  //     source_transaction transfer QUEUES against that settlement rather than
+  //     failing for insufficient balance)
+  //   • the pre-flip transition (historical charges carry no allocation at all,
+  //     stamp 0, and their earnings route to the residual — which is correct,
+  //     the guarantee simply does not cover pre-flip funds)
+  //
+  // `allocated_pence` NULL means "not known to be drawable" and is the safe
+  // default and the only default. This sweep is the sole writer.
+  //
+  // Deliberately NOT done synchronously in completeSettlement or
+  // confirmSettlement: the webhook path is already the critical,
+  // idempotency-guarded path, and doing it out of band is also what makes the
+  // design robust to settlement timing.
+  // ---------------------------------------------------------------------------
+  async syncAllocations(): Promise<{ checked: number; synced: number }> {
+    if (!allocatedFundsEnabled()) return { checked: 0, synced: 0 };
+
+    const config = await loadConfig();
+
+    const { rows: candidates } = await pool.query<{
+      id: string;
+      stripe_payment_intent_id: string;
+    }>(
+      `SELECT id, stripe_payment_intent_id
+         FROM tab_settlements
+        WHERE status = 'completed'
+          AND stripe_charge_id IS NOT NULL
+          AND stripe_payment_intent_id IS NOT NULL
+          AND (allocated_pence IS NULL
+               OR allocation_synced_at < now() - make_interval(hours => $1))
+        ORDER BY allocation_synced_at ASC NULLS FIRST, settled_at ASC
+        LIMIT 200`,
+      [config.allocationSyncFreshnessHours],
+    );
+
+    let synced = 0;
+    for (const c of candidates) {
+      let pi: Stripe.PaymentIntent;
+      try {
+        pi = await this.stripe.paymentIntents.retrieve(
+          c.stripe_payment_intent_id,
+          // Preview-only expansion; the pinned SDK types don't know the path,
+          // and `expand` is a plain string array at runtime.
+          { expand: ["latest_charge.allocated_funds.balance"] },
+        );
+      } catch (err) {
+        // 429 / transient / not-found — log and move on. A stale budget is
+        // SAFE: the packer under-draws and degrades to the residual, never to
+        // an over-transfer. Next sweep retries.
+        logger.warn(
+          {
+            err,
+            settlementId: c.id,
+            paymentIntentId: c.stripe_payment_intent_id,
+          },
+          "Allocation sync: paymentIntents.retrieve failed — will retry next sweep",
+        );
+        continue;
+      }
+
+      const charge =
+        typeof pi.latest_charge === "string"
+          ? null
+          : (pi.latest_charge as unknown as ChargeWithAllocatedFunds | null);
+
+      // A charge with no allocated_funds carries none — 0, not NULL. NULL means
+      // "we haven't looked"; 0 means "we looked and there is nothing drawable",
+      // and only the second stops the sweep re-reading it every cycle.
+      const allocatedPence = readAllocatedBalance(charge);
+
+      await pool.query(
+        `UPDATE tab_settlements
+            SET allocated_pence = $2, allocation_synced_at = now()
+          WHERE id = $1`,
+        [c.id, allocatedPence],
+      );
+      synced++;
+    }
+
+    if (candidates.length > 0) {
+      logger.info(
+        { checked: candidates.length, synced },
+        "Allocation sync sweep complete",
+      );
+    }
+    return { checked: candidates.length, synced };
   }
 }
 

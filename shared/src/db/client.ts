@@ -104,6 +104,9 @@ export async function loadConfig(forceRefresh = false): Promise<PlatformConfig> 
     writerPayoutThresholdPence: int(map, 'writer_payout_threshold_pence', 2000),
     platformFeeBps: int(map, 'platform_fee_bps', 800),
     monthlyFallbackDays: int(map, 'monthly_fallback_days', 30),
+    payoutMaxSlices: int(map, 'payout_max_slices', 20),
+    allocatedResidualAlertBps: int(map, 'allocated_residual_alert_bps', 2000),
+    allocationSyncFreshnessHours: int(map, 'allocation_sync_freshness_hours', 24),
   }
 
   cachedConfig = config

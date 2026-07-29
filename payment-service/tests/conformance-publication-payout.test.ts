@@ -189,7 +189,10 @@ vi.mock('@platform-pub/shared/db/client.js', () => ({
   withTransaction: (cb: (c: { query: typeof query }) => Promise<unknown>) =>
     cb({ query: (sql: string, params: unknown[] = []) => query(sql, params) }),
 }))
-vi.mock('@platform-pub/shared/lib/env.js', () => ({ tributesEnabled: () => false }))
+vi.mock('@platform-pub/shared/lib/env.js', () => ({
+  tributesEnabled: () => false,
+  allocatedFundsEnabled: () => false,
+}))
 vi.mock('../src/lib/logger.js', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import { payoutService } from '../src/services/payout.js'
