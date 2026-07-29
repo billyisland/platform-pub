@@ -23,6 +23,40 @@ starts.
 
 ## Progress
 
+- **2026-07-29 (the beta is closed, and the register has been looked at)** —
+  no code. Two of the three largest items in CONSOLIDATED-TODO §11 discharged
+  by deploying and then *looking*, which is the only tier of evidence either
+  of them ever wanted.
+
+  **The closed-beta ship is live on prod** — migrations 162 + 163 applied,
+  gateway + web rebuilt. `CLOSED_BETA` is a code constant rather than an env
+  flag, so the deploy itself is the act: account creation is now reserved to
+  the admit route, and the waiting list is the only door. Built 2026-07-24,
+  live five days later.
+
+  **The logged-out register was swept on `all.haus` in both modes at both
+  form factors**, and read correctly as built — no changes required. That
+  settles the two §VIII judgement calls **in favour of the shipped
+  arithmetic**, which is worth stating plainly because the fallbacks were
+  written down and are now not needed: islanded bone at 4px does not read hot
+  on an ink-900 card (so `cardStandfirst`, which would have lightened light
+  mode to fix dark, stays unused), and the row's band distinguishes itself
+  from the fitted floor at six points rather than wanting to track it. Also
+  confirmed: the dark mouth on a fitted vessel, no ⊔ surviving at ≤767px (no
+  inline border beating the media query), vessels exactly as tall as their
+  content on desktop (no `flex: 1 1 0` left in the chain), the waitlist
+  panel's unbounded email column, and all three landing demos — including
+  `CanvasDemo`'s four seasonal walls still reading as four distinct feeds at
+  an 8.5px base, by some way the smallest surface that claim has been made at.
+
+  **What this pass does NOT cover, recorded so it is not read as covering
+  it:** the `trustProxy: 1` real-client-IP check (§0m.6) is a log-tier check,
+  not an eyeball one — the waitlist rows still need confirming to carry real
+  client IPs and not nginx's; and of §11(d), only `/admin/waitlist` was
+  rendered, so the row's band clearance over `/write` (whose sticky bar lost
+  its `top-[53px]` offset) and `/traffology/*` remains untested visually.
+  Two eyeball calls and one query, not a session.
+
 - **2026-07-27 (waitlist: the operator can admit)** — CLOSED-BETA-ADR §XI.3
   item 3, the last of the three the incident produced. Spec + as-built: §XI.6.
   §3.7's minimum for running a beta at all: before this, converting a
