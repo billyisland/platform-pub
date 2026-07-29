@@ -3,6 +3,12 @@
 *A plain-English explanation of what actually happens, in the code, every time
 money is involved on all.haus — written so basically anyone can follow it.*
 
+*Checked against the code 2026-07-29. This page describes what runs **today**;
+where something recently changed, the change is called out rather than quietly
+overwritten, because a money explainer that silently drifts is worse than none —
+three sections of it had gone stale before this pass, each describing behaviour
+that had been fixed months earlier. If you change a money path, change this too.*
+
 ---
 
 ## The big idea: a bar tab
@@ -16,7 +22,7 @@ writers you read.
 So there are really **three stages**, and the code is literally organised that
 way (`accrual.ts` → `settlement.ts` → `payout.ts`):
 
-1. **Chalk it up** — a debt is recorded when you read or vote.
+1. **Chalk it up** — a debt is recorded when you read something paid.
 2. **Settle the tab** — your card actually gets charged.
 3. **Pay the writers** — the money is sent on to the people who earned it.
 
@@ -52,8 +58,21 @@ To add a card, the code does a careful two-step dance with Stripe (`auth.ts`):
   when you're not there** — which is the whole point of a tab.
 - **Step 2 (`connect-card`)** — all.haus double-checks with Stripe that the card
   setup truly **succeeded** and that it belongs to you, then marks your account
-  as "has a usable card." Only now do your provisional reads get **converted to
-  real debt** and moved onto a real tab (`convertProvisionalReads`).
+  as "has a usable card." Only now do your provisional reads get moved onto a
+  real tab (`convertProvisionalReads`).
+
+**The £5 is a gift, and adding a card does not take it back.** This matters more
+than it sounds. When those provisional reads move onto your tab, you are charged
+only for the part the allowance *didn't* cover — every penny it did cover is
+charged to nobody and earns nobody, permanently. So each read carries two
+numbers: what the article cost (`amount_pence`) and what you actually owe on it
+(`chargeable_pence`). Every money path uses the second.
+
+> This was a real bug, live and silent from the day that conversion was written
+> until July 2026: it converted every provisional read at the **full** price, so
+> a reader who read on the house and later added a card was billed for the gift,
+> and the writer earned on pence nobody had paid. The £5 was, in effect, a loan
+> that adding a card called in.
 
 This carefulness is deliberate: the comments note that an earlier, sloppier
 version would happily accept a dud card and only discover it was broken weeks
@@ -82,17 +101,17 @@ but that's record-keeping, not money.)
 
 ### When you vote
 
-Votes cost money too (`votes.ts` + `voting.ts`), and the price **doubles** each
-time you vote the same way on the same thing:
+**Voting is free, and moves no money at all** (`votes.ts`). Nothing is added to
+your tab, no ledger line is written, and no writer earns anything from a vote.
+You get **one vote per thing per direction** — voting the same way on the same
+post again just returns the current tally and changes nothing. You can't vote on
+your own posts.
 
-- **Upvotes:** 1st is **free**, then 10p, 20p, 40p, 80p…
-- **Downvotes:** start at 10p, then 20p, 40p…
-
-The money side works exactly like a read: no card → comes off your free
-allowance (provisional); card on file → added to your tab with a ledger debit
-(`vote_charge`). The difference is *who it's earmarked for*: an **upvote's**
-money is tagged for the **author** you upvoted; a **downvote's** money is tagged
-for **all.haus itself** (the platform). You can't vote on your own posts.
+> Votes used to cost money, on a price that doubled each time you voted the same
+> way (upvotes free then 10p, 20p, 40p…; downvotes from 10p). That was removed in
+> July 2026. The `vote_charge` line still exists in the ledger's vocabulary, but
+> only so the historical entries from that period still read correctly — nothing
+> writes a new one.
 
 ---
 
@@ -204,17 +223,28 @@ Each day, for every writer who is **payable** and has at least **£20** owed
    minus 8%, already taken at settlement) from all.haus's Stripe balance to the
    writer's connected account — again with a **stable idempotency key**
    (`payout-<id>`) so a retry can't double-pay.
-3. **Confirm**: flip the payout to "initiated," mark those reads
+3. **Confirm**: flip the payout to **"completed,"** mark those reads
    **"writer_paid,"** and write a ledger line: *"writer received this money"*
    (`writer_payout`).
 
-The payout isn't marked truly **"completed"** until Stripe sends the
-**`transfer.paid`** webhook — i.e. the cash has actually landed, not just been
-queued. If Stripe sends **`transfer.failed`** instead, the reads are rolled back
-to "settled" and tried again next cycle. Transfers, like charges, are split into
-"definitely failed, safe to retry fresh" vs "maybe it went through, must not
-double-send" (`isTerminalTransferError`) — and here the code is **extra**
-cautious, because the bad outcome is paying a writer *twice*.
+**Completion is decided by Stripe's answer to the transfer request itself**, not
+by a later webhook. That is worth explaining, because the code used to do the
+other thing and was wrong. Stripe does send a **`transfer.paid`** message — but
+only for a connected account moving money to *its own bank*, not for us moving
+money *to* a connected account. So the payout would sit forever waiting for a
+message that was never coming. Since the money moves the moment Stripe accepts
+the request, that acceptance **is** the confirmation. (The old `transfer.paid` /
+`transfer.failed` branches are still in the code as harmless no-ops until
+someone confirms against a live account that they truly never fire.)
+
+If Stripe **later claws a transfer back**, it does tell us — `transfer.reversed`
+— and that is handled: the writer's ledger goes negative by the amount returned,
+including when only part of it comes back.
+
+Transfers, like charges, are split into "definitely failed, safe to retry fresh"
+vs "maybe it went through, must not double-send" (`isTerminalTransferError`) —
+and here the code is **extra** cautious, because the bad outcome is paying a
+writer *twice*.
 
 > **One payout, several transfers.** The above describes what happens today.
 > There is a finished-but-switched-off mode (**funds segregation**,
@@ -227,8 +257,7 @@ cautious, because the bad outcome is paying a writer *twice*.
 > cycle — rather than the whole payout getting stuck. See
 > `docs/adr/FUNDS-SEGREGATION-INTEGRATION.md`.
 
-> **Upvotes** ride along the same payout pipeline: the money you spent upvoting
-> an author is paid out to that author just like a read. **Publications** (shared
+> **Publications** (shared
 > accounts) split each payout among their members by agreed percentages. There's
 > also a more elaborate "**tribute**" system that can redirect a slice of a
 > writer's earnings to people who inspired them — but that's currently
