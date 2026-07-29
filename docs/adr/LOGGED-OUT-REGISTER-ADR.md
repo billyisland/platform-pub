@@ -929,6 +929,47 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    no-repeats rule**; only the register moved. Register to hold: specific,
    consequential, short of the verb — no wistfulness, no throat-clearing.
 
+7octies. **A front page is not all front-page, and the crossing story is a
+   spine, not the world** (2026-07-29, the same day). 7septies was right and
+   overshot. Having established that the world had to be consequential, it made
+   every card consequential in the same way: a leak, a burial, a collapse, a
+   betrayal, in all four canvas feeds, in three of the four omnivore bodies and
+   across the reader's floor. That is the identical demonstration failure with
+   the sign flipped. The page's claim is that ONE surface holds everything a
+   person reads — and a canvas on which everything is the same grim column,
+   four times, argues that a reader wanting that column would need only the
+   column. The gate suffers most: a paywall over the fifth Halcyon card on a
+   floor of further Halcyon cards reads as a single-subject wire putting up a
+   toll, not as a person's whole reading surface with one piece behind glass.
+
+   Two corrections, both content-only:
+
+   **Mood is spread as deliberately as beat.** Roughly a third of the cards are
+   now light — a swimmer's record and the third turn watched two hundred times,
+   eleven days of telescope pointed at nothing, a soup made every morning since
+   1998 and never written down, six people on a roof with a borrowed flask, a
+   lecture on moss that drew two hundred and forty and now has a waiting list,
+   a piano left on a seafront and still in tune. They are held to 7septies'
+   standard exactly: specific, consequential, short of the verb, and something a
+   stranger would click. **Delight is a beat; whimsy is the parish magazine
+   coming back in**, and the difference is whether the card has a fact and a
+   stake in it. The omnivore column is where this is load-bearing, since its
+   four bodies are the only copy read at true size: verdict, accusation, comic
+   scene, paid stake — four moods, not four gravities.
+
+   **Halcyon appears only at its five spine points** (feed 1 lead, feed 1 quote
+   card, one feed 2 headline, feed 3's mock, the omnivore accusation) **and then
+   at the gate.** Everything else that had drifted into its orbit — a second
+   feed-2 headline, a substation mural, a share price on the reader floor, a
+   drainage lease, a grid coming back on at four in the morning — is now other
+   subjects. The reader demo's floor carries **none** of it by design, so the
+   figure states the argument once and cleanly: one story behind glass, on a
+   floor visibly holding everything else.
+
+   Cast additions for the lighter beats, kept minimal: **Sable Kwon** (sport,
+   for *Touchline*), **Deniz Aksoy** (food) and the publication **Saltbox**.
+   `Third Rail` keeps its subscription role; nothing was retired.
+
 7. **Three logged-in tool surfaces clear the band** — `/write`, `/admin/*`,
    `/traffology/*` — because the row mounts on every non-workspace route and
    they are the only real pages left there (every other platform route is a

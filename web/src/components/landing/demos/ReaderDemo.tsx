@@ -52,6 +52,14 @@ import { DemoVessel, DemoPost, DemoByline, DemoTitle, DemoBody, DemoTag } from '
 // are also DISTINCT from the other two demos' cards, per that same note; only
 // the article in the pane is repeated, and deliberately.
 //
+// AND THE FLOOR CARRIES NO HALCYON CARD AT ALL. The pane is the story's fifth
+// and last appearance, so what shows through the blur beside it is deliberately
+// four other things — a vote, the ice, the pound, a lecture on moss with a
+// waiting list. The gate is more legible for it: a paywall over the one story
+// the page has been building, on a floor that visibly holds everything else, is
+// the whole argument in a single figure. A floor of further Halcyon coverage
+// would have made the product look like a single-subject wire.
+//
 // THE ARTICLE IS THE OMNIVORE DEMO'S PAID CARD. Ellis Marchetti's "The men who
 // bought the lights" is priced in the feed above and gated here, and Third Rail
 // is the publication the subscription line offers — so a visitor is asked to pay
@@ -94,14 +102,14 @@ const FLOOR: { scheme: 'basic' | 'summer' | 'autumn' | 'spring'; cards: FloorCar
         body: 'Nobody loses a count they have done. What follows is three weeks of a government declining to do one…',
         tag: 'via RSS',
       },
-      { name: 'Halloran', time: '6h', body: 'They painted over the mural at noon. It was back up by six.', tag: 'via Bluesky' },
+      { name: 'Halloran', time: '6h', body: 'Somebody has left a piano on the seafront. Three days on it is still in tune, and there is a queue.', tag: 'via Bluesky' },
     ],
   },
   {
     scheme: 'summer',
     cards: [
       { name: 'Deep Field', time: '1h', body: 'The ice is going from underneath, and the models are still arguing about the surface…', tag: 'via Nostr' },
-      { name: 'Fenwick Wire', time: '2h', body: 'Halcyon down eleven per cent, and briefing hard against its own board…', tag: 'via RSS' },
+      { name: 'Fenwick Wire', time: '2h', body: 'Best week for the pound in two years, and every desk I called used the same word: temporarily…', tag: 'via RSS' },
     ],
   },
   {
@@ -110,7 +118,7 @@ const FLOOR: { scheme: 'basic' | 'summer' | 'autumn' | 'spring'; cards: FloorCar
       {
         name: 'Ines Bergqvist',
         time: '1h',
-        body: 'Went for one drink with a man who wanted to talk about drainage. Came home at midnight with a photocopy of the lease.',
+        body: 'Went to a lecture on moss expecting six people. Two hundred and forty turned up and there is now a waiting list. For moss.',
         tag: 'via Bluesky',
       },
     ],

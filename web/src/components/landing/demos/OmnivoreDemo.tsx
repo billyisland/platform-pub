@@ -27,14 +27,22 @@ import type { VesselPalette } from '../../workspace/tokens'
 //
 // THE FOUR BODIES ARE THE PAGE'S ONLY READABLE COPY, so they carry the weight of
 // the mix the pitch is claiming: a critic with an enemy, a reply that turns a
-// reported fact into an accusation, somebody up a gantry at four in the morning,
-// and a paid essay on the story the other three are circling. Chatter and
-// journalism in one column, which is the argument.
+// reported fact into an accusation, somebody at a fish market at four in the
+// morning, and a paid essay on the story two of the others are circling. Chatter
+// and journalism in one column, which is the argument.
 //
 // AND THEY HAVE TO BE WORTH READING. These four are the only sentences on `/`
 // that a visitor reads at their true size, so they are the demo's real proof:
 // a column of gentle literary noticing proves the product collects things nobody
 // clicks. Front-page register — a verdict, an accusation, a scene, a stake.
+//
+// THE FOUR ARE ALSO FOUR MOODS, deliberately, and that is the other half of the
+// proof. All four sentences pitched at the same investigative gravity would make
+// the product look like a single grim column with four wrappers; the middle two
+// are the swing — an accusation, then somebody buying an unidentifiable fish and
+// finding it very funny — because a surface that holds only one register does not
+// need to hold everything. Light does not mean slight: the fish card is as
+// specific and as finished as the accusation is.
 //
 // THE PAID CARD IS THE PIECE THE READER DEMO OPENS — deliberately, and the one
 // post repeated anywhere on the page (see the note in CanvasDemo, which forbids
@@ -94,9 +102,9 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Aurelio Frame" time="7h" />
           <DemoBody palette={palette}>
-            Watched the grid come back from the top of a container crane at four
-            this morning. The whole city relit district by district, like
-            somebody dragging a hand along a switchboard. Not sleeping tonight.
+            Four in the morning at the fish market and a man has sold me a crate
+            of something I cannot name for eleven euros. He drew me a picture of
+            how to cook it. The picture is also unidentifiable.
           </DemoBody>
           <DemoTag palette={palette}>via Nostr &middot; aurelio@driftpost.net &rarr;</DemoTag>
         </DemoPost>

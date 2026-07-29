@@ -175,11 +175,22 @@ function Card({
 // was all harbour leases, pilot whales and hand-set type: charming, literary, and
 // completely inert. Nobody clicks a canvas of council minutes, and a demo nobody
 // would click is arguing against the product while appearing to agree with it.
-// The subjects are now the ones a front page actually leads on — a leak, the
-// money moving before the story ran, a melting timeline, a film with an enemy —
-// and the spread across beats is what carries the claim that everything worth
-// reading fits in one place. Keep the register: specific, consequential, and
-// short of the verb. No wistfulness, no throat-clearing, no maundering.
+// The subjects are the ones a front page actually leads on — a leak, the money
+// moving before the story ran, a record broken, a film with an enemy — and the
+// spread across beats is what carries the claim that everything worth reading
+// fits in one place. Keep the register: specific, consequential, short of the
+// verb. No wistfulness, no throat-clearing, no maundering.
+//
+// BUT A FRONT PAGE IS NOT ALL FRONT-PAGE. The first recast overcorrected: every
+// card in every feed was a leak, a burial, a collapse or a betrayal, and a canvas
+// of nothing but bad news makes exactly the same demonstration error in the
+// opposite direction — a reader who only ever wanted the grim column would not
+// need four feeds, and the product's actual claim is that ONE surface holds
+// everything a person reads. So the spread is now across MOOD as well as beat:
+// roughly a third of the cards are light (a record, a telescope, a bowl of soup,
+// a queue in the rain), and they are held to the same standard as the rest —
+// specific, consequential, clickable. Delight is a beat. Whimsy is not; the
+// parish magazine is still the failure mode on that side.
 const FEED_1: DemoCard[] = [
   {
     name: 'The Meridian',
@@ -200,18 +211,18 @@ const FEED_1: DemoCard[] = [
     tag: 'via Bluesky',
   },
   {
-    name: 'Tobias Wren',
+    name: 'Sable Kwon',
     time: '6d',
     paid: true,
-    title: 'Nobody resigns in August',
-    body: 'The recess is not a pause in politics. It is where politics is actually done, and this one has been used to bury three things you were meant to miss…',
-    tag: 'via RSS · Third Rail',
+    title: 'Forty-one seconds',
+    body: 'She has swum this event for eleven years and nobody has ever swum it like this. I have watched the third turn two hundred times and I still do not believe it…',
+    tag: 'via RSS · Touchline',
   },
   {
     name: 'Deep Field',
     time: '1w',
-    title: 'It is melting from underneath',
-    body: 'The models said fifty years. The core says it started a decade ago. The team that found it spent eleven months trying to prove themselves wrong…',
+    title: 'Eleven days pointed at nothing',
+    body: 'The instruction was to photograph an empty patch of sky. The picture came back with four thousand galaxies in it, and one of them is in the wrong place…',
     tag: 'via RSS · Deep Field',
   },
 ]
@@ -223,26 +234,26 @@ const FEED_1: DemoCard[] = [
 // a fact and a stake, no scene-setting.
 const FEED_2: DemoCard[] = [
   { name: 'The Meridian', time: '1h', title: 'The signature, the seat, and the ninety days between', tag: 'via RSS' },
-  { name: 'Fenwick Wire', time: '2h', title: 'The market moved nine hours before the story did', tag: 'via RSS' },
+  { name: 'Fenwick Wire', time: '2h', title: 'Somebody has quietly cornered the world’s vanilla again', tag: 'via RSS' },
   { name: 'Deep Field', time: '3h', title: 'One drill core just deleted forty years from the forecast', tag: 'via RSS' },
   { name: 'Nightshift', time: '5h', title: 'The year’s biggest film has no idea what it is about', tag: 'via Nostr' },
-  { name: 'Touchline', time: '6h', title: 'Three positive tests, and a lab that shut on the Friday', tag: 'via RSS' },
+  { name: 'Touchline', time: '6h', title: 'She is nineteen, unseeded, and through to the final', tag: 'via RSS' },
   { name: 'The Meridian', time: '8h', title: 'Nine years, £4bn, and a bridge that cannot take a lorry', tag: 'via RSS' },
-  { name: 'Third Rail', time: '11h', title: 'The quiet, serious case for letting the lights go out', tag: 'via Nostr' },
+  { name: 'Saltbox', time: '11h', title: 'The best thing I ate this year cost £1.40 and came in a bag', tag: 'via Nostr' },
 ]
 
 const FEED_3: DemoCard[] = [
   { name: 'Halloran', time: '1h', body: 'All four shells are registered to the same address above a dry cleaner’s. They did not even pretend.', tag: 'via Bluesky' },
-  { name: 'Aurelio Frame', time: '7h', body: 'The blackout maps are being drawn by people with no power, on phones with no signal, and they are better than the official ones.', tag: 'via Nostr' },
+  { name: 'Aurelio Frame', time: '5h', body: 'Six of us on a roof at three in the morning with a borrowed telescope and a flask. Four thousand galaxies, they say. I found eleven and I am delighted with every one.', tag: 'via Nostr' },
   { name: 'Ines Bergqvist', time: '9h', body: 'Nine years to build a bridge that cannot take a lorry. I know people who have had entire children faster, with better paperwork.', tag: 'via Bluesky' },
-  { name: 'Halloran', time: '1d', body: 'Someone has put a mural on the substation overnight: the minister, four company names, and “90 DAYS”. Nobody will admit to it.', tag: 'via Nostr' },
+  { name: 'Sable Kwon', time: '1d', body: 'She served for the match with her shoelace undone and I have not recovered. Nineteen years old. Nineteen.', tag: 'via Bluesky' },
   { name: 'Aurelio Frame', time: '1d', body: 'Two years of asking, and the department published the survey at half past four on a Friday. It is always half past four on a Friday.', tag: 'via Nostr' },
   { name: 'Marguerite Oyelaran', time: '2d', body: 'Three hundred people queued in the rain for a film no distributor will touch. Second screening Friday. Bring someone who disagrees with you.', tag: 'via Bluesky' },
 ]
 
 const FEED_4: DemoCard[] = [
   { name: 'Rosalind Vane', time: '5d', title: 'How to read a leak', body: 'Every cache has a shape, and the shape tells you who wanted you to have it…', tag: 'via RSS' },
-  { name: 'Ellis Marchetti', time: '6d', paid: true, title: 'The attention we sold', body: 'We handed over the whole thing for free, and this is the inventory of what they built with it…', tag: 'via RSS' },
+  { name: 'Deniz Aksoy', time: '6d', paid: true, title: 'Twelve years of the same soup', body: 'He has made it every morning since 1998 and will not write it down. I went back four times before he let me watch the first ten minutes…', tag: 'via RSS' },
   { name: 'Marguerite Oyelaran', time: '6d', title: 'The film they tried to bury', body: 'No distributor, no stars, no running time anyone will book. Also the best thing this year…', tag: 'via RSS' },
   { name: 'Tobias Wren', time: '1w', title: 'The emergency that never ended', body: 'Every temporary power in this country was introduced for six months. Not one has been given back…', tag: 'via RSS' },
 ]
