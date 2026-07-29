@@ -64,6 +64,7 @@ const db = {
   accruals: [] as AccrualRow[],
   payouts: new Map<string, PayoutRow>(),
   ledger: [] as LedgerRow[],
+  children: [] as Array<{ parent_table: string; parent_id: string }>,
   seq: 0,
   crashers: [] as RegExp[],
 }
@@ -74,6 +75,7 @@ function reset() {
   db.accruals = []
   db.payouts.clear()
   db.ledger = []
+  db.children = []
   db.seq = 0
   db.crashers = []
   transfers._reset()
@@ -148,6 +150,28 @@ function query(sql: string, params: unknown[] = []) {
     const [payoutId, tributeId] = params as [string, string]
     for (const a of releasedUnclaimed(tributeId)) a.tribute_payout_id = payoutId
     return Promise.resolve({ rows: [], rowCount: 1 })
+  }
+  // --- amount restatement (reserve, §3.4) — flag off it writes back the same
+  //     number the INSERT already carried, so the battery pins that too ---
+  if (/UPDATE tribute_payouts SET amount_pence = \$1/.test(sql)) {
+    const p = db.payouts.get(params[1] as string)
+    if (p) p.amount_pence = Number(params[0])
+    return Promise.resolve({ rows: [], rowCount: p ? 1 : 0 })
+  }
+
+  // --- payout_transfers (segregation children) ---
+  // Answered from the fake table rather than hard-coded: with
+  // STRIPE_ALLOCATED_FUNDS off no child is ever inserted, so hasChildren() must
+  // report 0 and completeTributePayout must take the single-transfer path —
+  // which is exactly the flag-off regression this battery pins (§5.13).
+  if (/count\(\*\) AS n FROM payout_transfers/.test(sql)) {
+    const n = db.children.filter(
+      (c) => c.parent_table === params[0] && c.parent_id === params[1],
+    ).length
+    return Promise.resolve(ok([{ n: String(n) }]))
+  }
+  if (/FROM payout_transfers/.test(sql)) {
+    return Promise.resolve(ok([]))
   }
 
   // --- completion flip (guarded) ---

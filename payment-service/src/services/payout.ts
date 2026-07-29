@@ -18,6 +18,7 @@ import {
   packUnits,
   apportionCarve,
   prorateWithheldFee,
+  prorateCarveReversal,
   type EarningUnit,
   type FundingSource,
 } from '../lib/allocation-packer.js'
@@ -116,6 +117,73 @@ export const PUBLICATION_PAYOUT_COMPLETE_SQL = `
        SELECT 1 FROM publication_payout_splits s
         WHERE s.publication_payout_id = pp.id
           AND s.status = 'pending')`
+
+// -----------------------------------------------------------------------------
+// The tribute cycle's per-child SQL (§3.4).
+//
+// Exported for the same reason as the statement above: the integration test
+// executes THESE statements rather than copies of them, so a predicate that
+// changes in production changes in the test too. Every one of them is a
+// predicate a mocked `pool.query` would have to restate — and restating is how
+// a test comes to pin its own fixture instead of the code.
+// -----------------------------------------------------------------------------
+
+/**
+ * The carve THIS child's accruals debit from the author — their GROSS, not the
+ * child's net (the onward carve flows from the inspirer, not the author).
+ *
+ * `state = 'released'` is deliberate and ORDER-DEPENDENT: `postLedger` runs
+ * before `advanceUnits` inside the shared completion transaction, so the rows
+ * are still released when this is read. Read after the advance it would sum 0
+ * and the author would keep earnings that left them — which is exactly the
+ * mutation this statement's test runs.
+ */
+export const TRIBUTE_CHILD_CARVE_SQL = `
+  SELECT COALESCE(SUM(amount_pence), 0) AS carve_pence
+    FROM tribute_accruals
+   WHERE payout_transfer_id = $1 AND state = 'released'`
+
+/** Advance exactly this child's accruals. Its predicate is the carve's pair. */
+export const TRIBUTE_CHILD_ADVANCE_SQL = `
+  UPDATE tribute_accruals
+     SET state = 'paid'
+   WHERE payout_transfer_id = $1
+     AND state = 'released'`
+
+/**
+ * A claimed accrual whose READ was charged back mid-flight is terminal, not
+ * re-claimable: the chargeback planner already reversed it as-if-paid, so
+ * releasing it would let the next cycle re-pay clawed-back money.
+ */
+export const TRIBUTE_CHILD_VOID_SQL = `
+  UPDATE tribute_accruals ta
+     SET state = 'voided', tribute_payout_id = NULL, payout_transfer_id = NULL
+    FROM read_events re
+   WHERE ta.payout_transfer_id = $1
+     AND ta.state = 'released'
+     AND re.id = ta.read_event_id
+     AND re.state = 'charged_back'
+  RETURNING ta.amount_pence`
+
+/** Release the rest for re-pay under a fresh child. State-filtered. */
+export const TRIBUTE_CHILD_RELEASE_SQL = `
+  UPDATE tribute_accruals
+     SET state = 'released', tribute_payout_id = NULL, payout_transfer_id = NULL
+   WHERE payout_transfer_id = $1
+     AND state = 'released'`
+
+/**
+ * The accruals the onward carve consumed entirely: claimed, no child, nothing
+ * transferred for them. RETURNING is the single-shot gate the root carve entry
+ * needs — a second call matches no rows and posts nothing.
+ */
+export const TRIBUTE_CHILDLESS_ADVANCE_SQL = `
+  UPDATE tribute_accruals
+     SET state = 'paid'
+   WHERE tribute_payout_id = $1
+     AND payout_transfer_id IS NULL
+     AND state = 'released'
+  RETURNING amount_pence`
 
 export function computePublicationSplits(
   grossPence: number,
@@ -2594,8 +2662,8 @@ class PayoutService {
              AS child_carve`,
         [tributeId],
       )
-      const amountPence =
-        parseInt(bal.gross_released, 10) - parseInt(bal.child_carve, 10)
+      const childCarve = parseInt(bal.child_carve, 10)
+      const amountPence = parseInt(bal.gross_released, 10) - childCarve
       if (amountPence <= 0) {
         logger.warn({ tributeId }, 'Tribute has no payable net this cycle — skipping (likely claimed by a pending payout)')
         return null
@@ -2618,9 +2686,155 @@ class PayoutService {
         [payoutId, tributeId],
       )
 
-      logger.info({ payoutId, tributeId, amountPence }, 'Tribute payout reserved (pending Stripe transfer)')
-      return { payoutId, amountPence }
+      // --- Funding (§3.4) — everything above this line is unchanged ------------
+      // Attribution is settled: `amountPence` is what this inspirer is owed and
+      // how it was computed has not moved. What follows only decides WHICH
+      // CHARGES pay it. Flag off ⇒ no children, and completeTributePayout takes
+      // the single-transfer path exactly as before.
+      const finalAmountPence = allocatedFundsEnabled()
+        ? await this.packTributePayout(client, {
+            payoutId,
+            tributeId,
+            childCarve,
+            amountPence,
+          })
+        : amountPence
+
+      await client.query(
+        `UPDATE tribute_payouts SET amount_pence = $1 WHERE id = $2`,
+        [finalAmountPence, payoutId],
+      )
+
+      logger.info(
+        { payoutId, tributeId, amountPence: finalAmountPence },
+        'Tribute payout reserved (pending Stripe transfer)',
+      )
+      return { payoutId, amountPence: finalAmountPence }
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // packTributePayout — the funding half of Txn 1 (§3.4, the easy cycle).
+  //
+  // Runs INSIDE reserveTributePayout's transaction, after the claim. Each claimed
+  // `tribute_accruals` row is one unit with a real preferred settlement (its
+  // read's) and ZERO fee — a tribute accrual is carved out of the author's
+  // already-post-fee net, so there is no second fee to claim as an
+  // `application_fee_amount`. Returns the amount actually placed.
+  // ---------------------------------------------------------------------------
+  private async packTributePayout(
+    client: PoolClient,
+    input: {
+      payoutId: string
+      tributeId: string
+      childCarve: number
+      amountPence: number
+    },
+  ): Promise<number> {
+    const { payoutId, tributeId, childCarve, amountPence } = input
+    const config = await loadConfig()
+
+    const { rows: accrualRows } = await client.query<{
+      id: string
+      amount_pence: string
+      tab_settlement_id: string | null
+    }>(
+      `SELECT ta.id, ta.amount_pence, re.tab_settlement_id
+         FROM tribute_accruals ta
+         JOIN read_events re ON re.id = ta.read_event_id
+        WHERE ta.tribute_payout_id = $1
+        ORDER BY ta.id`,
+      [payoutId],
+    )
+
+    const accrualUnits: EarningUnit[] = accrualRows.map((a) => ({
+      id: a.id,
+      source: 'tribute_accruals' as const,
+      netPence: parseInt(a.amount_pence, 10),
+      feePence: 0,
+      preferredSettlementIds: a.tab_settlement_id ? [a.tab_settlement_id] : [],
+    }))
+
+    // This node's ONWARD carve to its direct children, apportioned across its own
+    // accruals — the same treatment reserveWriterPayout gives the author's root
+    // carve, and for the same reason: a naive per-accrual deduction can drive a
+    // unit's net below zero, and flooring it at 0 would make Σ(units) > the
+    // payable net, over-paying this inspirer with money that belongs to its
+    // children. Both assertions are the caller's, per apportionCarve's contract,
+    // and they turn the whole class into a rolled-back transaction.
+    const { units, zeroed, carveRemaining } = apportionCarve(accrualUnits, childCarve)
+
+    if (carveRemaining !== 0) {
+      throw new Error(
+        `Tribute payout carve unsatisfiable (payout=${payoutId}, tribute=${tributeId}, remaining=${carveRemaining}) — rolling back`,
+      )
+    }
+
+    const unitTotal = units.reduce((s, u) => s + u.netPence, 0)
+    if (unitTotal !== amountPence) {
+      throw new Error(
+        `Tribute payout unit sum ${unitTotal} != payable net ${amountPence} (payout=${payoutId}, tribute=${tributeId}) — rolling back`,
+      )
+    }
+
+    const settlementIds = [
+      ...new Set(units.flatMap((u) => u.preferredSettlementIds)),
+    ]
+    const sources = await lockFundingSources(client, settlementIds)
+
+    const { slices, overflow } = packUnits(units, sources, {
+      maxSlices: config.payoutMaxSlices,
+    })
+
+    // Overflow: un-claim, so it rolls to the next cycle. There is no tribute
+    // payout threshold (the share is the inspirer's the moment it releases), so
+    // unlike the writer cycle a reduced payout is simply paid — nothing to
+    // re-test against a floor.
+    if (overflow.length > 0) {
+      await client.query(
+        `UPDATE tribute_accruals SET tribute_payout_id = NULL WHERE id = ANY($1)`,
+        [overflow.map((u) => u.id)],
+      )
+      logger.warn(
+        { payoutId, tributeId, overflow: overflow.length, maxSlices: config.payoutMaxSlices },
+        'Tribute payout exceeded the slice cap — overflow accruals un-claimed and rolled to the next cycle',
+      )
+    }
+
+    const childIds = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+
+    for (let i = 0; i < slices.length; i++) {
+      await client.query(
+        `UPDATE tribute_accruals SET payout_transfer_id = $1 WHERE id = ANY($2)`,
+        [childIds[i], slices[i].units.map((u) => u.id)],
+      )
+    }
+
+    // A carve-zeroed accrual keeps its parent claim and gets no child: its whole
+    // share went onward to this node's children, so there is nothing to transfer
+    // for it, and Stripe rejects amount: 0. It advances to 'paid' at parent
+    // completion along with any other childless claim row.
+    if (zeroed.length > 0) {
+      logger.info(
+        { payoutId, tributeId, zeroed: zeroed.length },
+        'Accruals fully consumed by the onward carve — claimed, but no transfer',
+      )
+    }
+
+    const placedPence = slices.reduce((s, sl) => s + sl.netPence, 0)
+
+    // Defensive, and load-bearing: with no children `completeTributePayout` falls
+    // through to the LEGACY single aggregate transfer, which would pay the full
+    // claimed amount for accruals this transaction just un-claimed. Unreachable
+    // while `payout_max_slices >= 1` (the first unit always opens a slice), which
+    // is exactly why it is worth failing loudly if the dial is ever misconfigured.
+    if (placedPence <= 0) {
+      throw new Error(
+        `Tribute payout placed nothing (payout=${payoutId}, tribute=${tributeId}, maxSlices=${config.payoutMaxSlices}) — rolling back`,
+      )
+    }
+
+    return placedPence
   }
 
   // Stripe transfer (stable key) + Txn 2: flip 'pending'→'initiated', advance the
@@ -2634,6 +2848,21 @@ class PayoutService {
     stripeConnectId: string,
     amountPence: number,
   ): Promise<void> {
+    // Keyed on the DATA, not the flag. A payout reserved with segregation ON must
+    // complete through its children even if an operator flips the flag off
+    // mid-flight — the children exist, their draws are recorded, and one
+    // aggregate transfer would double-pay against them.
+    if (await hasChildren('tribute_payouts', payoutId)) {
+      await this.completeTributePayoutChildren(
+        payoutId,
+        tributeId,
+        inspirerId,
+        authorId,
+        stripeConnectId,
+      )
+      return
+    }
+
     const outcome = await executeStripeIdempotent(
       'tribute-payout',
       `tribute-payout-${payoutId}`,
@@ -2742,6 +2971,257 @@ class PayoutService {
     )
   }
 
+  // ---------------------------------------------------------------------------
+  // completeTributePayoutChildren — the segregated path (§3.4 / §3.3c).
+  //
+  // One transfer per funding charge, each completed or failed independently, then
+  // the parent settled once no child is left pending. Because the packing
+  // committed in Txn 1, this is a REPLAY: it never re-packs, so a crash-resume
+  // reproduces exactly the same transfers under exactly the same keys.
+  // ---------------------------------------------------------------------------
+  private async completeTributePayoutChildren(
+    payoutId: string,
+    tributeId: string,
+    inspirerId: string,
+    authorId: string,
+    stripeConnectId: string,
+  ): Promise<void> {
+    const { rows: rootRows } = await pool.query<{ is_root: boolean }>(
+      `SELECT parent_tribute_id IS NULL AS is_root FROM tributes WHERE id = $1`,
+      [tributeId],
+    )
+    const isRoot = rootRows[0]?.is_root ?? false
+
+    const spec = this.tributeChildSpec(
+      payoutId,
+      tributeId,
+      inspirerId,
+      authorId,
+      stripeConnectId,
+      isRoot,
+    )
+
+    const result = await executePendingChildren(this.stripe, spec)
+
+    const completion = await withTransaction((client) =>
+      this.finaliseTributePayoutParent(client, payoutId, authorId, inspirerId, isRoot),
+    )
+
+    logger.info(
+      {
+        payoutId,
+        tributeId,
+        inspirerId,
+        children: result,
+        parentCompleted: completion.completed,
+        amountPence: completion.paidPence,
+      },
+      'Tribute payout children executed',
+    )
+  }
+
+  /** The tribute cycle's money semantics, handed to the shared child lifecycle. */
+  private tributeChildSpec(
+    payoutId: string,
+    tributeId: string,
+    inspirerId: string,
+    authorId: string,
+    stripeConnectId: string,
+    isRoot: boolean,
+  ): ChildCycleSpec {
+    return {
+      parentTable: 'tribute_payouts',
+      parentId: payoutId,
+      destination: stripeConnectId,
+      // The webhook router dispatches on `tribute_payout_id`, so a child transfer
+      // must carry it or transfer.reversed lands in confirmPayout's writer branch.
+      metadata: {
+        tribute_payout_id: payoutId,
+        tribute_id: tributeId,
+        inspirer_account_id: inspirerId,
+      },
+
+      postLedger: async (client, child) => {
+        // Inspirer credit — the redirected share received, net of this node's own
+        // onward carve. +amount, counterparty = the party whose share was
+        // redirected. One entry PER CHILD for its own net; the ref stays the
+        // PARENT `tribute_payouts` row (see ChildCycleSpec.postLedger for why).
+        await recordLedger(client, {
+          accountId: inspirerId,
+          counterpartyId: authorId,
+          amountPence: child.net_pence,
+          triggerType: 'tribute_payout',
+          refTable: 'tribute_payouts',
+          refId: payoutId,
+        })
+
+        if (!isRoot) return
+
+        // The author's redirect executing, for THIS child's accruals. Debit the
+        // author their GROSS (`amount_pence`), not the child's net: the onward
+        // carve flows from the inspirer, not the author, so the whole accrual
+        // left the author here. ROOT only — a child carve reduces the parent
+        // inspirer's onward share, never the article author's read earnings.
+        //
+        // The predicate is deliberately the same one `advanceUnits` uses, and
+        // this hook runs FIRST in that shared transaction (executePendingChildren
+        // posts the ledger, then advances), so the rows are still 'released'.
+        // Single-shot because the whole pair is gated on the child's
+        // pending→completed flip rowCount.
+        const { rows: [carveRow] } = await client.query<{ carve_pence: string }>(
+          TRIBUTE_CHILD_CARVE_SQL,
+          [child.id],
+        )
+        const carvePence = parseInt(carveRow.carve_pence, 10)
+        if (carvePence > 0) {
+          await recordLedger(client, {
+            accountId: authorId,
+            counterpartyId: inspirerId,
+            amountPence: -carvePence,
+            triggerType: 'tribute_carve',
+            refTable: 'tribute_payouts',
+            refId: payoutId,
+          })
+        }
+      },
+
+      advanceUnits: async (client, child) => {
+        await client.query(TRIBUTE_CHILD_ADVANCE_SQL, [child.id])
+      },
+
+      releaseUnits: async (client, child) => {
+        await this.releaseTributeChildRows(client, child, payoutId, authorId, inspirerId, isRoot)
+      },
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // releaseTributeChildRows — the per-child twin of rollbackTributePayoutRows.
+  //
+  // Releases EXACTLY the accruals carrying this child's id — siblings and parent
+  // untouched — and keeps the parent version's two state filters, both of which
+  // are load-bearing for the chargeback interaction.
+  // ---------------------------------------------------------------------------
+  private async releaseTributeChildRows(
+    client: PoolClient,
+    child: ChildRow,
+    payoutId: string,
+    authorId: string,
+    inspirerId: string,
+    isRoot: boolean,
+  ): Promise<void> {
+    // A claimed accrual whose READ was charged back mid-flight was ledger-
+    // reversed as-if-paid by the chargeback planner, but its state stayed
+    // 'released' + claimed (there is no charged-back accrual state; the marker
+    // lives on read_events.state). Releasing it would let the next cycle re-claim
+    // and re-pay clawed-back money — void it instead, the same disposition the
+    // planner gives an unclaimed released accrual.
+    const voided = await client.query<{ amount_pence: string }>(
+      TRIBUTE_CHILD_VOID_SQL,
+      [child.id],
+    )
+
+    // Pair the planner's premature EARNED-side reversal, exactly as
+    // rollbackTributePayoutRows does at the parent grain: the as-if-paid reversal
+    // posted tribute_carve_reversal (+gross, author) on the premise that this
+    // payout would complete and post the forward tribute_carve (−gross). Voiding
+    // here means this child's completion never runs and that forward entry never
+    // posts, leaving the author's ledger_writer_earned inflated forever. Post the
+    // balancing tribute_carve now — the single point the ledger learns this
+    // child's carve will never execute.
+    const voidedPence = voided.rows.reduce(
+      (s, r) => s + parseInt(r.amount_pence, 10),
+      0,
+    )
+    if (isRoot && voidedPence > 0) {
+      await recordLedger(client, {
+        accountId: authorId,
+        counterpartyId: inspirerId,
+        amountPence: -voidedPence,
+        triggerType: 'tribute_carve',
+        refTable: 'tribute_payouts',
+        refId: payoutId,
+      })
+    }
+
+    // The rest: unclaim so the next cycle re-pays them under a fresh child.
+    // State-filtered like the parent version — never flip a terminal
+    // ('paid'/'voided') accrual back to claimable.
+    await client.query(TRIBUTE_CHILD_RELEASE_SQL, [child.id])
+  }
+
+  /**
+   * Settle the parent once no child is pending, and advance the accruals that
+   * never had a child at all — those the onward carve consumed entirely. Their
+   * share went to this node's children, so they are paid in the only sense that
+   * applies; leaving them 'released' would let the next cycle claim and pay them
+   * a second time.
+   *
+   * The UPDATE's RETURNING is the single-shot gate the root carve entry needs: a
+   * second call matches no rows and posts nothing. `completeParentIfSettled`
+   * cannot supply that gate — it reports `completed` from the tally, not from its
+   * own UPDATE's rowCount.
+   */
+  private async finaliseTributePayoutParent(
+    client: PoolClient,
+    payoutId: string,
+    authorId: string,
+    inspirerId: string,
+    isRoot: boolean,
+  ) {
+    const completion = await completeParentIfSettled(client, 'tribute_payouts', payoutId)
+    if (completion.completed) {
+      const { rows: childless } = await client.query<{ amount_pence: string }>(
+        TRIBUTE_CHILDLESS_ADVANCE_SQL,
+        [payoutId],
+      )
+      const carvePence = childless.reduce(
+        (s, r) => s + parseInt(r.amount_pence, 10),
+        0,
+      )
+      if (isRoot && carvePence > 0) {
+        await recordLedger(client, {
+          accountId: authorId,
+          counterpartyId: inspirerId,
+          amountPence: -carvePence,
+          triggerType: 'tribute_carve',
+          refTable: 'tribute_payouts',
+          refId: payoutId,
+        })
+      }
+    }
+    return completion
+  }
+
+  /**
+   * The three facts every tribute webhook handler needs about a payout it reached
+   * through a CHILD row (which carries only `parent_id`).
+   */
+  private async tributePayoutContext(payoutId: string): Promise<{
+    inspirerId: string
+    authorId: string
+    isRoot: boolean
+  } | null> {
+    const { rows } = await pool.query<{
+      inspirer_account_id: string
+      author_account_id: string
+      is_root: boolean
+    }>(
+      `SELECT tp.inspirer_account_id, tp.author_account_id,
+              t.parent_tribute_id IS NULL AS is_root
+         FROM tribute_payouts tp
+         JOIN tributes t ON t.id = tp.tribute_id
+        WHERE tp.id = $1`,
+      [payoutId],
+    )
+    if (rows.length === 0) return null
+    return {
+      inspirerId: rows[0].inspirer_account_id,
+      authorId: rows[0].author_account_id,
+      isRoot: rows[0].is_root,
+    }
+  }
+
   // Resume tribute_payouts stuck in 'pending' from prior runs. Safe to call
   // repeatedly — the stable idempotency key dedupes the Stripe transfer.
   async resumePendingTributePayouts(): Promise<void> {
@@ -2804,6 +3284,37 @@ class PayoutService {
   // Mirrors confirmPayout: flip 'initiated' → 'completed' when the funds land.
   // ---------------------------------------------------------------------------
   async confirmTributePayout(stripeTransferId: string): Promise<void> {
+    // §3.5 — resolve a CHILD first. With N transfers per payout,
+    // `tribute_payouts.stripe_transfer_id` can hold one id of N, so a handler
+    // keyed on it silently drops every other child's event. Null means the legacy
+    // single-transfer shape, which falls through unchanged.
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'tribute_payouts') return
+      const ctx = await this.tributePayoutContext(child.parent_id)
+      if (!ctx) {
+        logger.warn({ childId: child.id }, 'confirmTributePayout: child has no parent payout')
+        return
+      }
+      // Completion is keyed off the create response (F4), so the child is already
+      // 'completed' and its ledger entry posted; this event is a belt-and-braces
+      // re-evaluation of the parent, nothing more.
+      await withTransaction((client) =>
+        this.finaliseTributePayoutParent(
+          client,
+          child.parent_id,
+          ctx.authorId,
+          ctx.inspirerId,
+          ctx.isRoot,
+        ),
+      )
+      logger.info(
+        { stripeTransferId, childId: child.id, tributePayoutId: child.parent_id },
+        'Tribute payout child confirmed',
+      )
+      return
+    }
+
     const { rows } = await pool.query<{ id: string }>(
       `UPDATE tribute_payouts
           SET status = 'completed', completed_at = now()
@@ -2838,6 +3349,13 @@ class PayoutService {
     stripeTransferId: string,
     amountReversedPence: number | null,
   ): Promise<void> {
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'tribute_payouts') return
+      await this.reverseTributePayoutChild(child, amountReversedPence)
+      return
+    }
+
     await withTransaction(async (client) => {
       const { rows } = await client.query<{
         id: string; tribute_id: string; inspirer_account_id: string;
@@ -2923,6 +3441,129 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
+  // reverseTributePayoutChild — one child of a multi-child tribute payout was
+  // clawed back. Reverses THAT CHILD's net only; siblings and the parent's amount
+  // are untouched.
+  //
+  // Idempotency is the child's own `reversed_pence` under its row lock (see
+  // reverseChild) rather than the parent-level cumulative-SUM guard the legacy
+  // path uses — that guard sums `tribute_payout_reversal` entries against the
+  // payout row, and N children now share that ref, so it cannot tell them apart.
+  //
+  // The carve re-credit is prorated to the CHILD's cumulative reversal fraction
+  // and derived from `reversed_pence` before and after the flip, so a redelivery
+  // yields 0 and a staged partial yields the increment — the per-child twin of
+  // the legacy `floor(carve × reversed ÷ amount)` arithmetic. The carve of the
+  // CHILDLESS accruals (those the onward carve consumed) is deliberately NOT
+  // re-credited: that share went to this node's children, whose own payouts are
+  // untouched by a reversal of this transfer.
+  // ---------------------------------------------------------------------------
+  private async reverseTributePayoutChild(
+    child: ChildRow,
+    amountReversedPence: number | null,
+  ): Promise<void> {
+    await withTransaction(async (client) => {
+      const { rows: payoutRows } = await client.query<{
+        id: string
+        tribute_id: string
+        inspirer_account_id: string
+        author_account_id: string
+      }>(
+        `SELECT id, tribute_id, inspirer_account_id, author_account_id
+           FROM tribute_payouts WHERE id = $1 FOR UPDATE`,
+        [child.parent_id],
+      )
+      if (payoutRows.length === 0) {
+        logger.warn({ childId: child.id }, 'reverseTributePayout: child has no parent payout')
+        return
+      }
+      const p = payoutRows[0]
+
+      const delta = await reverseChild(client, child, amountReversedPence)
+      if (delta <= 0) {
+        logger.info(
+          { tributePayoutId: p.id, childId: child.id },
+          'reverseTributePayout: already posted — no-op (redelivery)',
+        )
+        return
+      }
+
+      await recordLedger(client, {
+        accountId: p.inspirer_account_id,
+        counterpartyId: p.author_account_id,
+        amountPence: -delta,
+        triggerType: 'tribute_payout_reversal',
+        refTable: 'tribute_payouts',
+        refId: p.id,
+      })
+
+      const { rows: rootRows } = await client.query<{ is_root: boolean }>(
+        `SELECT parent_tribute_id IS NULL AS is_root FROM tributes WHERE id = $1`,
+        [p.tribute_id],
+      )
+      if (rootRows[0]?.is_root) {
+        // Read the child back under the lock reverseChild already holds: it has
+        // just written the cumulative figure, so `after` is authoritative and
+        // `before` is exact without a second posted-sum query.
+        const { rows: [c] } = await client.query<{
+          net_pence: number
+          reversed_pence: number
+        }>(
+          `SELECT net_pence, reversed_pence FROM payout_transfers WHERE id = $1`,
+          [child.id],
+        )
+        const { rows: [carveRow] } = await client.query<{ carve_pence: string }>(
+          `SELECT COALESCE(SUM(amount_pence), 0) AS carve_pence
+             FROM tribute_accruals
+            WHERE payout_transfer_id = $1 AND state = 'paid'`,
+          [child.id],
+        )
+        const carveDelta = prorateCarveReversal(
+          parseInt(carveRow.carve_pence, 10),
+          c.net_pence,
+          c.reversed_pence - delta,
+          c.reversed_pence,
+        )
+        if (carveDelta > 0) {
+          await recordLedger(client, {
+            accountId: p.author_account_id,
+            counterpartyId: p.inspirer_account_id,
+            amountPence: carveDelta,
+            triggerType: 'tribute_carve_reversal',
+            refTable: 'tribute_payouts',
+            refId: p.id,
+          })
+        }
+      }
+
+      // The parent is 'reversed' only when nothing of it is left standing.
+      const { rows: [tally] } = await client.query<{ outstanding: string }>(
+        `SELECT COALESCE(SUM(net_pence - reversed_pence), 0) AS outstanding
+           FROM payout_transfers
+          WHERE parent_table = 'tribute_payouts' AND parent_id = $1
+            AND status IN ('completed', 'reversed')`,
+        [p.id],
+      )
+      if (parseInt(tally.outstanding, 10) <= 0) {
+        await client.query(
+          `UPDATE tribute_payouts SET status = 'reversed' WHERE id = $1`,
+          [p.id],
+        )
+      }
+
+      logger.warn(
+        {
+          tributePayoutId: p.id,
+          childId: child.id,
+          reversedPence: delta,
+          stripeTransferId: child.stripe_transfer_id,
+        },
+        'Tribute payout child reversed by Stripe',
+      )
+    })
+  }
+
+  // ---------------------------------------------------------------------------
   // handleFailedTributePayout — Stripe webhook on transfer.failed for a TRIBUTE
   // transfer. Mirrors handleFailedPayout (writer): flip the row to 'failed' and
   // roll its accruals back so the NEXT cycle re-pays them under a fresh
@@ -2936,6 +3577,45 @@ class PayoutService {
   // checks stay green.
   // ---------------------------------------------------------------------------
   async handleFailedTributePayout(stripeTransferId: string, reason: string): Promise<void> {
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'tribute_payouts') return
+      const ctx = await this.tributePayoutContext(child.parent_id)
+      if (!ctx) {
+        logger.warn({ childId: child.id }, 'handleFailedTributePayout: child has no parent payout')
+        return
+      }
+      await withTransaction(async (client) => {
+        if (!(await failChild(client, child.id, reason))) return
+        await this.releaseTributeChildRows(
+          client,
+          child,
+          child.parent_id,
+          ctx.authorId,
+          ctx.inspirerId,
+          ctx.isRoot,
+        )
+      })
+      // Re-evaluate the parent in its own transaction: with this child no longer
+      // pending, the payout may now be settled at a smaller, restated amount.
+      // "No child PENDING" — never "every child completed" — is what stops a
+      // single failure zombifying the parent forever.
+      await withTransaction((client) =>
+        this.finaliseTributePayoutParent(
+          client,
+          child.parent_id,
+          ctx.authorId,
+          ctx.inspirerId,
+          ctx.isRoot,
+        ),
+      )
+      logger.warn(
+        { stripeTransferId, childId: child.id, tributePayoutId: child.parent_id, reason },
+        'Tribute payout child transfer failed — its accruals released for re-pay',
+      )
+      return
+    }
+
     await withTransaction(async (client) => {
       // Audit F4: guard on status <> 'completed' — completion is keyed off the
       // create response, so a stray transfer.failed must not unwind a completed

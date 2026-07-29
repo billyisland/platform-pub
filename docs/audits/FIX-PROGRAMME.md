@@ -23,6 +23,78 @@ starts.
 
 ## Progress
 
+- **2026-07-29 (funds segregation, part 3 — the tribute cycle, the only visibility it has,
+  and a fifteenth mutation that survived)** — the third payout cycle, the §3.6 reconcile
+  sweep, the §3.3d residual metric and the §3.3f dust script. **The segregation build is
+  now complete**: all three cycles fund through the packer and the shared child lifecycle,
+  and everything remains dark behind `STRIPE_ALLOCATED_FUNDS`. Spec:
+  `docs/adr/FUNDS-SEGREGATION-INTEGRATION.md` §10.1b (as-built) and §10.3 (a short,
+  honest remainder).
+
+  **The tribute cycle (§3.4).** `packTributePayout` inside `reserveTributePayout`'s
+  transaction: one unit per claimed `tribute_accruals` row, its read's
+  `tab_settlement_id` as the preferred settlement, fee **0** (an accrual is carved out of
+  the author's already-post-fee net — there is no second fee to claim). The node's onward
+  carve to its direct children goes through the same `apportionCarve` the writer cycle
+  uses, with the same two assertions, so the negative-unit class is a rolled-back
+  transaction rather than an over-pay. `completeTributePayout` branches on `hasChildren`
+  (data, not flag) and all three transfer webhook handlers resolve a child first.
+
+  **What was delicate, and is now pinned.** The author's `tribute_carve` debit is posted
+  per child, for that child's accruals, at their **GROSS** — the onward carve flows from
+  the inspirer, not the author. It reads `state = 'released'`, which makes it
+  ORDER-DEPENDENT on `postLedger` running before `advanceUnits`: read one transition later
+  it sums 0 and the author silently keeps earnings that left them. Both statements are
+  exported and the test runs them in that order **with the post-advance figure as a paired
+  control**, so the ordering contract is a test rather than a comment. The carve-zeroed
+  accruals (whose whole share went onward) advance at parent completion through
+  `TRIBUTE_CHILDLESS_ADVANCE_SQL`, whose `RETURNING` is the single-shot gate that ledger
+  entry needs — `completeParentIfSettled` cannot supply one, since it reports `completed`
+  from a tally rather than from its own UPDATE's `rowCount`. And `prorateCarveReversal`
+  (extracted to `allocation-packer.ts`, 5 unit tests, 3 mutations) prorates the re-credit
+  to the CHILD's own cumulative reversal: both terms use one carve figure, so it cannot go
+  negative when a chargeback shrinks the carve between two partials — the parent-grain
+  path differences against entries posted under the OLD carve and needs its `> 0` test.
+
+  **Reconcile is a SIBLING of `reconcile-ledger`, not part of it (§3.6).** That file's
+  `CRITICAL_CHECKS` holds five halting checks and a default-deny catch-all; an allocation
+  check added there is one edit away from halting the platform because a webhook was slow.
+  `allocation-reconcile.ts` alerts at ERROR and never halts — a stale budget makes the
+  packer under-draw by construction, and a large residual means the money is right and the
+  coverage is poor. Two judgements worth the words: **no watermark** (the sync sweep's own
+  oldest-first rotation already walks the population, so taking the most-recently-synced
+  batch is a moving window with no stored position and no `timestamptz` precision to lose
+  — the trap §3.6 flags), and the divergence figure is deliberately **not** floored at 0,
+  because a model that has drawn past zero is exactly the state worth alerting on.
+  §3.3d returns **null, not 0 bps**, for an empty window: no payouts is no measurement,
+  and 0 would read as perfect coverage forever on a platform whose payout cycle had died.
+
+  **Validation.** payment-service 210 passed / 3 DB files skipped without a URL; with one,
+  37 DB-backed tests including 26 in the segregation assembly. tsc clean, root lint 0
+  errors, all three tripwires green (`check-ledger-adjacency` floor 13 → **19**, re-read by
+  hand against the six new `recordLedger` sites; `check-read-chargeable`;
+  `check-schema-drift` all seven checks — no migration, no schema change). The dust script
+  dry-runs clean against dev. **Fifteen mutations run.** Fourteen turned a suite red. The
+  fifteenth — deleting `allocated_pence IS NOT NULL` from the divergence candidate SQL —
+  left everything green, because the fixture's sibling `allocation_synced_at` guard
+  excluded the row anyway: the test was passing for a reason it did not name. Fixed by
+  posing the combination the guard exists for rather than by explaining it away. The
+  neighbouring `allocation_synced_at` guard is genuinely redundant (measured the same way,
+  survives its own mutation) and now says so in its comment instead of carrying a
+  contrived fixture. The flag-off conformance battery needed the `payout_transfers`
+  handling its writer and publication siblings already had — added answering from the fake
+  table, not hard-coded, so it still pins §5.13's flag-off regression.
+
+  **Found on the way, not fixed, recorded instead:** the carve and the slice cap interact
+  and over-carve. The carve is apportioned across all units BEFORE packing; units past
+  `payout_max_slices` are un-claimed and re-carved next cycle, while this cycle already
+  collected their share — so the recipient is permanently short by the overlap. It is
+  **pre-existing in the shipped writer cycle**; the tribute cycle reproduces its shape
+  deliberately rather than diverging from it. Inert on two counts (needs tributes live AND
+  an overflow) and the fix is not local, since carve → nets → packing → overflow is a
+  fixpoint. Queued onto §5 step 0, whose slice-distribution measurement decides how
+  reachable it is. → CONSOLIDATED-TODO §1.13(b); ADR §10.3.
+
 - **2026-07-29 (funds segregation, part 2 — the publication cycle, the refund hooks, and a
   zombie that could never die)** — the publication payout cycle under segregation, the
   `charge.refunded` allocation hooks on both arms, and the `finalisePublicationPayout`

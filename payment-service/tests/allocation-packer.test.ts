@@ -3,6 +3,7 @@ import {
   packUnits,
   apportionCarve,
   prorateWithheldFee,
+  prorateCarveReversal,
   unitGross,
   type EarningUnit,
   type FundingSource,
@@ -307,5 +308,54 @@ describe('prorateWithheldFee — routes the pooled fee out of allocated state (�
     expect(prorateWithheldFee(0, 400, 1000)).toBe(0)
     expect(prorateWithheldFee(100, 400, 0)).toBe(0)
     expect(prorateWithheldFee(100, 0, 1000)).toBe(0)
+  })
+})
+
+describe('prorateCarveReversal — the author carve re-credited per child (§3.4)', () => {
+  it('re-credits in proportion to the child\'s cumulative reversal', () => {
+    // A 1000p child carrying a 400p carve, reversed in full: the author gets the
+    // whole carve back, because the whole transfer went back.
+    expect(prorateCarveReversal(400, 1000, 0, 1000)).toBe(400)
+    // Half reversed ⇒ half the carve.
+    expect(prorateCarveReversal(400, 1000, 0, 500)).toBe(200)
+    // And it FLOORS: 400 × 333 ÷ 1000 = 133.2, so the author gets 133 back and
+    // the odd 0.2p stays where it is. Under-claiming is the safe direction —
+    // handing the author back more carve than left them would manufacture
+    // earnings out of a reversal.
+    expect(prorateCarveReversal(400, 1000, 0, 333)).toBe(133)
+  })
+
+  it('posts the INCREMENT of a staged partial, never the cumulative figure again', () => {
+    // Stripe reports amount_reversed cumulatively, so a second partial arrives as
+    // a larger absolute number. Posting `owed(after)` each time would re-credit
+    // the first stage twice; the delta is the only honest figure.
+    const first = prorateCarveReversal(400, 1000, 0, 300)
+    const second = prorateCarveReversal(400, 1000, 300, 700)
+    expect(first).toBe(120)
+    expect(second).toBe(160)
+    expect(first + second).toBe(prorateCarveReversal(400, 1000, 0, 700))
+  })
+
+  it('is a no-op for a redelivery, which is the whole idempotency claim', () => {
+    expect(prorateCarveReversal(400, 1000, 700, 700)).toBe(0)
+  })
+
+  it('cannot go negative when a chargeback shrinks the carve between partials', () => {
+    // Both terms use the SAME carve figure, so the difference is monotone in
+    // `reversed` and a shrunk carve simply makes the next increment smaller —
+    // it can never demand money back. (The parent-grain legacy path differences
+    // against ledger entries posted under the OLD carve, where a negative IS
+    // reachable and its `> 0` test is load-bearing.) 400 → 100 mid-stage:
+    expect(prorateCarveReversal(400, 1000, 0, 700)).toBe(280)
+    expect(prorateCarveReversal(100, 1000, 700, 800)).toBe(10)
+    // A carve voided away entirely stops re-crediting rather than reversing.
+    expect(prorateCarveReversal(0, 1000, 700, 800)).toBe(0)
+  })
+
+  it('never re-credits more than the carve, however the reversal is reported', () => {
+    // `reversed` is capped at the child's net upstream, but a defensive over-large
+    // figure must still not manufacture money.
+    expect(prorateCarveReversal(400, 1000, 0, 5000)).toBe(400)
+    expect(prorateCarveReversal(400, 0, 0, 1000)).toBe(0)
   })
 })

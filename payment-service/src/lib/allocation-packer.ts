@@ -166,6 +166,43 @@ export function apportionCarve(
   return { units: kept, zeroed, carveRemaining: remaining }
 }
 
+/**
+ * The carve re-credit owed when a tribute CHILD transfer is reversed, staged.
+ *
+ * A reversal returns part of what the inspirer received, so the author's carve —
+ * debited in full when that child completed — is re-credited in the same
+ * proportion. Stripe reports `amount_reversed` CUMULATIVELY, so the honest
+ * figure is the difference between the cumulative re-credit owed at the new
+ * total and at the old one: a redelivery yields 0, and a staged partial yields
+ * exactly its increment. The parent-grain legacy path computes the same thing by
+ * SUMming ledger entries; per child that is impossible (N children share one
+ * ref), so the cumulative state on `payout_transfers.reversed_pence` is the only
+ * place the figure can come from — and this function is the arithmetic over it.
+ *
+ * FLOORS, so the re-credit under-claims — the author is never handed back more
+ * carve than left them.
+ *
+ * A re-credit already posted can never be clawed back, and structurally rather
+ * than by a guard: both terms are computed from the SAME carve figure, and
+ * `owedAt` is monotone in `reversed`, so the difference cannot go negative even
+ * when a chargeback voids an accrual and shrinks the carve between two
+ * partials. That is the one improvement on the parent-grain legacy path, which
+ * differences the current carve against ledger entries posted under an older,
+ * possibly larger one and needs its `> 0` test to stay honest. The `max(0, …)`
+ * here is belt-and-braces over an argument, not the argument.
+ */
+export function prorateCarveReversal(
+  carvePence: number,
+  netPence: number,
+  reversedBefore: number,
+  reversedAfter: number,
+): number {
+  if (carvePence <= 0 || netPence <= 0) return 0
+  const owedAt = (reversed: number) =>
+    Math.floor((carvePence * Math.max(0, Math.min(reversed, netPence))) / netPence)
+  return Math.max(0, owedAt(reversedAfter) - owedAt(reversedBefore))
+}
+
 // -----------------------------------------------------------------------------
 // The pack
 // -----------------------------------------------------------------------------

@@ -978,8 +978,16 @@ the brake needs its `DEPLOYMENT.md` row and compose default (§3.1); and the
 **Updated later the same day (part 2).** The publication cycle, the
 `charge.refunded` allocation hooks and the `finalisePublicationPayout` zombie
 are now built, and the flag-ON assembly has DB-backed, mutation-verified
-coverage. Read §10.1a and §10.3 together; the tribute cycle, the reconcile
-sweep and the residual metric are still the honest remainder.
+coverage.
+
+**Updated again the same day (part 3).** The TRIBUTE cycle, the §3.6 reconcile
+sweep, the §3.3d residual metric and the §3.3f dust script are built, so **the
+build is complete**: all three payout cycles fund through the packer and the
+shared child lifecycle. §10.3 is now short and worth reading in full — what
+remains is the unrun §5 step 0 (the single flip blocker), one pre-existing
+carve/slice-cap interaction found on the way, and the Stripe-facing half of the
+execute loop that no test in this repo can reach. Read §10.1b and §10.3
+together.
 
 Everything below is behind `STRIPE_ALLOCATED_FUNDS` (default off). Flag off is
 byte-identical to before: the four conformance batteries pass unchanged, which is §5.13.
@@ -1058,6 +1066,77 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
   than restating it, so it catches the zombie mutation too (it did not, at
   first: that was found by running the mutation, not by reading the mock).
 
+### 10.1b Built in part 3 (2026-07-29, later still)
+
+- **§3.4 the TRIBUTE cycle.** `packTributePayout` runs inside
+  `reserveTributePayout`'s transaction: one unit per claimed `tribute_accruals`
+  row, its read's `tab_settlement_id` as the preferred settlement, and **fee 0**
+  — an accrual is carved out of the author's already-post-fee net, so there is no
+  second fee to claim. This node's ONWARD carve to its direct children goes
+  through the same `apportionCarve` the writer cycle uses, with the same two
+  assertions (`carveRemaining === 0`, `Σ units === the payable net`), so a naive
+  per-accrual deduction driving a unit negative is a rolled-back transaction
+  rather than an over-pay. `completeTributePayout` branches on `hasChildren`
+  (data, not flag) into `completeTributePayoutChildren`; all three transfer
+  webhook handlers resolve a child first.
+- **The carve, per child.** The author's `tribute_carve` debit is now posted per
+  child for THAT child's accruals, at their **GROSS** (`amount_pence`), not the
+  child's post-carve net — the onward carve flows from the inspirer, not the
+  author. It is read from `state = 'released'`, which is **order-dependent**:
+  `postLedger` runs before `advanceUnits` inside the shared completion
+  transaction, and read after the advance it sums 0 and the author silently keeps
+  earnings that left them. Both statements are exported and the integration test
+  runs them in that order, with the post-advance figure as a paired control.
+- **The carve-zeroed accruals** (whose whole share went onward) keep the parent
+  claim, get no child, and advance at parent completion —
+  `TRIBUTE_CHILDLESS_ADVANCE_SQL`, whose `RETURNING` is the single-shot gate that
+  ledger entry needs. `completeParentIfSettled` cannot supply one: it reports
+  `completed` from a tally, not from its own UPDATE's `rowCount`.
+- **`prorateCarveReversal`** (`allocation-packer.ts`) — the per-child carve
+  re-credit, prorated to the CHILD's own cumulative reversal fraction, derived
+  from `payout_transfers.reversed_pence` before and after the flip. It improves
+  on the parent-grain path structurally: both terms use the same carve figure, so
+  the difference cannot go negative even when a chargeback shrinks the carve
+  between two partials, where the legacy `carveTarget − Σ ledger entries` needs
+  its `> 0` test to stay honest.
+- **§3.6 reconcile + §3.3d residual metric** —
+  `payment-service/src/services/allocation-reconcile.ts`, a **sibling** of
+  `reconcile-ledger`, not part of it: that file's `CRITICAL_CHECKS` holds five
+  HALTING checks and a default-deny catch-all, and an allocation check added
+  there is one edit away from halting payouts because a webhook was slow. Both
+  sweeps alert at ERROR and never halt. Wired into the ledger-reconcile worker
+  (3×/day) in its own try/catch, after the parity run, so a Stripe outage cannot
+  cost us the halting decision above it.
+  - **No watermark, deliberately.** §3.6 warns a watermark over
+    `allocation_synced_at` must round-trip at Postgres precision. This sweep needs
+    none: `syncAllocations` already rotates oldest-first past
+    `allocation_sync_freshness_hours`, so taking the MOST RECENTLY SYNCED batch
+    walks a moving window over the whole population, comparing only figures fresh
+    enough that a difference means something. No stored position, no precision to
+    lose.
+  - The divergence figure is deliberately **not** `GREATEST(0, …)` — a model that
+    has drawn past zero is exactly the state worth alerting on, and flooring it
+    (as `lockFundingSources` correctly does, where an under-draw is safe) would
+    hide the magnitude.
+  - The residual metric returns **null, not 0 bps**, for an empty window: no
+    payouts is no measurement, and 0 would read as perfect coverage and satisfy
+    the alert forever on a platform whose payout cycle had stopped.
+- **§3.3f `scripts/sweep-allocated-dust.ts`** — report-only by default, `--apply`
+  to issue Balance Transfers, `--max-pence` (default 100) for what counts as
+  dust. It refuses a charge with any `pending` child, and its header names the
+  trap: if this finds POUNDS the fee proration is what to check, not the
+  threshold.
+- **Coverage.** +7 DB-backed tribute tests and +5 reconciliation tests in
+  `segregation-assembly-integration.test.ts` (26 total), +5 `prorateCarveReversal`
+  and +6 `allocation-reconcile` unit tests. **Fifteen mutations were run; all but
+  one turned a suite red, and the survivor was fixed rather than explained away**
+  — dropping `allocated_pence IS NOT NULL` from the candidate SQL left everything
+  green, because the fixture's sibling guard excluded the row anyway. The test now
+  poses the combination the guard exists for (synced-stamped, no figure) and
+  detects. The neighbouring `allocation_synced_at IS NOT NULL` guard is genuinely
+  redundant, measured the same way, and says so in its own comment rather than
+  carrying a contrived fixture.
+
 ### 10.2 Divergences from the spec above — read these, they are deliberate
 
 1. **`payout_transfers.reversed_pence` is a column the spec does not name, and the design
@@ -1097,12 +1176,11 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
 
 ### 10.3 Not built — the honest remainder
 
-- **§3.4 the TRIBUTE cycle.** Untouched. Inert while `TRIBUTES_ENABLED` is off, but
-  leaving it unbuilt is how that flag becomes unflippable later. The shape is known and
-  smaller than the publication one: each `tribute_accruals` row is a unit with a real
-  preferred settlement and zero fee, and the child carve apportions across those units
-  through the existing `apportionCarve` (with the same two assertions the writer cycle
-  makes). `tribute_accruals.payout_transfer_id` already exists from migration 165.
+**All three payout cycles, the reconcile sweep, the residual metric and the dust
+script are now built** (§10.1 / §10.1a / §10.1b). What is left is one measured
+decision, one known interaction, and the parts of the Stripe-facing loop no test
+in this repo can reach.
+
 - **A publication split is ONE indivisible unit, so it never spreads across charges.**
   Per §3.4 as written, but worth stating as a known limitation rather than leaving it
   implicit: a pool spans many charges by construction, so a member's share can exceed any
@@ -1111,10 +1189,23 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
   in the §3.3d metric — which is the measurement that should decide whether a divisible
   unit is worth the fee-proration rounding it would reintroduce. Do not decide it before
   the metric exists.
-- **§3.6 reconcile**, **§3.3d residual metric** (the dial exists; nothing reads it),
-  **§3.3f Balance-Transfer dust script**.
-- **Test coverage, and what it still does not reach.** The flag-ON assembly now has 14
-  DB-backed, mutation-verified tests (§10.1a). What they do NOT cover is
+- **The slice cap and the carve interact, and the interaction over-carves.** Found
+  while building the tribute cycle; it is **pre-existing in the shipped writer
+  cycle** and the tribute cycle now reproduces its shape deliberately rather than
+  diverging from it. The carve is scoped to the reads/accruals claimed *this*
+  cycle and is apportioned across ALL units **before** packing; units past
+  `payout_max_slices` are then un-claimed and roll to the next cycle, where their
+  carve is counted **again** — while this cycle already collected it, possibly
+  from a different unit. The recipient is permanently short by the overlap and
+  the money stays in platform balance. Needs BOTH tributes live AND an overflow
+  (a writer whose earnings span more than `payout_max_slices` charges), so it is
+  inert today on two counts. Not fixed here because the honest fix is not local —
+  the carve determines the nets, the nets determine the packing, and the packing
+  determines the overflow, so excluding overflowed units from the carve is a
+  fixpoint. **This is a third input to §5 step 0**: the slice distribution that
+  sets `payout_max_slices` also decides how reachable this is.
+- **Test coverage, and what it still does not reach.** The flag-ON assembly now has 26
+  DB-backed, mutation-verified tests (§10.1a, §10.1b). What they do NOT cover is
   `executePendingChildren`'s Stripe call itself — it drives the module-level `pool`, so it
   is unreachable from inside a rolled-back transaction, and the terminal/ambiguous split,
   the row-stable key and the flip-gated ledger emit remain pinned only by the mock-based

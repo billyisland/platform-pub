@@ -1,4 +1,5 @@
 import { runLedgerReconcileAndEnforce } from "../services/reconcile-ledger.js";
+import { runAllocationReconcile } from "../services/allocation-reconcile.js";
 import logger from "../lib/logger.js";
 
 // =============================================================================
@@ -54,6 +55,27 @@ export function startLedgerReconcileWorker(): void {
         );
       } catch (err) {
         logger.error({ err }, "Ledger reconcile sweep failed");
+      }
+
+      // The funds-segregation sweeps (FUNDS-SEGREGATION §3.6 + §3.3d), in their
+      // OWN try/catch and after the ledger checks. They alert and never halt, so
+      // a Stripe outage here must not cost us the parity run above — and
+      // conversely, a halt decided above must already be durable before any
+      // Stripe call is made. No-op while STRIPE_ALLOCATED_FUNDS is off.
+      try {
+        const allocation = await runAllocationReconcile();
+        if (allocation.checked > 0 || allocation.residual) {
+          logger.info(
+            {
+              checked: allocation.checked,
+              diverged: allocation.divergences.length,
+              residualBps: allocation.residual?.residualBps ?? null,
+            },
+            "Allocation reconcile sweep complete",
+          );
+        }
+      } catch (err) {
+        logger.error({ err }, "Allocation reconcile sweep failed");
       } finally {
         scheduleNext();
       }

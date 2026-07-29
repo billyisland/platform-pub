@@ -4,9 +4,23 @@ import type { PoolClient } from 'pg'
 import {
   packUnits,
   prorateWithheldFee,
+  prorateCarveReversal,
   type EarningUnit,
 } from '../src/lib/allocation-packer.js'
-import { PUBLICATION_PAYOUT_COMPLETE_SQL } from '../src/services/payout.js'
+import {
+  PUBLICATION_PAYOUT_COMPLETE_SQL,
+  TRIBUTE_CHILD_CARVE_SQL,
+  TRIBUTE_CHILD_ADVANCE_SQL,
+  TRIBUTE_CHILD_VOID_SQL,
+  TRIBUTE_CHILD_RELEASE_SQL,
+  TRIBUTE_CHILDLESS_ADVANCE_SQL,
+} from '../src/services/payout.js'
+import {
+  ALLOCATION_DIVERGENCE_CANDIDATES_SQL,
+  RESIDUAL_SHARE_SQL,
+  summariseResidual,
+  type DivergenceCandidate,
+} from '../src/services/allocation-reconcile.js'
 import { RECORD_REFUND_DRAW_SQL } from '../src/services/settlement.js'
 import {
   lockFundingSources,
@@ -122,13 +136,18 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
   ): Promise<string> {
     const s = uniq()
     const { rows } = await raw.query<{ id: string }>(
+      // The payment-intent id is what the §3.6 sweep re-reads from Stripe, so
+      // it must be present or that sweep's candidate filter is never actually
+      // exercised — every fixture would fall out of the query for the wrong
+      // reason and its NOT NULL guards would test nothing.
       `INSERT INTO tab_settlements
          (reader_id, tab_id, amount_pence, platform_fee_pence, net_to_writers_pence,
-          stripe_charge_id, trigger_type, status, allocated_pence, allocation_synced_at)
-       VALUES ($1, $2, $3, 0, $3, $4, 'threshold', 'completed', $5,
-               CASE WHEN $5::int IS NULL THEN NULL ELSE now() END)
+          stripe_charge_id, stripe_payment_intent_id, trigger_type, status,
+          allocated_pence, allocation_synced_at)
+       VALUES ($1, $2, $3, 0, $3, $4, $5, 'threshold', 'completed', $6,
+               CASE WHEN $6::int IS NULL THEN NULL ELSE now() END)
        RETURNING id`,
-      [readerId, tabId, amountPence, `ch_${s}`, allocatedPence],
+      [readerId, tabId, amountPence, `ch_${s}`, `pi_${s}`, allocatedPence],
     )
     return rows[0].id
   }
@@ -681,4 +700,590 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
       expect(rowCount).toBe(0)
     })
   })
+
+  // ==========================================================================
+  // §3.4 — the tribute cycle
+  //
+  // The easy one, structurally: each `tribute_accruals` row is a unit with a
+  // real preferred settlement (its read's) and zero fee, because the accrual is
+  // carved out of the author's ALREADY-post-fee net. What is not easy is the
+  // ledger around it — the author's carve is debited per child, from a state
+  // the completion transaction is about to change — so that is what these
+  // exercise, using the service's own statements.
+  //
+  // Inert in production while TRIBUTES_ENABLED is off, which is exactly why it
+  // is worth pinning now: this is code that will be switched on by someone who
+  // was not here.
+  // ==========================================================================
+
+  describe('the tribute cycle', () => {
+    it('packs an accrual onto the charge its own read was settled on, and restates the parent', async () => {
+      const s1 = await insertSettlement(1000, 1000)
+      const s2 = await insertSettlement(1000, 1000)
+      const { tributeId, inspirerId } = await insertTribute()
+      const a1 = await insertAccrual(tributeId, 300, s1)
+      const a2 = await insertAccrual(tributeId, 200, s2)
+      const payoutId = await insertTributePayout(tributeId, inspirerId, 500)
+      await claimAccruals(payoutId, [a1.accrualId, a2.accrualId])
+
+      const sources = await lockFundingSources(client, [s1, s2])
+      const { slices } = packUnits(
+        [tributeUnit(a1.accrualId, 300, s1), tributeUnit(a2.accrualId, 200, s2)],
+        sources,
+        { maxSlices: MAX_SLICES },
+      )
+      const childIds = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+      for (let i = 0; i < slices.length; i++) {
+        await stampAccruals(childIds[i], slices[i].units.map((u) => u.id))
+      }
+
+      // Zero fee, so the draw is the net alone — the accrual has already had the
+      // platform's cut taken out of it upstream.
+      expect(await drawTotal(s1)).toBe(300)
+      expect(await remainderOf(s1)).toBe(700)
+
+      const children = await childrenOf('tribute_payouts', payoutId)
+      expect(children).toHaveLength(2)
+      for (const c of children) await markCompleted(c.id, `tr_${c.id.slice(0, 8)}`)
+
+      const done = await completeParentIfSettled(client, 'tribute_payouts', payoutId)
+      expect(done.completed).toBe(true)
+      expect(done.paidPence).toBe(500)
+
+      const { rows } = await raw.query<{ status: string; amount_pence: string }>(
+        `SELECT status, amount_pence FROM tribute_payouts WHERE id = $1`,
+        [payoutId],
+      )
+      expect(rows[0].status).toBe('completed')
+      expect(parseInt(rows[0].amount_pence, 10)).toBe(500)
+    })
+
+    it('reads the author\'s carve BEFORE the advance, which is the whole ordering contract', async () => {
+      // The debit is the accruals' GROSS and it is read from `state = 'released'`
+      // — so it MUST be taken before `advanceUnits` flips them to 'paid', which
+      // is why postLedger runs first inside the shared completion transaction.
+      // Read after, it sums 0 and the author silently keeps earnings that left
+      // them. Both statements are the service's own, so the order they depend on
+      // cannot drift apart from production.
+      const settlement = await insertSettlement(1000, 1000)
+      const { tributeId, inspirerId } = await insertTribute()
+      const a1 = await insertAccrual(tributeId, 300, settlement)
+      const payoutId = await insertTributePayout(tributeId, inspirerId, 300)
+      await claimAccruals(payoutId, [a1.accrualId])
+
+      const sources = await lockFundingSources(client, [settlement])
+      const { slices } = packUnits([tributeUnit(a1.accrualId, 300, settlement)], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      const [childId] = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+      await stampAccruals(childId, [a1.accrualId])
+
+      expect(await carveFor(childId)).toBe(300)
+      await raw.query(TRIBUTE_CHILD_ADVANCE_SQL, [childId])
+      // The paired control — the same statement, one transition later. This is
+      // the number production would post if the two hooks were ever reordered.
+      expect(await carveFor(childId)).toBe(0)
+
+      const { rows } = await raw.query<{ state: string }>(
+        `SELECT state FROM tribute_accruals WHERE id = $1`,
+        [a1.accrualId],
+      )
+      expect(rows[0].state).toBe('paid')
+    })
+
+    it('debits the accrual\'s GROSS, not the child\'s post-carve net', async () => {
+      // The onward carve to this node's children flows from the INSPIRER, not
+      // the author, so the whole accrual left the author here. A child whose net
+      // the onward carve reduced still debits the author in full.
+      const settlement = await insertSettlement(1000, 1000)
+      const { tributeId, inspirerId } = await insertTribute()
+      const a1 = await insertAccrual(tributeId, 300, settlement)
+      const payoutId = await insertTributePayout(tributeId, inspirerId, 200)
+      await claimAccruals(payoutId, [a1.accrualId])
+
+      // net 200 after a 100p onward carve, but the accrual row still reads 300.
+      const sources = await lockFundingSources(client, [settlement])
+      const { slices } = packUnits([tributeUnit(a1.accrualId, 200, settlement)], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      const [childId] = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+      await stampAccruals(childId, [a1.accrualId])
+
+      const children = await childrenOf('tribute_payouts', payoutId)
+      expect(children[0].net_pence).toBe(200)
+      expect(await carveFor(childId)).toBe(300)
+    })
+
+    it('releases exactly the failed child\'s accruals, and VOIDS one whose read was charged back', async () => {
+      // Per-child scoping is the point: a sibling that paid must not be disturbed.
+      // And a claimed accrual whose read was clawed back mid-flight is terminal —
+      // the chargeback planner already reversed it as-if-paid, so releasing it
+      // would let the next cycle re-pay money that came back.
+      const s1 = await insertSettlement(1000, 1000)
+      const s2 = await insertSettlement(1000, 1000)
+      const { tributeId, inspirerId } = await insertTribute()
+      const good = await insertAccrual(tributeId, 200, s1)
+      const clawed = await insertAccrual(tributeId, 100, s1)
+      const sibling = await insertAccrual(tributeId, 400, s2)
+      const payoutId = await insertTributePayout(tributeId, inspirerId, 700)
+      await claimAccruals(payoutId, [good.accrualId, clawed.accrualId, sibling.accrualId])
+
+      const sources = await lockFundingSources(client, [s1, s2])
+      const { slices } = packUnits(
+        [
+          tributeUnit(good.accrualId, 200, s1),
+          tributeUnit(clawed.accrualId, 100, s1),
+          tributeUnit(sibling.accrualId, 400, s2),
+        ],
+        sources,
+        { maxSlices: MAX_SLICES },
+      )
+      const childIds = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+      for (let i = 0; i < slices.length; i++) {
+        await stampAccruals(childIds[i], slices[i].units.map((u) => u.id))
+      }
+      const doomed = childIds[slices.findIndex((s) => s.settlementId === s1)]
+      const survivor = childIds[slices.findIndex((s) => s.settlementId === s2)]
+
+      // The clawed-back read flips terminal while the transfer is in flight.
+      await raw.query(
+        `UPDATE read_events SET state = 'charged_back' WHERE id = $1`,
+        [clawed.readId],
+      )
+
+      expect(await failChild(client, doomed, 'transfer_rejected')).toBe(true)
+      const { rows: voided } = await raw.query(TRIBUTE_CHILD_VOID_SQL, [doomed])
+      await raw.query(TRIBUTE_CHILD_RELEASE_SQL, [doomed])
+
+      expect(voided.map((r) => parseInt(r.amount_pence, 10))).toEqual([100])
+      expect(await accrualState(clawed.accrualId)).toEqual({
+        state: 'voided',
+        claimed: false,
+        child: null,
+      })
+      expect(await accrualState(good.accrualId)).toEqual({
+        state: 'released',
+        claimed: false, // unclaimed ⇒ the next cycle re-pays it
+        child: null,
+      })
+      // The sibling on the other charge is untouched — still claimed, still
+      // stamped, its transfer unaffected by its neighbour's rejection.
+      expect(await accrualState(sibling.accrualId)).toEqual({
+        state: 'released',
+        claimed: true,
+        child: survivor,
+      })
+      // And the failed child's allocation is back in the budget.
+      expect(await remainderOf(s1)).toBe(1000)
+    })
+
+    it('advances the carve-zeroed accruals at parent completion, exactly once', async () => {
+      // An accrual the onward carve consumed entirely gets no child (Stripe
+      // rejects amount: 0) but keeps its parent claim. Leaving it 'released'
+      // would let the next cycle claim and pay it a second time.
+      //
+      // The RETURNING is the single-shot gate the root carve entry hangs on:
+      // `completeParentIfSettled` reports `completed` from a tally rather than
+      // from its own UPDATE's rowCount, so it cannot supply one, and a ledger
+      // post is not idempotent the way a state-filtered UPDATE is.
+      const settlement = await insertSettlement(1000, 1000)
+      const { tributeId, inspirerId } = await insertTribute()
+      const paidUnit = await insertAccrual(tributeId, 400, settlement)
+      const consumed = await insertAccrual(tributeId, 150, settlement)
+      const payoutId = await insertTributePayout(tributeId, inspirerId, 400)
+      await claimAccruals(payoutId, [paidUnit.accrualId, consumed.accrualId])
+
+      const sources = await lockFundingSources(client, [settlement])
+      const { slices } = packUnits([tributeUnit(paidUnit.accrualId, 400, settlement)], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      const [childId] = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+      await stampAccruals(childId, [paidUnit.accrualId])
+      await markCompleted(childId, 'tr_zeroed')
+
+      const first = await raw.query<{ amount_pence: string }>(
+        TRIBUTE_CHILDLESS_ADVANCE_SQL,
+        [payoutId],
+      )
+      expect(first.rows.map((r) => parseInt(r.amount_pence, 10))).toEqual([150])
+      expect(await accrualState(consumed.accrualId)).toMatchObject({ state: 'paid' })
+
+      // Re-running finalisation — a resume sweep, a stray transfer.paid — must
+      // add nothing. A carve posted off `first` would double on `second`.
+      const second = await raw.query(TRIBUTE_CHILDLESS_ADVANCE_SQL, [payoutId])
+      expect(second.rows).toHaveLength(0)
+
+      // The stamped one is NOT swept up by this statement: it is the child's to
+      // advance, and it already was.
+      expect(await accrualState(paidUnit.accrualId)).toMatchObject({ child: childId })
+    })
+
+    it('fails a tribute parent OUTRIGHT when every child failed, rather than leaving a zombie', async () => {
+      // The tribute branch of completeParentIfSettled has its own SQL, so it
+      // needs its own proof: a parent left 'pending' with no pending child is
+      // revisited by the resume sweep every cycle and never resolved.
+      const settlement = await insertSettlement(1000, 1000)
+      const { tributeId, inspirerId } = await insertTribute()
+      const a1 = await insertAccrual(tributeId, 300, settlement)
+      const payoutId = await insertTributePayout(tributeId, inspirerId, 300)
+      await claimAccruals(payoutId, [a1.accrualId])
+
+      const sources = await lockFundingSources(client, [settlement])
+      const { slices } = packUnits([tributeUnit(a1.accrualId, 300, settlement)], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      const [childId] = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+      await failChild(client, childId, 'transfer_rejected')
+
+      const outcome = await completeParentIfSettled(client, 'tribute_payouts', payoutId)
+      expect(outcome.completed).toBe(false)
+      expect(outcome.failedOutright).toBe(true)
+
+      const { rows } = await raw.query<{ status: string; failed_reason: string | null }>(
+        `SELECT status, failed_reason FROM tribute_payouts WHERE id = $1`,
+        [payoutId],
+      )
+      expect(rows[0].status).toBe('failed')
+      expect(rows[0].failed_reason).toContain('failed')
+    })
+
+    it('reverses one child\'s carve in proportion to THAT child, leaving its sibling alone', async () => {
+      // The parent-grain guard sums `tribute_payout_reversal` entries against the
+      // payout row; N children share that ref, so it cannot tell them apart. The
+      // child's own `reversed_pence` can, and the carve re-credit is prorated
+      // against it — over the carve of the CHILD's accruals, not the payout's.
+      const s1 = await insertSettlement(1000, 1000)
+      const s2 = await insertSettlement(1000, 1000)
+      const { tributeId, inspirerId } = await insertTribute()
+      const a1 = await insertAccrual(tributeId, 400, s1)
+      const a2 = await insertAccrual(tributeId, 200, s2)
+      const payoutId = await insertTributePayout(tributeId, inspirerId, 600)
+      await claimAccruals(payoutId, [a1.accrualId, a2.accrualId])
+
+      const sources = await lockFundingSources(client, [s1, s2])
+      const { slices } = packUnits(
+        [tributeUnit(a1.accrualId, 400, s1), tributeUnit(a2.accrualId, 200, s2)],
+        sources,
+        { maxSlices: MAX_SLICES },
+      )
+      const childIds = await insertChildren(client, 'tribute_payouts', payoutId, slices)
+      for (let i = 0; i < slices.length; i++) {
+        await stampAccruals(childIds[i], slices[i].units.map((u) => u.id))
+      }
+      const first = childIds[slices.findIndex((s) => s.settlementId === s1)]
+      const second = childIds[slices.findIndex((s) => s.settlementId === s2)]
+      for (const id of childIds) {
+        await markCompleted(id, `tr_${id.slice(0, 8)}`)
+        await raw.query(TRIBUTE_CHILD_ADVANCE_SQL, [id])
+      }
+
+      const child = (await childrenOf('tribute_payouts', payoutId)).find((c) => c.id === first)!
+      // Half of the 400p child comes back, staged.
+      expect(await reverseChild(client, child, 200)).toBe(200)
+      expect(prorateCarveReversal(await paidCarveFor(first), 400, 0, 200)).toBe(200)
+      // A redelivery of the same cumulative figure adds nothing.
+      expect(await reverseChild(client, child, 200)).toBe(0)
+
+      // The sibling is untouched — the whole reason for re-keying off the child.
+      const { rows: sib } = await raw.query<{ reversed_pence: number; status: string }>(
+        `SELECT reversed_pence, status FROM payout_transfers WHERE id = $1`,
+        [second],
+      )
+      expect(sib[0].reversed_pence).toBe(0)
+      expect(sib[0].status).toBe('completed')
+
+      // Reversed funds return to the ALLOCATED state, not platform balance, so
+      // the charge's remainder grows back by exactly what came home.
+      expect(await remainderOf(s1)).toBe(1000 - 400 + 200)
+    })
+  })
+
+  // ==========================================================================
+  // §3.6 + §3.3d — reconciliation, the only visibility segregation has
+  //
+  // Both of these are SQL predicates, which is precisely the class a mocked
+  // `pool.query` cannot evaluate: a `FILTER`, an interval window, a correlated
+  // subquery. A mock would answer from a fixture whose shape the test chose and
+  // stay green against arithmetic that had silently changed.
+  // ==========================================================================
+
+  describe('reconciliation', () => {
+    it('reports what our model believes is left on each charge, net of every draw', async () => {
+      const settlement = await insertSettlement(5000, 5000)
+      const payoutId = await insertWriterPayout(900)
+
+      const sources = await lockFundingSources(client, [settlement])
+      const { slices } = packUnits([unit('u1', 900, 100, [settlement])], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      await insertChildren(client, 'writer_payouts', payoutId, slices)
+      await recordRefundDraw(settlement, 500)
+
+      const row = await divergenceCandidate(settlement)
+      // 5000 allocated − (900 + 100 transfer) − 500 refund.
+      expect(parseInt(row!.our_remaining, 10)).toBe(3500)
+    })
+
+    it('reports a NEGATIVE remainder rather than flooring it, because that is the alert', async () => {
+      // `lockFundingSources` floors its budget at 0 — an under-draw is safe
+      // there. Here the raw figure is the whole point: a model that has drawn
+      // past zero is exactly the state worth waking someone for, and flooring
+      // would hide the magnitude behind an ordinary-looking 0.
+      const settlement = await insertSettlement(1000, 1000)
+      await recordRefundDraw(settlement, 4000)
+
+      expect(await remainderOf(settlement)).toBe(0) // the packer's view
+      expect(parseInt((await divergenceCandidate(settlement))!.our_remaining, 10)).toBe(-3000)
+    })
+
+    it('never offers a charge it has not read back from Stripe', async () => {
+      // NULL allocated_pence means "not known to be drawable". Such a charge has
+      // no model figure to diverge FROM, so comparing it would manufacture a
+      // divergence out of our own ignorance — and silently, since the arithmetic
+      // would yield NULL and NULL is never divergent.
+      const unsynced = await insertSettlement(5000, null)
+      expect(await divergenceCandidate(unsynced)).toBeUndefined()
+
+      // `syncAllocations` writes `allocated_pence` and `allocation_synced_at`
+      // together, so in production the two guards are redundant and a test that
+      // seeded only the ordinary case would pass with EITHER of them deleted —
+      // which is no test of either. Pose the combination the pair exists for:
+      // stamped as synced, with no figure. Only the allocated_pence guard
+      // excludes this row.
+      await raw.query(
+        `UPDATE tab_settlements SET allocation_synced_at = now() WHERE id = $1`,
+        [unsynced],
+      )
+      expect(await divergenceCandidate(unsynced)).toBeUndefined()
+    })
+
+    it('counts the residual share over completed and REVERSED children, never failed ones', async () => {
+      // Reversed: the transfer happened and was funded from somewhere, and the
+      // reversal is a separate fact. Failed: nothing moved, so counting it would
+      // report coverage for money that never left.
+      const settlement = await insertSettlement(10000, 10000)
+      const payoutId = await insertWriterPayout(1000)
+      const allocated = await seedChild(payoutId, 'allocated', 600, settlement)
+      const residual = await seedChild(payoutId, 'platform_balance', 200, null)
+      const reversedResidual = await seedChild(payoutId, 'platform_balance', 200, null)
+      const failedResidual = await seedChild(payoutId, 'platform_balance', 9000, null)
+
+      await setChildStatus(allocated, 'completed', '1 day')
+      await setChildStatus(residual, 'completed', '1 day')
+      await setChildStatus(reversedResidual, 'reversed', '1 day')
+      await setChildStatus(failedResidual, 'failed', '1 day')
+
+      const { total, residual: residualPence } = await residualWindow()
+      expect(total).toBe(1000) // 600 + 200 + 200 — the failed 9000 is absent
+      expect(residualPence).toBe(400)
+      expect(summariseResidual(total, residualPence, 2000)).toMatchObject({
+        residualBps: 4000,
+        breached: true,
+      })
+    })
+
+    it('is a ROLLING window — a child older than 30 days no longer counts', async () => {
+      // The dial is a rolling-30-day share, so a historical spike must age out
+      // rather than keeping the alert lit forever.
+      const settlement = await insertSettlement(10000, 10000)
+      const payoutId = await insertWriterPayout(1000)
+      const recent = await seedChild(payoutId, 'allocated', 500, settlement)
+      const old = await seedChild(payoutId, 'platform_balance', 500, null)
+
+      await setChildStatus(recent, 'completed', '2 days')
+      await setChildStatus(old, 'completed', '31 days')
+
+      const { total, residual } = await residualWindow()
+      expect(total).toBe(500)
+      expect(residual).toBe(0)
+    })
+  })
+
+  // --- reconciliation fixtures ------------------------------------------------
+
+  async function divergenceCandidate(
+    settlementId: string,
+  ): Promise<DivergenceCandidate | undefined> {
+    // The service's OWN statement, imported — the remaining-budget arithmetic
+    // and the NOT NULL guard are properties of this SQL.
+    const { rows } = await raw.query<DivergenceCandidate>(
+      ALLOCATION_DIVERGENCE_CANDIDATES_SQL,
+      [500],
+    )
+    return rows.find((r) => r.id === settlementId)
+  }
+
+  async function residualWindow(): Promise<{ total: number; residual: number }> {
+    const { rows } = await raw.query<{ total: string; residual: string }>(
+      RESIDUAL_SHARE_SQL,
+      [30],
+    )
+    return {
+      total: parseInt(rows[0].total, 10),
+      residual: parseInt(rows[0].residual, 10),
+    }
+  }
+
+  /**
+   * A child written directly, so its funding and status can be posed. The
+   * rolled-back transaction means the window queries above see only these rows.
+   */
+  async function seedChild(
+    parentId: string,
+    funding: 'allocated' | 'platform_balance',
+    netPence: number,
+    settlementId: string | null,
+  ): Promise<string> {
+    const { rows: charge } = settlementId
+      ? await raw.query<{ stripe_charge_id: string }>(
+          `SELECT stripe_charge_id FROM tab_settlements WHERE id = $1`,
+          [settlementId],
+        )
+      : { rows: [{ stripe_charge_id: null as string | null }] }
+    const { rows } = await raw.query<{ id: string }>(
+      `INSERT INTO payout_transfers
+         (parent_table, parent_id, settlement_id, stripe_charge_id, funding, net_pence, status)
+       VALUES ('writer_payouts', $1, $2, $3, $4, $5, 'pending') RETURNING id`,
+      [parentId, settlementId, charge[0].stripe_charge_id, funding, netPence],
+    )
+    return rows[0].id
+  }
+
+  async function setChildStatus(childId: string, status: string, ago: string) {
+    await raw.query(
+      `UPDATE payout_transfers
+          SET status = $2, completed_at = now() - $3::interval
+        WHERE id = $1`,
+      [childId, status, ago],
+    )
+  }
+
+  // --- tribute fixtures -------------------------------------------------------
+
+  const tributeUnit = (id: string, netPence: number, settlementId: string): EarningUnit => ({
+    id,
+    source: 'tribute_accruals',
+    netPence,
+    // Zero, always: a tribute accrual is carved out of the author's already
+    // post-fee net, so there is no second fee to claim as an application fee.
+    feePence: 0,
+    preferredSettlementIds: [settlementId],
+  })
+
+  async function insertArticle(): Promise<string> {
+    const s = uniq()
+    const { rows } = await raw.query<{ id: string }>(
+      `INSERT INTO articles (writer_id, nostr_event_id, nostr_d_tag, title, slug, published_at)
+       VALUES ($1, $2, $2, $3, $2, now()) RETURNING id`,
+      [writerId, s, `Article ${s}`],
+    )
+    return rows[0].id
+  }
+
+  /** A live ROOT tribute on a fresh article, with an onboarded inspirer. */
+  async function insertTribute(): Promise<{
+    tributeId: string
+    inspirerId: string
+    articleId: string
+  }> {
+    const inspirerId = await insertAccount()
+    const articleId = await insertArticle()
+    const { rows } = await raw.query<{ id: string }>(
+      `INSERT INTO tributes
+         (article_id, author_account_id, percentage_bps, resolved_account_id, status, consent_at)
+       VALUES ($1, $2, 1000, $3, 'live', now()) RETURNING id`,
+      [articleId, writerId, inspirerId],
+    )
+    return { tributeId: rows[0].id, inspirerId, articleId }
+  }
+
+  /** A settled read plus the released accrual it produced. */
+  async function insertAccrual(
+    tributeId: string,
+    amountPence: number,
+    settlementId: string,
+  ): Promise<{ accrualId: string; readId: string }> {
+    const { rows: article } = await raw.query<{ article_id: string }>(
+      `SELECT article_id FROM tributes WHERE id = $1`,
+      [tributeId],
+    )
+    const { rows: read } = await raw.query<{ id: string }>(
+      `INSERT INTO read_events
+         (reader_id, article_id, writer_id, tab_id, amount_pence, state, tab_settlement_id)
+       VALUES ($1, $2, $3, $4, $5, 'platform_settled', $6) RETURNING id`,
+      [readerId, article[0].article_id, writerId, tabId, amountPence * 10, settlementId],
+    )
+    const { rows } = await raw.query<{ id: string }>(
+      `INSERT INTO tribute_accruals (tribute_id, read_event_id, amount_pence, state)
+       VALUES ($1, $2, $3, 'released') RETURNING id`,
+      [tributeId, read[0].id, amountPence],
+    )
+    return { accrualId: rows[0].id, readId: read[0].id }
+  }
+
+  async function insertTributePayout(
+    tributeId: string,
+    inspirerId: string,
+    amountPence: number,
+  ): Promise<string> {
+    const { rows } = await raw.query<{ id: string }>(
+      `INSERT INTO tribute_payouts
+         (tribute_id, inspirer_account_id, author_account_id, amount_pence, status)
+       VALUES ($1, $2, $3, $4, 'pending') RETURNING id`,
+      [tributeId, inspirerId, writerId, amountPence],
+    )
+    return rows[0].id
+  }
+
+  async function claimAccruals(payoutId: string, accrualIds: string[]) {
+    await raw.query(
+      `UPDATE tribute_accruals SET tribute_payout_id = $1 WHERE id = ANY($2)`,
+      [payoutId, accrualIds],
+    )
+  }
+
+  async function stampAccruals(childId: string, accrualIds: string[]) {
+    await raw.query(
+      `UPDATE tribute_accruals SET payout_transfer_id = $1 WHERE id = ANY($2)`,
+      [childId, accrualIds],
+    )
+  }
+
+  /** The service's own carve statement — the pre-advance figure. */
+  async function carveFor(childId: string): Promise<number> {
+    const { rows } = await raw.query<{ carve_pence: string }>(TRIBUTE_CHILD_CARVE_SQL, [childId])
+    return parseInt(rows[0].carve_pence, 10)
+  }
+
+  /** The reversal-side carve: 'paid', so a voided accrual is already excluded. */
+  async function paidCarveFor(childId: string): Promise<number> {
+    const { rows } = await raw.query<{ carve_pence: string }>(
+      `SELECT COALESCE(SUM(amount_pence), 0) AS carve_pence
+         FROM tribute_accruals
+        WHERE payout_transfer_id = $1 AND state = 'paid'`,
+      [childId],
+    )
+    return parseInt(rows[0].carve_pence, 10)
+  }
+
+  async function accrualState(accrualId: string): Promise<{
+    state: string
+    claimed: boolean
+    child: string | null
+  }> {
+    const { rows } = await raw.query<{
+      state: string
+      tribute_payout_id: string | null
+      payout_transfer_id: string | null
+    }>(
+      `SELECT state, tribute_payout_id, payout_transfer_id
+         FROM tribute_accruals WHERE id = $1`,
+      [accrualId],
+    )
+    return {
+      state: rows[0].state,
+      claimed: rows[0].tribute_payout_id !== null,
+      child: rows[0].payout_transfer_id,
+    }
+  }
 })

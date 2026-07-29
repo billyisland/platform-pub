@@ -88,7 +88,13 @@ LEDGER_PRIMITIVE="shared/src/lib/ledger.ts"
 # from 9 actual sites to 11. Segregation part 2 added the publication twins of
 # both (the per-child publication_split entry in
 # completePublicationSplitChildren and the per-child reversal in
-# reversePublicationSplitChild), taking it to 13. Every number here is RE-READ
+# reversePublicationSplitChild), taking it to 13. Part 3 (the TRIBUTE cycle)
+# added six: the per-child tribute_payout and its root tribute_carve twin in
+# tributeChildSpec.postLedger, the balancing tribute_carve in
+# releaseTributeChildRows, the childless-accrual tribute_carve in
+# finaliseTributePayoutParent, and the tribute_payout_reversal +
+# tribute_carve_reversal pair in reverseTributePayoutChild — taking it to 19.
+# Every number here is RE-READ
 # BY HAND against the call sites, not derived, and the exercise is the point:
 # the floor stood at 4 while
 # the file had 9, so it would have gone on passing had the segregation change
@@ -109,7 +115,7 @@ LEDGER_PRIMITIVE="shared/src/lib/ledger.ts"
 REGISTRY=(
   "payment-service/src/services/accrual.ts::2"
   "payment-service/src/services/settlement.ts::4"
-  "payment-service/src/services/payout.ts::13"
+  "payment-service/src/services/payout.ts::19"
   "payment-service/src/services/payout-children.ts::0"
   "gateway/src/routes/drives.ts::1"
   "gateway/src/routes/articles/subscription-convert.ts::1"
