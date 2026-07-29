@@ -216,6 +216,17 @@ to "settled" and tried again next cycle. Transfers, like charges, are split into
 double-send" (`isTerminalTransferError`) — and here the code is **extra**
 cautious, because the bad outcome is paying a writer *twice*.
 
+> **One payout, several transfers.** The above describes what happens today.
+> There is a finished-but-switched-off mode (**funds segregation**,
+> `STRIPE_ALLOCATED_FUNDS`) in which each reader's charge is locked so it can
+> only ever reach a writer's account — never be spent on anything else. Under it
+> a payout stops being one transfer and becomes one *per charge drawn on*, each
+> naming the charge that funds it. Nothing about who is owed what changes; only
+> where the money is drawn from. A single one of those transfers failing is an
+> ordinary event — that writer is paid the rest and the remainder is retried next
+> cycle — rather than the whole payout getting stuck. See
+> `docs/adr/FUNDS-SEGREGATION-INTEGRATION.md`.
+
 > **Upvotes** ride along the same payout pipeline: the money you spent upvoting
 > an author is paid out to that author just like a read. **Publications** (shared
 > accounts) split each payout among their members by agreed percentages. There's
