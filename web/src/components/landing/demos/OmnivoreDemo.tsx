@@ -26,15 +26,21 @@ import type { VesselPalette } from '../../workspace/tokens'
 // forward reference to the payment argument below.
 //
 // THE FOUR BODIES ARE THE PAGE'S ONLY READABLE COPY, so they carry the weight of
-// the mix the pitch is claiming: a print critic, a reply that turns a reported
-// fact into an accusation, somebody standing in a field at four in the morning,
-// and a paid essay. Chatter and journalism in one column, which is the argument.
+// the mix the pitch is claiming: a critic with an enemy, a reply that turns a
+// reported fact into an accusation, somebody up a gantry at four in the morning,
+// and a paid essay on the story the other three are circling. Chatter and
+// journalism in one column, which is the argument.
+//
+// AND THEY HAVE TO BE WORTH READING. These four are the only sentences on `/`
+// that a visitor reads at their true size, so they are the demo's real proof:
+// a column of gentle literary noticing proves the product collects things nobody
+// clicks. Front-page register — a verdict, an accusation, a scene, a stake.
 //
 // THE PAID CARD IS THE PIECE THE READER DEMO OPENS — deliberately, and the one
 // post repeated anywhere on the page (see the note in CanvasDemo, which forbids
-// the rest). Ellis Marchetti's "The difficult second read" is priced here and
-// gated there, so a visitor scrolling down meets the same article twice and the
-// paywall lands on something they have already been given a reason to want.
+// the rest). Ellis Marchetti's "The men who bought the lights" is priced here
+// and gated there, so a visitor scrolling down meets the same article twice and
+// the paywall lands on something they have already been given a reason to want.
 //
 // SCALE. This runs at the LARGEST base of the three demos, because it is the
 // one carrying content the visitor is meant to actually read. See the register
@@ -60,24 +66,25 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
       <DemoVessel palette={palette} wall={8}>
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Marguerite Oyelaran" time="5d" />
-          <DemoTitle palette={palette}>The Ravelin</DemoTitle>
+          <DemoTitle palette={palette}>Nobody is going to tell you this film is bad</DemoTitle>
           <DemoBody palette={palette}>
-            The prettiest magazine anyone has sent me all year. Perfect-bound,
-            130-odd pages, matte covers, uncoated stock, full-colour plates
-            &mdash; and they are charging less for it than a pint&hellip;
+            Two hundred million dollars, four credited writers, and a marketing
+            department that decided what you think of it in March. I watched it
+            twice to be fair to it. It got worse&hellip;
           </DemoBody>
-          <DemoTag palette={palette}>via RSS &middot; The Common Room &rarr;</DemoTag>
+          <DemoTag palette={palette}>via RSS &middot; Nightshift &rarr;</DemoTag>
         </DemoPost>
 
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Ines Bergqvist" time="6h" />
           <DemoBody palette={palette}>
-            Eleven times. At some point &ldquo;we can&rsquo;t find it&rdquo;
-            stops being an accident and becomes a decision.
+            Four shells, one signature, and a seat on the board ninety days
+            later. That is not a coincidence. That is a receipt.
           </DemoBody>
           <DemoQuote palette={palette} source="Quoting The Meridian">
-            We have asked the council eleven times to produce the harbour lease.
-            Eleven times we have been told it is being looked for.
+            The department refused our request eleven times. The eleventh
+            refusal was signed by the official who now sits on Halcyon&rsquo;s
+            board.
           </DemoQuote>
           <DemoTag palette={palette}>
             via Bluesky &middot; bergqvist.bsky.social &rarr;
@@ -87,22 +94,22 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Aurelio Frame" time="7h" />
           <DemoBody palette={palette}>
-            Up at the point at four this morning for the meteors. Saw exactly
-            two, froze solid, drank the worst coffee of my life, and would do the
-            whole thing again tonight.
+            Watched the grid come back from the top of a container crane at four
+            this morning. The whole city relit district by district, like
+            somebody dragging a hand along a switchboard. Not sleeping tonight.
           </DemoBody>
           <DemoTag palette={palette}>via Nostr &middot; aurelio@driftpost.net &rarr;</DemoTag>
         </DemoPost>
 
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Ellis Marchetti" time="6d" paid />
-          <DemoTitle palette={palette}>The difficult second read</DemoTitle>
+          <DemoTitle palette={palette}>The men who bought the lights</DemoTitle>
           <DemoBody palette={palette}>
-            No book has ever changed my mind on the first pass. They sit on the
-            shelf for a year, or five, waiting for me to become someone who can
-            hear them&hellip;
+            Halcyon did not buy a power company. It bought the one thing a
+            government cannot switch off without having to explain itself, and it
+            did so in the week nobody was watching&hellip;
           </DemoBody>
-          <DemoTag palette={palette}>via RSS &middot; The Slow Hour &rarr;</DemoTag>
+          <DemoTag palette={palette}>via RSS &middot; Third Rail &rarr;</DemoTag>
         </DemoPost>
       </DemoVessel>
     </div>

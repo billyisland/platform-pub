@@ -70,13 +70,13 @@ const FIGURES: Figure[] = [
     key: 'omnivore',
     caption: 'Bluesky, Mastodon, Nostr, RSS and more — bring them all together in one place',
     description:
-      'A single all.haus feed in close-up. Four posts sit in one column in the same card style, each labelled with where it came from: an RSS essay, a Bluesky post quoting another, a Nostr note, and a newsletter post from RSS.',
+      'A single all.haus feed in close-up. Four posts sit in one column in the same card style, each labelled with where it came from: a film review from RSS, a Bluesky post quoting a newspaper’s reporting, a Nostr note written at four in the morning, and a paid essay from RSS.',
   },
   {
     key: 'reader',
     caption: 'Secure cryptographic paywall, no subscription required. Pay a few pence to read the one piece you’re actually interested in',
     description:
-      'A reading pane floating over a blurred workspace of feeds. Inside it an essay, titled and bylined to a small letter, breaks off a few lines in at a “Keep reading” panel: the price, forty pence, then a button to continue and a link to add a payment card, with a monthly subscription to the same letter offered underneath as the alternative.',
+      'A reading pane floating over a blurred workspace of feeds. Inside it an investigative essay, titled and bylined to a small political review, breaks off a few lines in at a “Keep reading” panel: the price, forty pence, then a button to continue and a link to add a payment card, with a monthly subscription to the same review offered underneath as the alternative.',
   },
 ]
 

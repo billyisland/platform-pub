@@ -679,9 +679,9 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    defensible retyped as markup: a named person's post becomes indistinguishable
    from words we put in their mouth, on a page whose job is to sell something.
    Bylines, publications, handles and bodies are all fictional (*The Meridian*,
-   *The Common Room*, *The Slow Hour* — shared across the three demos so they
-   read as one world). The protocol labels are the exception and must stay
-   literally true: they are the argument.
+   *Fenwick Wire*, *Third Rail* — shared across the three demos so they read as
+   one world; the masthead was recast by 7septies). The protocol labels are the
+   exception and must stay literally true: they are the argument.
 
 7quater. **The canvas and the reading pane** (2026-07-27, same day as 7ter and
    revising it). Two of the three demos are replaced; the omnivore column, which
@@ -893,6 +893,41 @@ plan as drafted; these are the places the plan and the code diverge, and why.
    is most of what a small photograph is once its detail has gone.
 
    **Verified in a browser** — see the retraction under *Still open* 7.
+
+7septies. **The invented world is a front page, not a parish magazine**
+   (2026-07-29). 7ter and 7quater settled that the demo content must be invented
+   and that the four omnivore bodies are the only copy on `/` a visitor reads at
+   true size. What neither settled is what those sentences should be ABOUT, and
+   the world that filled the gap was harbour leases, pilot whales, hand-set type,
+   an ageing footballer and a repainted gate: charming, literary, and inert. That
+   is a demonstration failure, not a taste one. The page's claim is that
+   everything worth reading fits in one place; a canvas of things nobody would
+   click argues the opposite while appearing to agree, and a paywall closing over
+   a gentle reminiscence proves only that the gate works — never that anyone
+   would pay forty pence to get past it.
+
+   So the subjects are recast to what a front page actually leads on, in the same
+   grammar and the same cast. **One story now crosses all three demos**: a
+   sovereign fund (*Halcyon*) taking control of the grid through four shells, the
+   minister who signed it taking a seat on the board ninety days later. It is
+   broken by *The Meridian* in feed 1, traded on in feed 1's quote card (the
+   market moved nine hours early), mocked in feed 3's chatter, turned from a
+   reported fact into an accusation by a Bluesky reply in the omnivore column,
+   and **paywalled as Ellis Marchetti's "The men who bought the lights"** in the
+   reader demo — which is the 7quater pairing, retitled at both ends. A visitor
+   who scrolls has met the story four times before being asked to pay for it,
+   which is the strongest form of the payment argument the page can make.
+
+   The rest of the spread is beats, not filler: science with a shortened
+   timeline, a critic with an enemy, a doping lab that shut on the Friday, an
+   infrastructure number. The masthead was recast with it — *The Common Room*,
+   *The Slow Hour*, *The Tidewatch* and *The Whip Room* out; *Third Rail*
+   (politics, and the £5/mo subscription target), *Deep Field*, *Nightshift*,
+   *Touchline* and *Fenwick Wire* in — because a publication name is a claim
+   about what kind of thing this is, and four sleepy ones made the whole world
+   read small. **The invented-content rule is untouched and so is the
+   no-repeats rule**; only the register moved. Register to hold: specific,
+   consequential, short of the verb — no wistfulness, no throat-clearing.
 
 7. **Three logged-in tool surfaces clear the band** — `/write`, `/admin/*`,
    `/traffology/*` — because the row mounts on every non-workspace route and

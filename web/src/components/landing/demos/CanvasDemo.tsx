@@ -166,78 +166,85 @@ function Card({
 // scroll, so a card that appears twice reads as the page having run out of
 // things to show. No post body, headline or quote is repeated across the three
 // files — the shared world is carried by the people and the publications, and by
-// stories crossing between them (the harbour lease is reported in feed 1, argued
-// about in feed 3, and quoted by a Bluesky reply in the omnivore demo), which is
+// one story crossing between them (the Halcyon grid sale is broken in feed 1,
+// traded on in feed 1's quote card, mocked in feed 3, quoted by a Bluesky reply
+// in the omnivore demo and paywalled as an essay in the reader demo), which is
 // the thing the product actually does and the thing a repeated card cannot show.
 //
-// AND IT IS NOT ALL LOCAL-NEWSPAPER FILLER. The subjects are deliberately spread
-// — an essay on power, an investigation, printing, sport, whales, the aurora, a
-// mystery about a repainted gate — because the page is claiming that everything
-// worth reading fits in one place, and a canvas of council minutes argues the
-// opposite while pretending to agree.
+// AND IT IS A FRONT PAGE, NOT A PARISH MAGAZINE. An earlier draft of this world
+// was all harbour leases, pilot whales and hand-set type: charming, literary, and
+// completely inert. Nobody clicks a canvas of council minutes, and a demo nobody
+// would click is arguing against the product while appearing to agree with it.
+// The subjects are now the ones a front page actually leads on — a leak, the
+// money moving before the story ran, a melting timeline, a film with an enemy —
+// and the spread across beats is what carries the claim that everything worth
+// reading fits in one place. Keep the register: specific, consequential, and
+// short of the verb. No wistfulness, no throat-clearing, no maundering.
 const FEED_1: DemoCard[] = [
   {
-    name: 'Tobias Wren',
+    name: 'The Meridian',
     time: '5d',
-    title: 'A theory of power',
-    body: 'Every cabinet is a seating plan. You can read a whole premiership in who has been put within arm’s reach of the wine, and who has been sent down to the far end…',
+    title: 'The Halcyon papers',
+    body: 'Four shell companies, one signature, and a department that spent six months insisting the file did not exist. It does. We have it — and so does the minister who signed it…',
     photo: true,
-    tag: 'via RSS · The Whip Room',
+    tag: 'via RSS · The Meridian',
   },
   {
-    name: 'Ines Bergqvist',
+    name: 'Halloran',
     time: '6h',
-    body: 'Thirty-eight, and still the quickest man on the pitch. Some of us are winded by the stairs at the Ravelin end.',
+    body: 'Up nine per cent nine hours before any of us knew. Either somebody is extraordinarily lucky or somebody reads their email.',
     quote: {
       source: 'Quoting Fenwick Wire',
-      text: 'He has signed for one more year, and on Saturday covered more ground than any player on the field.',
+      text: 'Halcyon Infrastructure closed up 9.4%, its strongest session since listing — hours ahead of publication.',
     },
     tag: 'via Bluesky',
   },
   {
-    name: 'Ellis Marchetti',
+    name: 'Tobias Wren',
     time: '6d',
     paid: true,
-    title: 'On not having an opinion yet',
-    body: 'The obligation to have a view by lunchtime is a recent invention, and I am fairly sure it has made us all worse company…',
-    tag: 'via RSS · The Slow Hour',
+    title: 'Nobody resigns in August',
+    body: 'The recess is not a pause in politics. It is where politics is actually done, and this one has been used to bury three things you were meant to miss…',
+    tag: 'via RSS · Third Rail',
   },
   {
-    name: 'The Meridian',
+    name: 'Deep Field',
     time: '1w',
-    title: 'Who actually owns the harbour?',
-    body: 'Four holding companies, two of them registered last spring, and one director’s signature on all of them. We spent three months following the paper…',
-    tag: 'via RSS · The Meridian',
+    title: 'It is melting from underneath',
+    body: 'The models said fifty years. The core says it started a decade ago. The team that found it spent eleven months trying to prove themselves wrong…',
+    tag: 'via RSS · Deep Field',
   },
 ]
 
 // Feed 2 runs at HEADLINE density, so these carry titles and no bodies: a
 // standfirst written here would simply never render, and leaving one in would
-// invite someone to "fix" the density later by showing it.
+// invite someone to "fix" the density later by showing it. They also have to
+// work with nothing under them, which is the discipline of a real headline —
+// a fact and a stake, no scene-setting.
 const FEED_2: DemoCard[] = [
-  { name: 'The Meridian', time: '1h', title: 'Four owners in one year: the harbour papers', tag: 'via RSS' },
-  { name: 'Fenwick Wire', time: '2h', title: 'One more season for the oldest man on the pitch', tag: 'via RSS' },
-  { name: 'The Common Room', time: '3h', title: 'The last woman in England casting type by hand', tag: 'via RSS' },
-  { name: 'The Tidewatch', time: '5h', title: 'Forty pilot whales off the point, and nobody knows why', tag: 'via Nostr' },
-  { name: 'Fenwick Wire', time: '6h', title: 'Rain again: the Ravelin cup rolls into a fourth week', tag: 'via RSS' },
-  { name: 'The Meridian', time: '8h', title: 'Nine years and £4m to site a forty-metre bridge', tag: 'via RSS' },
-  { name: 'The Tidewatch', time: '11h', title: 'Aurora warning tonight, as far south as the estuary', tag: 'via Nostr' },
+  { name: 'The Meridian', time: '1h', title: 'The signature, the seat, and the ninety days between', tag: 'via RSS' },
+  { name: 'Fenwick Wire', time: '2h', title: 'The market moved nine hours before the story did', tag: 'via RSS' },
+  { name: 'Deep Field', time: '3h', title: 'One drill core just deleted forty years from the forecast', tag: 'via RSS' },
+  { name: 'Nightshift', time: '5h', title: 'The year’s biggest film has no idea what it is about', tag: 'via Nostr' },
+  { name: 'Touchline', time: '6h', title: 'Three positive tests, and a lab that shut on the Friday', tag: 'via RSS' },
+  { name: 'The Meridian', time: '8h', title: 'Nine years, £4bn, and a bridge that cannot take a lorry', tag: 'via RSS' },
+  { name: 'Third Rail', time: '11h', title: 'The quiet, serious case for letting the lights go out', tag: 'via Nostr' },
 ]
 
 const FEED_3: DemoCard[] = [
-  { name: 'Halloran', time: '1h', body: 'Are the high-street cinemas all privately held now? Same slow death about every one of them.', tag: 'via Bluesky' },
-  { name: 'Aurelio Frame', time: '7h', body: 'Half the street out on the sea wall at dawn in dressing gowns, waiting for the whales. This town in one sentence.', tag: 'via Nostr' },
-  { name: 'Ines Bergqvist', time: '9h', body: 'Nine years to site a forty-metre bridge. I know people who have had entire children faster, with better paperwork.', tag: 'via Bluesky' },
-  { name: 'Halloran', time: '1d', body: 'Someone has repainted the ravelin gates overnight and not one soul in this town will admit to it.', tag: 'via Nostr' },
-  { name: 'Aurelio Frame', time: '1d', body: 'Two years of asking, and the harbour board has quietly published the seabed survey at half past four on a Friday.', tag: 'via Nostr' },
-  { name: 'Marguerite Oyelaran', time: '2d', body: 'Sold through by Thursday. We are going again, and this time on the good paper.', tag: 'via Bluesky' },
+  { name: 'Halloran', time: '1h', body: 'All four shells are registered to the same address above a dry cleaner’s. They did not even pretend.', tag: 'via Bluesky' },
+  { name: 'Aurelio Frame', time: '7h', body: 'The blackout maps are being drawn by people with no power, on phones with no signal, and they are better than the official ones.', tag: 'via Nostr' },
+  { name: 'Ines Bergqvist', time: '9h', body: 'Nine years to build a bridge that cannot take a lorry. I know people who have had entire children faster, with better paperwork.', tag: 'via Bluesky' },
+  { name: 'Halloran', time: '1d', body: 'Someone has put a mural on the substation overnight: the minister, four company names, and “90 DAYS”. Nobody will admit to it.', tag: 'via Nostr' },
+  { name: 'Aurelio Frame', time: '1d', body: 'Two years of asking, and the department published the survey at half past four on a Friday. It is always half past four on a Friday.', tag: 'via Nostr' },
+  { name: 'Marguerite Oyelaran', time: '2d', body: 'Three hundred people queued in the rain for a film no distributor will touch. Second screening Friday. Bring someone who disagrees with you.', tag: 'via Bluesky' },
 ]
 
 const FEED_4: DemoCard[] = [
-  { name: 'Marguerite Oyelaran', time: '5d', title: 'In defence of uncoated stock', body: 'Nobody warns you that the paper is half the argument…', tag: 'via RSS' },
-  { name: 'Ellis Marchetti', time: '6d', paid: true, title: 'What we lost with the letters page', body: 'A century of readers arguing in public, retired without ceremony…', tag: 'via RSS' },
-  { name: 'Rosalind Vane', time: '6d', title: 'How to be read', body: 'Three friends are hunting for agents. All three are asking the wrong question…', tag: 'via RSS' },
-  { name: 'Tobias Wren', time: '1w', title: 'The long recess', body: 'There is a kind of politics that only ever happens while the House is not sitting…', tag: 'via RSS' },
+  { name: 'Rosalind Vane', time: '5d', title: 'How to read a leak', body: 'Every cache has a shape, and the shape tells you who wanted you to have it…', tag: 'via RSS' },
+  { name: 'Ellis Marchetti', time: '6d', paid: true, title: 'The attention we sold', body: 'We handed over the whole thing for free, and this is the inventory of what they built with it…', tag: 'via RSS' },
+  { name: 'Marguerite Oyelaran', time: '6d', title: 'The film they tried to bury', body: 'No distributor, no stars, no running time anyone will book. Also the best thing this year…', tag: 'via RSS' },
+  { name: 'Tobias Wren', time: '1w', title: 'The emergency that never ended', body: 'Every temporary power in this country was introduced for six months. Not one has been given back…', tag: 'via RSS' },
 ]
 
 export function CanvasDemo({ dark }: { dark: boolean }) {

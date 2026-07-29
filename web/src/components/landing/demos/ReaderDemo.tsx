@@ -52,12 +52,19 @@ import { DemoVessel, DemoPost, DemoByline, DemoTitle, DemoBody, DemoTag } from '
 // are also DISTINCT from the other two demos' cards, per that same note; only
 // the article in the pane is repeated, and deliberately.
 //
-// THE ARTICLE IS THE OMNIVORE DEMO'S PAID CARD. Ellis Marchetti's "The difficult
-// second read" is priced in the feed above and gated here, and The Slow Hour is
-// the publication the subscription line offers — so a visitor is asked to pay
+// THE ARTICLE IS THE OMNIVORE DEMO'S PAID CARD. Ellis Marchetti's "The men who
+// bought the lights" is priced in the feed above and gated here, and Third Rail
+// is the publication the subscription line offers — so a visitor is asked to pay
 // for a piece they have already read the opening of and been told the price of,
 // rather than for an anonymous slab of filler. If either end of that pairing is
 // rewritten, rewrite the other.
+//
+// AND THE PIECE HAS TO BE ONE A STRANGER WOULD PAY FORTY PENCE FOR. The whole
+// figure is an argument about willingness to pay, so a gate closing over a
+// gentle literary reminiscence demonstrates nothing except that the gate works.
+// It closes over the story the rest of the page has spent three demos building
+// — the Halcyon grid sale — at the paragraph where the writer says what they
+// have and stops.
 //
 // WHY NOT REUSE PaywallGate. It takes fifteen props about a real reader's real
 // balance, fires an IntersectionObserver, POSTs a nudge-shown event, and renders
@@ -83,18 +90,18 @@ const FLOOR: { scheme: 'basic' | 'summer' | 'autumn' | 'spring'; cards: FloorCar
       {
         name: 'Tobias Wren',
         time: '5d',
-        title: 'The whips’ arithmetic',
-        body: 'Nobody has ever lost a vote they could count. What follows is three weeks of somebody failing to count…',
+        title: 'How to lose a vote you have already won',
+        body: 'Nobody loses a count they have done. What follows is three weeks of a government declining to do one…',
         tag: 'via RSS',
       },
-      { name: 'Halloran', time: '6h', body: 'The gates have been repainted again. Different colour this time.', tag: 'via Bluesky' },
+      { name: 'Halloran', time: '6h', body: 'They painted over the mural at noon. It was back up by six.', tag: 'via Bluesky' },
     ],
   },
   {
     scheme: 'summer',
     cards: [
-      { name: 'The Tidewatch', time: '1h', body: 'The whales are still off the point on the fourth morning…', tag: 'via Nostr' },
-      { name: 'Fenwick Wire', time: '2h', body: 'Four weeks of rain, and the Ravelin cup still has no winner…', tag: 'via RSS' },
+      { name: 'Deep Field', time: '1h', body: 'The ice is going from underneath, and the models are still arguing about the surface…', tag: 'via Nostr' },
+      { name: 'Fenwick Wire', time: '2h', body: 'Halcyon down eleven per cent, and briefing hard against its own board…', tag: 'via RSS' },
     ],
   },
   {
@@ -103,7 +110,7 @@ const FLOOR: { scheme: 'basic' | 'summer' | 'autumn' | 'spring'; cards: FloorCar
       {
         name: 'Ines Bergqvist',
         time: '1h',
-        body: 'Went for one drink to hear about the harbour lease and came home at midnight with a photocopy of it.',
+        body: 'Went for one drink with a man who wanted to talk about drainage. Came home at midnight with a photocopy of the lease.',
         tag: 'via Bluesky',
       },
     ],
@@ -111,7 +118,7 @@ const FLOOR: { scheme: 'basic' | 'summer' | 'autumn' | 'spring'; cards: FloorCar
   {
     scheme: 'spring',
     cards: [
-      { name: 'Marguerite Oyelaran', time: '5d', paid: true, title: 'Twelve magazines, one desk', body: 'What the small presses sent me this month, in the order they arrived…', tag: 'via RSS' },
+      { name: 'Marguerite Oyelaran', time: '5d', paid: true, title: 'The year in films nobody would fund', body: 'Twelve of them, one desk, and the reason none will reach a cinema near you…', tag: 'via RSS' },
     ],
   },
 ]
@@ -179,7 +186,7 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
           className="font-serif"
           style={{ fontSize: '1.65em', lineHeight: 1.15, fontWeight: 600, color: PANE_INK, marginBottom: '0.45em' }}
         >
-          The difficult second read
+          The men who bought the lights
         </div>
         <div
           className="font-mono"
@@ -191,18 +198,20 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
             marginBottom: '1.3em',
           }}
         >
-          Ellis Marchetti &middot; The Slow Hour
+          Ellis Marchetti &middot; Third Rail
         </div>
 
         <div
           className="font-serif ah-demo-art"
           style={{ color: PANE_INK, ['--ah-demo-pane' as string]: 'var(--ah-glasshouse)' }}
         >
-          No book has ever changed my mind on the first reading. Not one. The
-          ones that did the work sat on a shelf for a year, or five, waiting for
-          me to become the sort of person who could hear them &mdash; and then
-          ambushed me on a wet Tuesday with a sentence I had already read twice
-          and never once understood.
+          Halcyon did not buy a power company. It bought the switch. Everything
+          else &mdash; the four holding companies, the ninety days between a
+          signature and a seat on the board, the eleven refused requests &mdash;
+          is the paperwork you generate when you already know how the thing ends.
+          I have spent six weeks with those documents. The striking part is not
+          the theft. It is how bored everyone involved appears to have been by
+          it.
         </div>
 
         <div style={rule} />
@@ -248,7 +257,7 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
               unit at render. Whitespace does the same work and is the sitewide
               answer. */}
           <div style={{ fontSize: '0.92em', color: PANE_MUTED, margin: '3em 0 1em' }}>
-            Or subscribe to The Slow Hour for{' '}
+            Or subscribe to Third Rail for{' '}
             <strong style={{ fontWeight: 500 }}>&pound;5.00/mo</strong> to read everything
           </div>
           <div
