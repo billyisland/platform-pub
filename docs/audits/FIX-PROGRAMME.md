@@ -23,6 +23,40 @@ starts.
 
 ## Progress
 
+- **2026-07-29 (the landing demos' copy, and the paywall figure nobody had looked at in
+  dark mode)** — the three `/` demos were rewritten for content, and one real defect fell
+  out of rendering them. **The copy.** The invented world had drifted into parody: a
+  transit operator posting timetable notices, ridership replies, weekend engineering
+  works, an "Open Thread 443", plus the same three or four cards repeated across all three
+  figures — a page claiming that everything worth reading fits in one place, illustrated
+  with council minutes. The cast and publications stay (they are what makes the three
+  demos one world); *Northgate Transit* is replaced by *The Tidewatch*, and the subjects
+  are now spread across an essay on power, an investigation, printing, sport, whales, the
+  aurora and a repainted gate, with the chatter written as chatter. **No post is repeated
+  across the three files** — a card seen twice reads as the page running out of things to
+  show — and the shared world is instead carried by stories *crossing* between them, which
+  is the thing the product actually does. The one deliberate exception is the pairing that
+  now runs through the payment argument: the paid card in the omnivore demo, the article
+  behind the gate, and the publication in the subscription line are all Ellis Marchetti's
+  *The difficult second read*, so the gate asks forty pence for something a visitor has
+  already read the opening of. The gated essay also **has a title and a byline** now; it
+  had neither, so the figure could only ever demonstrate the interruption, never what was
+  being bought. Notes recording all of this sit in `CanvasDemo` (the no-repeat rule),
+  `OmnivoreDemo` and `ReaderDemo` (the two ends of the pairing).
+
+  **The defect: the paywall pane was unreadable in dark mode, and had been since it
+  shipped.** `ReaderDemo`'s pane is a Glasshouse — `var(--ah-glasshouse)` — and the
+  landing vessel is a light island, so the pane resolves canonical WHITE in both modes.
+  Every piece of text on it was taking `palette.cardTitle`/`cardStandfirst`/`cardMeta`
+  from `paletteFor('basic', dark)`, which under the dark toggle is the LIGHT end of the
+  ramp, built for a dark card. Prose, "Keep reading", the price and the Subscribe button
+  all painted near-white on white; only the crimson button survived. Fixed by taking the
+  pane's text from the neutral slugs (`--ah-ink`/`--ah-grey-600`/`--ah-crimson`), which is
+  the fixed-light-surface rule in CLAUDE.md and is a no-op in light mode. The FLOOR keeps
+  the palette — those are feed cards and are meant to follow the toggle. Caught by
+  *rendering it*, which is the fourth time this page's own ADR note (§IX *Still open* 7)
+  has been right about that: it compiled, linted and read fine.
+
 - **2026-07-29 (funds segregation, part 3 — the tribute cycle, the only visibility it has,
   and a fifteenth mutation that survived)** — the third payout cycle, the §3.6 reconcile
   sweep, the §3.3d residual metric and the §3.3f dust script. **The segregation build is

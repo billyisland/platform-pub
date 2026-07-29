@@ -48,7 +48,16 @@ import { DemoVessel, DemoPost, DemoByline, DemoTitle, DemoBody, DemoTag } from '
 // THE BYLINES AND BODIES ON THE FLOOR ARE INVENTED — see the note in CanvasDemo,
 // whose invented world this shares. It matters even here, where the floor is
 // blurred to texture: blur is a rendering choice, and the names would still be
-// in the markup, in the DOM, and in view of anyone who reads it.
+// in the markup, in the DOM, and in view of anyone who reads it. The floor cards
+// are also DISTINCT from the other two demos' cards, per that same note; only
+// the article in the pane is repeated, and deliberately.
+//
+// THE ARTICLE IS THE OMNIVORE DEMO'S PAID CARD. Ellis Marchetti's "The difficult
+// second read" is priced in the feed above and gated here, and The Slow Hour is
+// the publication the subscription line offers — so a visitor is asked to pay
+// for a piece they have already read the opening of and been told the price of,
+// rather than for an anonymous slab of filler. If either end of that pairing is
+// rewritten, rewrite the other.
 //
 // WHY NOT REUSE PaywallGate. It takes fifteen props about a real reader's real
 // balance, fires an IntersectionObserver, POSTs a nudge-shown event, and renders
@@ -74,27 +83,27 @@ const FLOOR: { scheme: 'basic' | 'summer' | 'autumn' | 'spring'; cards: FloorCar
       {
         name: 'Tobias Wren',
         time: '5d',
-        title: 'A theory of power',
-        body: 'There are many considerations in appointing a cabinet: rewarding loyal supporters, balancing factions, keeping rivals away…',
+        title: 'The whips’ arithmetic',
+        body: 'Nobody has ever lost a vote they could count. What follows is three weeks of somebody failing to count…',
         tag: 'via RSS',
       },
-      { name: 'Ines Bergqvist', time: '6h', body: 'The timetable change already fixed this. Ridership didn’t fall.', tag: 'via Bluesky' },
+      { name: 'Halloran', time: '6h', body: 'The gates have been repainted again. Different colour this time.', tag: 'via Bluesky' },
     ],
   },
   {
     scheme: 'summer',
     cards: [
-      { name: 'The Meridian', time: '1h', body: 'Harbour scheme approved after a decade of objections…', tag: 'via RSS' },
-      { name: 'Fenwick Wire', time: '2h', body: 'Veteran striker signs one more year at thirty-eight…', tag: 'via RSS' },
+      { name: 'The Tidewatch', time: '1h', body: 'The whales are still off the point on the fourth morning…', tag: 'via Nostr' },
+      { name: 'Fenwick Wire', time: '2h', body: 'Four weeks of rain, and the Ravelin cup still has no winner…', tag: 'via RSS' },
     ],
   },
   {
     scheme: 'autumn',
     cards: [
       {
-        name: 'Halloran',
+        name: 'Ines Bergqvist',
         time: '1h',
-        body: 'Are the high-street cinemas owned by private equity now? Distinct whiff of the same slow death about them.',
+        body: 'Went for one drink to hear about the harbour lease and came home at midnight with a photocopy of it.',
         tag: 'via Bluesky',
       },
     ],
@@ -102,13 +111,29 @@ const FLOOR: { scheme: 'basic' | 'summer' | 'autumn' | 'spring'; cards: FloorCar
   {
     scheme: 'spring',
     cards: [
-      { name: 'Marguerite Oyelaran', time: '5d', paid: true, title: 'The Ravelin', body: 'The prettiest magazine I’ve reviewed so far…', tag: 'via RSS' },
+      { name: 'Marguerite Oyelaran', time: '5d', paid: true, title: 'Twelve magazines, one desk', body: 'What the small presses sent me this month, in the order they arrived…', tag: 'via RSS' },
     ],
   },
 ]
 
+// THE PANE'S TEXT IS THE NEUTRAL TOKENS, NOT THE FEED PALETTE — and until
+// 2026-07-29 it was the palette, which made the entire paywall figure unreadable
+// in dark mode. The pane is a Glasshouse: `--ah-glasshouse`, and the landing
+// vessel is a LIGHT ISLAND, so that slug resolves canonical WHITE in both modes.
+// The `palette` prop, meanwhile, is `paletteFor('basic', dark)` — under the dark
+// toggle its `cardTitle`/`cardStandfirst` are the LIGHT ends of the ramp, built
+// for a dark card. Title, prose, "Keep reading", the price and the Subscribe
+// button were all painting near-white on white; only the crimson button
+// survived. Neutral slugs are the fixed-light-surface rule (CLAUDE.md, the
+// Glasshouse exemption) and they are islanded here, so they resolve canonical in
+// both modes. The FLOOR keeps the palette — those are feed cards, and they are
+// meant to follow the toggle.
+const PANE_INK = 'var(--ah-ink)'
+const PANE_MUTED = 'var(--ah-grey-600)'
+const PANE_ACCENT = 'var(--ah-crimson)'
+
 export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: boolean }) {
-  const rule = { height: 2, background: palette.crimson, margin: '1.4em 0' }
+  const rule = { height: 2, background: PANE_ACCENT, margin: '1.4em 0' }
 
   return (
     <div className="ah-demo-reader" style={{ background: palette.interior }}>
@@ -138,18 +163,46 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
             draggable by any empty part of itself. Included because it is what
             tells a visitor this thing FLOATS. */}
         <div className="ah-demo-grip" aria-hidden="true" />
-        <div className="ah-demo-close" aria-hidden="true" style={{ color: palette.cardMeta }}>
+        <div className="ah-demo-close" aria-hidden="true" style={{ color: PANE_MUTED }}>
           &times;
+        </div>
+
+        {/* THE PIECE HAS A NAME, and before it did the gate was asking a
+            stranger for forty pence over four lines of untitled prose — nothing
+            on the pane said what was being bought, so the only thing the figure
+            could demonstrate was the interruption. A title and a byline cost two
+            lines and turn it into an article somebody might want. The title is
+            the one the omnivore demo prices above; the publication is the one
+            the subscription line offers below, so the three parts of the payment
+            argument are about the same piece of writing. */}
+        <div
+          className="font-serif"
+          style={{ fontSize: '1.65em', lineHeight: 1.15, fontWeight: 600, color: PANE_INK, marginBottom: '0.45em' }}
+        >
+          The difficult second read
+        </div>
+        <div
+          className="font-mono"
+          style={{
+            fontSize: '0.72em',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: PANE_MUTED,
+            marginBottom: '1.3em',
+          }}
+        >
+          Ellis Marchetti &middot; The Slow Hour
         </div>
 
         <div
           className="font-serif ah-demo-art"
-          style={{ color: palette.cardTitle, ['--ah-demo-pane' as string]: 'var(--ah-glasshouse)' }}
+          style={{ color: PANE_INK, ['--ah-demo-pane' as string]: 'var(--ah-glasshouse)' }}
         >
-          We spent most of the spring pretending the calendar was a suggestion,
-          and most of the summer discovering that it was not. What follows is an
-          attempt to look squarely at the white noise of activity, just to see how
-          the layout of our weeks might look if we finally got our act together.
+          No book has ever changed my mind on the first reading. Not one. The
+          ones that did the work sat on a shelf for a year, or five, waiting for
+          me to become the sort of person who could hear them &mdash; and then
+          ambushed me on a wet Tuesday with a sentence I had already read twice
+          and never once understood.
         </div>
 
         <div style={rule} />
@@ -157,20 +210,20 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
         <div style={{ textAlign: 'center' }}>
           <div
             className="font-serif"
-            style={{ fontSize: '1.45em', lineHeight: 1.2, fontWeight: 500, color: palette.cardTitle, marginBottom: '0.5em' }}
+            style={{ fontSize: '1.45em', lineHeight: 1.2, fontWeight: 500, color: PANE_INK, marginBottom: '0.5em' }}
           >
             Keep reading
           </div>
           <p
             className="font-serif"
-            style={{ fontSize: '0.92em', lineHeight: 1.5, color: palette.cardStandfirst, maxWidth: '26em', margin: '0 auto 1.3em' }}
+            style={{ fontSize: '0.92em', lineHeight: 1.5, color: PANE_MUTED, maxWidth: '26em', margin: '0 auto 1.3em' }}
           >
             You&rsquo;ve used your free reading credit. Add a payment card to keep
             reading &mdash; you only pay for what you read.
           </p>
           <div
             className="font-serif"
-            style={{ fontSize: '2.1em', lineHeight: 1, color: palette.cardTitle, marginBottom: '0.6em' }}
+            style={{ fontSize: '2.1em', lineHeight: 1, color: PANE_INK, marginBottom: '0.6em' }}
           >
             &pound;0.40
           </div>
@@ -180,11 +233,11 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
               does nothing is worse than no control. */}
           <div
             aria-hidden="true"
-            style={{ display: 'inline-block', background: palette.crimson, color: 'var(--ah-white)', padding: '0.85em 2em', fontSize: '1em', lineHeight: 1 }}
+            style={{ display: 'inline-block', background: PANE_ACCENT, color: 'var(--ah-white)', padding: '0.85em 2em', fontSize: '1em', lineHeight: 1 }}
           >
             Continue reading
           </div>
-          <div aria-hidden="true" style={{ fontSize: '0.95em', color: palette.cardTitle, marginTop: '1em' }}>
+          <div aria-hidden="true" style={{ fontSize: '0.95em', color: PANE_INK, marginTop: '1em' }}>
             Add a payment card &rarr;
           </div>
 
@@ -194,13 +247,13 @@ export function ReaderDemo({ palette, dark }: { palette: VesselPalette; dark: bo
               bare-`1` pattern catches, since a numeric style value picks up its
               unit at render. Whitespace does the same work and is the sitewide
               answer. */}
-          <div style={{ fontSize: '0.92em', color: palette.cardStandfirst, margin: '3em 0 1em' }}>
+          <div style={{ fontSize: '0.92em', color: PANE_MUTED, margin: '3em 0 1em' }}>
             Or subscribe to The Slow Hour for{' '}
             <strong style={{ fontWeight: 500 }}>&pound;5.00/mo</strong> to read everything
           </div>
           <div
             aria-hidden="true"
-            style={{ display: 'inline-block', background: palette.cardTitle, color: 'var(--ah-glasshouse)', padding: '0.8em 1.9em', fontSize: '0.95em', lineHeight: 1 }}
+            style={{ display: 'inline-block', background: PANE_INK, color: 'var(--ah-glasshouse)', padding: '0.8em 1.9em', fontSize: '0.95em', lineHeight: 1 }}
           >
             Subscribe
           </div>

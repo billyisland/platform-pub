@@ -76,7 +76,7 @@ const FIGURES: Figure[] = [
     key: 'reader',
     caption: 'Secure cryptographic paywall, no subscription required. Pay a few pence to read the one piece you’re actually interested in',
     description:
-      'A reading pane floating over a blurred workspace of feeds. The article inside it breaks off at a “Keep reading” panel: the price, forty pence, then a button to continue and a link to add a payment card, with a monthly subscription offered underneath as the alternative.',
+      'A reading pane floating over a blurred workspace of feeds. Inside it an essay, titled and bylined to a small letter, breaks off a few lines in at a “Keep reading” panel: the price, forty pence, then a button to continue and a link to add a payment card, with a monthly subscription to the same letter offered underneath as the alternative.',
   },
 ]
 

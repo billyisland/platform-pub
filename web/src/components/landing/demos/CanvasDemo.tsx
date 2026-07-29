@@ -161,22 +161,36 @@ function Card({
 // ReaderDemo so the demos read as one coherent invented world rather than three.
 // The protocol labels are the exception and must stay literally true: they ARE
 // the omnivore argument.
+//
+// THE CAST IS SHARED; THE POSTS ARE NOT. A visitor meets all three demos in one
+// scroll, so a card that appears twice reads as the page having run out of
+// things to show. No post body, headline or quote is repeated across the three
+// files — the shared world is carried by the people and the publications, and by
+// stories crossing between them (the harbour lease is reported in feed 1, argued
+// about in feed 3, and quoted by a Bluesky reply in the omnivore demo), which is
+// the thing the product actually does and the thing a repeated card cannot show.
+//
+// AND IT IS NOT ALL LOCAL-NEWSPAPER FILLER. The subjects are deliberately spread
+// — an essay on power, an investigation, printing, sport, whales, the aurora, a
+// mystery about a repainted gate — because the page is claiming that everything
+// worth reading fits in one place, and a canvas of council minutes argues the
+// opposite while pretending to agree.
 const FEED_1: DemoCard[] = [
   {
     name: 'Tobias Wren',
     time: '5d',
     title: 'A theory of power',
-    body: 'There are many considerations in appointing a cabinet: rewarding loyal supporters, balancing factions, keeping rivals well away from the spotlight…',
+    body: 'Every cabinet is a seating plan. You can read a whole premiership in who has been put within arm’s reach of the wine, and who has been sent down to the far end…',
     photo: true,
     tag: 'via RSS · The Whip Room',
   },
   {
     name: 'Ines Bergqvist',
     time: '6h',
-    body: 'The timetable change already fixed this. Ridership didn’t fall — if anything the evening trains are fuller.',
+    body: 'Thirty-eight, and still the quickest man on the pitch. Some of us are winded by the stairs at the Ravelin end.',
     quote: {
-      source: 'Quoting Northgate Transit',
-      text: 'The operators running before the change were already carrying more passengers, and doing it better.',
+      source: 'Quoting Fenwick Wire',
+      text: 'He has signed for one more year, and on Saturday covered more ground than any player on the field.',
     },
     tag: 'via Bluesky',
   },
@@ -184,15 +198,15 @@ const FEED_1: DemoCard[] = [
     name: 'Ellis Marchetti',
     time: '6d',
     paid: true,
-    title: 'Open Thread 443',
-    body: 'This is the weekly visible open thread. Post about anything you want, ask random questions, whatever.',
+    title: 'On not having an opinion yet',
+    body: 'The obligation to have a view by lunchtime is a recent invention, and I am fairly sure it has made us all worse company…',
     tag: 'via RSS · The Slow Hour',
   },
   {
     name: 'The Meridian',
     time: '1w',
     title: 'Who actually owns the harbour?',
-    body: 'Four holding companies, two of them registered last spring, and a lease nobody at the council can produce…',
+    body: 'Four holding companies, two of them registered last spring, and one director’s signature on all of them. We spent three months following the paper…',
     tag: 'via RSS · The Meridian',
   },
 ]
@@ -201,29 +215,29 @@ const FEED_1: DemoCard[] = [
 // standfirst written here would simply never render, and leaving one in would
 // invite someone to "fix" the density later by showing it.
 const FEED_2: DemoCard[] = [
-  { name: 'The Meridian', time: '1h', title: 'Harbour scheme approved after a decade of objections', tag: 'via RSS' },
-  { name: 'Fenwick Wire', time: '2h', title: 'Veteran striker signs one more year at thirty-eight', tag: 'via RSS' },
-  { name: 'The Meridian', time: '3h', title: 'Two more ward surgeries to close by the spring', tag: 'via RSS' },
-  { name: 'Northgate Transit', time: '5h', title: 'Evening timetable holds after the winter review', tag: 'via Nostr' },
-  { name: 'Fenwick Wire', time: '6h', title: 'Rain forces a third postponement at the Ravelin', tag: 'via RSS' },
-  { name: 'The Meridian', time: '8h', title: 'Harbour board names its interim chair', tag: 'via RSS' },
-  { name: 'Northgate Transit', time: '11h', title: 'Weekend engineering works pushed to March', tag: 'via Nostr' },
+  { name: 'The Meridian', time: '1h', title: 'Four owners in one year: the harbour papers', tag: 'via RSS' },
+  { name: 'Fenwick Wire', time: '2h', title: 'One more season for the oldest man on the pitch', tag: 'via RSS' },
+  { name: 'The Common Room', time: '3h', title: 'The last woman in England casting type by hand', tag: 'via RSS' },
+  { name: 'The Tidewatch', time: '5h', title: 'Forty pilot whales off the point, and nobody knows why', tag: 'via Nostr' },
+  { name: 'Fenwick Wire', time: '6h', title: 'Rain again: the Ravelin cup rolls into a fourth week', tag: 'via RSS' },
+  { name: 'The Meridian', time: '8h', title: 'Nine years and £4m to site a forty-metre bridge', tag: 'via RSS' },
+  { name: 'The Tidewatch', time: '11h', title: 'Aurora warning tonight, as far south as the estuary', tag: 'via Nostr' },
 ]
 
 const FEED_3: DemoCard[] = [
-  { name: 'Halloran', time: '1h', body: 'Are the high-street cinemas owned by private equity now?', tag: 'via Bluesky' },
-  { name: 'Aurelio Frame', time: '7h', body: 'Hell yeah, brother! Did you make it out this time?', tag: 'via Nostr' },
-  { name: 'Ines Bergqvist', time: '9h', body: 'Third week of the new timetable and the 6.40 is still standing room only.', tag: 'via Bluesky' },
-  { name: 'Halloran', time: '1d', body: 'Someone has repainted the ravelin gates and nobody will admit to it.', tag: 'via Nostr' },
-  { name: 'Aurelio Frame', time: '1d', body: 'Two years of asking and the harbour board has finally published the seabed survey.', tag: 'via Nostr' },
-  { name: 'Marguerite Oyelaran', time: '2d', body: 'Print run sold through by Thursday. We are doing another one.', tag: 'via Bluesky' },
+  { name: 'Halloran', time: '1h', body: 'Are the high-street cinemas all privately held now? Same slow death about every one of them.', tag: 'via Bluesky' },
+  { name: 'Aurelio Frame', time: '7h', body: 'Half the street out on the sea wall at dawn in dressing gowns, waiting for the whales. This town in one sentence.', tag: 'via Nostr' },
+  { name: 'Ines Bergqvist', time: '9h', body: 'Nine years to site a forty-metre bridge. I know people who have had entire children faster, with better paperwork.', tag: 'via Bluesky' },
+  { name: 'Halloran', time: '1d', body: 'Someone has repainted the ravelin gates overnight and not one soul in this town will admit to it.', tag: 'via Nostr' },
+  { name: 'Aurelio Frame', time: '1d', body: 'Two years of asking, and the harbour board has quietly published the seabed survey at half past four on a Friday.', tag: 'via Nostr' },
+  { name: 'Marguerite Oyelaran', time: '2d', body: 'Sold through by Thursday. We are going again, and this time on the good paper.', tag: 'via Bluesky' },
 ]
 
 const FEED_4: DemoCard[] = [
-  { name: 'Marguerite Oyelaran', time: '5d', title: 'The Ravelin', body: 'The prettiest magazine I’ve reviewed so far…', tag: 'via RSS' },
-  { name: 'Ellis Marchetti', time: '6d', paid: true, title: 'Your Book Review', body: 'One of the finalists in this year’s book review contest…', tag: 'via RSS' },
-  { name: 'Rosalind Vane', time: '6d', title: 'Finding an agent', body: 'I have several friends looking for agents…', tag: 'via RSS' },
-  { name: 'Tobias Wren', time: '1w', title: 'Summer reruns', body: 'We are now in the period which TV controllers used to call…', tag: 'via RSS' },
+  { name: 'Marguerite Oyelaran', time: '5d', title: 'In defence of uncoated stock', body: 'Nobody warns you that the paper is half the argument…', tag: 'via RSS' },
+  { name: 'Ellis Marchetti', time: '6d', paid: true, title: 'What we lost with the letters page', body: 'A century of readers arguing in public, retired without ceremony…', tag: 'via RSS' },
+  { name: 'Rosalind Vane', time: '6d', title: 'How to be read', body: 'Three friends are hunting for agents. All three are asking the wrong question…', tag: 'via RSS' },
+  { name: 'Tobias Wren', time: '1w', title: 'The long recess', body: 'There is a kind of politics that only ever happens while the House is not sitting…', tag: 'via RSS' },
 ]
 
 export function CanvasDemo({ dark }: { dark: boolean }) {

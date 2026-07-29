@@ -25,6 +25,17 @@ import type { VesselPalette } from '../../workspace/tokens'
 // Four cards, four protocols; the crimson pip on the last one is the only
 // forward reference to the payment argument below.
 //
+// THE FOUR BODIES ARE THE PAGE'S ONLY READABLE COPY, so they carry the weight of
+// the mix the pitch is claiming: a print critic, a reply that turns a reported
+// fact into an accusation, somebody standing in a field at four in the morning,
+// and a paid essay. Chatter and journalism in one column, which is the argument.
+//
+// THE PAID CARD IS THE PIECE THE READER DEMO OPENS — deliberately, and the one
+// post repeated anywhere on the page (see the note in CanvasDemo, which forbids
+// the rest). Ellis Marchetti's "The difficult second read" is priced here and
+// gated there, so a visitor scrolling down meets the same article twice and the
+// paywall lands on something they have already been given a reason to want.
+//
 // SCALE. This runs at the LARGEST base of the three demos, because it is the
 // one carrying content the visitor is meant to actually read. See the register
 // note in LandingVessel.
@@ -51,9 +62,9 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
           <DemoByline palette={palette} name="Marguerite Oyelaran" time="5d" />
           <DemoTitle palette={palette}>The Ravelin</DemoTitle>
           <DemoBody palette={palette}>
-            The Ravelin is the prettiest magazine I&rsquo;ve reviewed so far.
-            Perfect-bound, 130-odd pages, matte covers, uncoated white paper and
-            full-colour images&hellip;
+            The prettiest magazine anyone has sent me all year. Perfect-bound,
+            130-odd pages, matte covers, uncoated stock, full-colour plates
+            &mdash; and they are charging less for it than a pint&hellip;
           </DemoBody>
           <DemoTag palette={palette}>via RSS &middot; The Common Room &rarr;</DemoTag>
         </DemoPost>
@@ -61,12 +72,12 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Ines Bergqvist" time="6h" />
           <DemoBody palette={palette}>
-            The timetable change already fixed this. Ridership didn&rsquo;t fall
-            &mdash; if anything the evening trains are fuller.
+            Eleven times. At some point &ldquo;we can&rsquo;t find it&rdquo;
+            stops being an accident and becomes a decision.
           </DemoBody>
-          <DemoQuote palette={palette} source="Quoting Northgate Transit">
-            The operators running before the change were already carrying more
-            passengers, and doing it better.
+          <DemoQuote palette={palette} source="Quoting The Meridian">
+            We have asked the council eleven times to produce the harbour lease.
+            Eleven times we have been told it is being looked for.
           </DemoQuote>
           <DemoTag palette={palette}>
             via Bluesky &middot; bergqvist.bsky.social &rarr;
@@ -76,19 +87,20 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Aurelio Frame" time="7h" />
           <DemoBody palette={palette}>
-            Hell yeah, brother! Did you make it out this time around? I wish I
-            could have gone but work took a different path for me since last
-            year.
+            Up at the point at four this morning for the meteors. Saw exactly
+            two, froze solid, drank the worst coffee of my life, and would do the
+            whole thing again tonight.
           </DemoBody>
           <DemoTag palette={palette}>via Nostr &middot; aurelio@driftpost.net &rarr;</DemoTag>
         </DemoPost>
 
         <DemoPost palette={palette}>
           <DemoByline palette={palette} name="Ellis Marchetti" time="6d" paid />
-          <DemoTitle palette={palette}>Open Thread 443</DemoTitle>
+          <DemoTitle palette={palette}>The difficult second read</DemoTitle>
           <DemoBody palette={palette}>
-            This is the weekly visible open thread. Post about anything you want,
-            ask random questions, whatever.
+            No book has ever changed my mind on the first pass. They sit on the
+            shelf for a year, or five, waiting for me to become someone who can
+            hear them&hellip;
           </DemoBody>
           <DemoTag palette={palette}>via RSS &middot; The Slow Hour &rarr;</DemoTag>
         </DemoPost>
