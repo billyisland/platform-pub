@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict IvkPGPDeZzCncvoJwmCFrfmiihrhdfNkHOUuJJZPznjzIhE1gOpqfYFOkcfqOnS
+\restrict jWFIbaF6rC7u55U0i2hsggw5tKPg4PBniLwSt7Iz8y1MgzdllZAv3j0b09tMKPC
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1938,8 +1938,23 @@ CREATE TABLE public.read_events (
     via_subscription_id uuid,
     is_subscription_read boolean DEFAULT false NOT NULL,
     publication_id uuid,
-    allowance_consumed_pence integer DEFAULT 0 NOT NULL
+    allowance_consumed_pence integer DEFAULT 0 NOT NULL,
+    chargeable_pence integer GENERATED ALWAYS AS ((amount_pence - allowance_consumed_pence)) STORED
 );
+
+
+--
+-- Name: COLUMN read_events.amount_pence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.read_events.amount_pence IS 'The article''s list price at read time. NOT what is charged — see chargeable_pence (migration 164).';
+
+
+--
+-- Name: COLUMN read_events.chargeable_pence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.read_events.chargeable_pence IS 'What the reader owes for this read and what the writer earns on: list price minus the free-allowance gift. Every money query uses this; amount_pence is the list price only (migration 164).';
 
 
 --
@@ -4777,6 +4792,13 @@ CREATE INDEX idx_read_events_article_id ON public.read_events USING btree (artic
 
 
 --
+-- Name: idx_read_events_gifted; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_read_events_gifted ON public.read_events USING btree (reader_id, read_at) WHERE (allowance_consumed_pence > 0);
+
+
+--
 -- Name: idx_read_events_reader_article; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7159,7 +7181,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict IvkPGPDeZzCncvoJwmCFrfmiihrhdfNkHOUuJJZPznjzIhE1gOpqfYFOkcfqOnS
+\unrestrict jWFIbaF6rC7u55U0i2hsggw5tKPg4PBniLwSt7Iz8y1MgzdllZAv3j0b09tMKPC
 
 
 --
@@ -7330,4 +7352,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('160_resonance_band_thresholds.sql'),
     ('161_feed_proof_floor.sql'),
     ('162_waitlist.sql'),
-    ('163_waitlist_admission.sql');
+    ('163_waitlist_admission.sql'),
+    ('164_read_chargeable_pence.sql');

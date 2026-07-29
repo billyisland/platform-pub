@@ -39,6 +39,22 @@ const FREE_ALLOWANCE_FLOOR_PENCE = parseInt(
   10,
 );
 
+/**
+ * The claim half of convertProvisionalReads, exported so the DB-backed
+ * regression test can execute the REAL statement rather than a copy of it
+ * (the `PUBLICATION_ARTICLE_SHARES_SQL` precedent). The whole behaviour under
+ * test is which COLUMN this returns — `chargeable_pence`, not `amount_pence` —
+ * and a test that retyped the SQL could not fail if production regressed.
+ *
+ * $1 = tab id, $2 = reader id.
+ */
+export const CONVERT_PROVISIONAL_READS_SQL = `UPDATE read_events
+         SET state = 'accrued',
+             tab_id = $1,
+             state_updated_at = now()
+         WHERE reader_id = $2 AND state = 'provisional'
+         RETURNING id, chargeable_pence, writer_id`;
+
 /** Thrown by recordGatePass when a card-less read is refused at the F3 floor. */
 export class AllowanceExhaustedError extends Error {
   constructor() {
@@ -282,22 +298,25 @@ class AccrualService {
       // silently breaking the Phase-3 −SUM == balance invariant. Deriving the
       // total AND the ledger loop from exactly the flipped rows closes it — the
       // same RETURNING shape the vote-charges branch already used.
+      //
+      // The free allowance is a GIFT, and connecting a card does not revoke it
+      // (product ruling 2026-07-29; migration 164). So conversion charges
+      // `chargeable_pence` — the list price MINUS the portion the allowance
+      // covered — never `amount_pence`. Under the default FREE_ALLOWANCE_FLOOR_
+      // PENCE = 0 the F3 hard gate only permits a card-less read when the whole
+      // amount is covered, so in practice every converted read here is fully
+      // gifted and charges 0; a partial split arises only under a negative
+      // floor, and the column handles it exactly. This is the write-off F14's
+      // own comment anticipated ("lets a future settlement write-off compute
+      // against real numbers") and never built.
       const { rows: provisionalReads } = await client.query<{
         id: string;
-        amount_pence: number;
+        chargeable_pence: number;
         writer_id: string;
-      }>(
-        `UPDATE read_events
-         SET state = 'accrued',
-             tab_id = $1,
-             state_updated_at = now()
-         WHERE reader_id = $2 AND state = 'provisional'
-         RETURNING id, amount_pence, writer_id`,
-        [tabId, readerId],
-      );
+      }>(CONVERT_PROVISIONAL_READS_SQL, [tabId, readerId]);
 
       const totalPence = provisionalReads.reduce(
-        (sum, r) => sum + r.amount_pence,
+        (sum, r) => sum + r.chargeable_pence,
         0,
       );
 
@@ -314,12 +333,20 @@ class AccrualService {
       // column+ledger pair through applyLedgerDelta (deltaPence = +amount, ledger
       // = −amount), so the per-read debits sum to the total tab increment and
       // every balance write stays inside the primitive (no raw aggregate UPDATE).
-      // Zero-amount reads post a zero pair — harmless, matches the prior loop.
+      //
+      // A FULLY-GIFTED read has chargeable_pence = 0 and is skipped outright.
+      // The old loop posted a zero pair for a zero amount and called it
+      // harmless; under the gift rule that is now the COMMON case (every
+      // converted read at the default floor), and thousands of zero-value
+      // read_accrual entries would be pure noise in an append-only ledger that
+      // reconciliation has to read. Skipping is exactly equivalent — a zero
+      // delta moves no balance and −SUM is unchanged.
       for (const r of provisionalReads) {
+        if (r.chargeable_pence === 0) continue;
         await applyLedgerDelta(client, {
           accountId: readerId,
           counterpartyId: r.writer_id,
-          deltaPence: r.amount_pence,
+          deltaPence: r.chargeable_pence,
           triggerType: "read_accrual",
           refTable: "read_events",
           refId: r.id,

@@ -75,7 +75,13 @@ import type { LedgerTriggerType } from '@platform-pub/shared/lib/ledger.js'
 
 export interface ReversalRead {
   id: string
-  amountPence: number
+  /**
+   * What the reader was actually CHARGED for this read — read_events.chargeable_pence
+   * (list price minus the free-allowance gift), never amount_pence. A chargeback
+   * reverses what was collected and earned; a gifted penny was neither
+   * (migration 164).
+   */
+  chargeablePence: number
   /** 'platform_settled' | 'writer_paid' */
   state: string
   writerId: string
@@ -90,7 +96,7 @@ export interface ReversalRead {
   isPublication?: boolean
   /**
    * F5: the whole pool of the publication payout that paid this read —
-   * total_pool_pence (Σ gross read amounts) + sub_net_pence (the subscription
+   * total_pool_pence (Σ chargeable read amounts) + sub_net_pence (the subscription
    * leg, §1.3). The prorating base for splitting this one read's chargeback
    * across recipients: splits were paid from both legs, but only the
    * read-derived slice reverses (subscription debt on chargeback is the
@@ -100,7 +106,7 @@ export interface ReversalRead {
   /**
    * F5: the PAID splits (status initiated|completed — money that actually left
    * the platform) of the publication payout that paid this read. Each recipient
-   * is reversed by their receipt × (this read's gross ÷ the payout's gross pool).
+   * is reversed by their receipt × (this read's chargeable ÷ the payout's pool).
    * Splits still pending (KYC-incomplete recipient) or failed are NOT passed in,
    * so money that never moved is never reversed. Empty/absent ⇒ the read's pool
    * was never paid out; the read is charged back on the reader side only.
@@ -230,7 +236,7 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
       const pool = r.publicationPoolPence ?? 0
       if (pool > 0 && r.publicationSplits) {
         for (const s of r.publicationSplits) {
-          const share = Math.floor((s.amountPence * r.amountPence) / pool)
+          const share = Math.floor((s.amountPence * r.chargeablePence) / pool)
           if (share !== 0) addWriter(s.accountId, share)
         }
       }
@@ -239,7 +245,7 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
     // EARNED side: every settled read (platform_settled OR writer_paid) got a
     // writer_accrual of the full net at settlement — reverse it regardless of
     // payout state. cp = reader, mirroring the forward entry.
-    const readNet = perReadNetPence(r.amountPence, platformFeeBps)
+    const readNet = perReadNetPence(r.chargeablePence, platformFeeBps)
     if (readNet !== 0) addAccrual(r.writerId, readNet)
     if (r.state === 'writer_paid' || r.claimedByPendingPayout) {
       // PAID side: author's actual receipt for R = read net minus the carve of

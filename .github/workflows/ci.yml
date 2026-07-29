@@ -27,6 +27,12 @@ jobs:
       - name: ledger adjacency (money writes ↔ ledger entries)
         run: scripts/check-ledger-adjacency.sh
 
+      # Free-allowance gift tripwire (migration 164): a read's money paths must
+      # compute from chargeable_pence, never the amount_pence list price, or the
+      # gift is billed back to the reader. Pure text, no DB.
+      - name: read chargeable (the free allowance stays a gift)
+        run: scripts/check-read-chargeable.sh
+
       # Backend ESLint (promise-safety rules)
       - run: npx eslint
 

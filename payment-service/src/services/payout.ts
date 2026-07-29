@@ -231,13 +231,13 @@ class PayoutService {
       `SELECT
          COALESCE(SUM(
            CASE WHEN r.state = 'platform_settled'
-             THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)
+             THEN ${readNetSql('r.chargeable_pence', '$2')} - COALESCE(acc.live_pence, 0)
              ELSE 0
            END
          ), 0) AS pending_transfer_pence,
          COALESCE(SUM(
            CASE WHEN r.state = 'writer_paid'
-             THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)
+             THEN ${readNetSql('r.chargeable_pence', '$2')} - COALESCE(acc.live_pence, 0)
              ELSE 0
            END
          ), 0) AS paid_out_pence,
@@ -339,11 +339,11 @@ class PayoutService {
          a.nostr_d_tag,
          a.published_at,
          COUNT(r.id) AS read_count,
-         COALESCE(SUM(${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)), 0) AS net_earnings_pence,
+         COALESCE(SUM(${readNetSql('r.chargeable_pence', '$2')} - COALESCE(acc.live_pence, 0)), 0) AS net_earnings_pence,
          COALESCE(SUM(CASE WHEN r.state = 'platform_settled'
-           THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0) ELSE 0 END), 0) AS pending_pence,
+           THEN ${readNetSql('r.chargeable_pence', '$2')} - COALESCE(acc.live_pence, 0) ELSE 0 END), 0) AS pending_pence,
          COALESCE(SUM(CASE WHEN r.state = 'writer_paid'
-           THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0) ELSE 0 END), 0) AS paid_pence
+           THEN ${readNetSql('r.chargeable_pence', '$2')} - COALESCE(acc.live_pence, 0) ELSE 0 END), 0) AS paid_pence
        FROM read_events r
        JOIN articles a ON a.id = r.article_id
        LEFT JOIN (
@@ -441,10 +441,10 @@ class PayoutService {
       // are excluded here — their income flows through the publication pool.
       `WITH base AS (
          SELECT earnings.writer_id,
-                SUM(earnings.amount_pence) AS gross_pence,
-                SUM(${readNetSql('earnings.amount_pence', '$2')}) AS net_pence
+                SUM(earnings.chargeable_pence) AS gross_pence,
+                SUM(${readNetSql('earnings.chargeable_pence', '$2')}) AS net_pence
          FROM (
-           SELECT writer_id, amount_pence
+           SELECT writer_id, chargeable_pence
            FROM read_events
            WHERE state = 'platform_settled' AND writer_payout_id IS NULL
              AND publication_id IS NULL
@@ -583,9 +583,9 @@ class PayoutService {
       // rows touched. Tribute subqueries are no-ops when dark.
       const peekRow = await client.query<{ net_pence: string }>(
         `SELECT (
-           (SELECT COALESCE(SUM(${readNetSql('amount_pence', '$2')}), 0)
+           (SELECT COALESCE(SUM(${readNetSql('chargeable_pence', '$2')}), 0)
               FROM (
-                SELECT amount_pence FROM read_events
+                SELECT chargeable_pence FROM read_events
                 WHERE writer_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
                   AND publication_id IS NULL
               ) AS earnings)
@@ -642,7 +642,7 @@ class PayoutService {
            AND state = 'platform_settled'
            AND writer_payout_id IS NULL
            AND publication_id IS NULL
-         RETURNING ${readNetSql('amount_pence', '$3')} AS net_pence`,
+         RETURNING ${readNetSql('chargeable_pence', '$3')} AS net_pence`,
         [payoutId, writerId, config.platformFeeBps],
       )
       const readNet = claimedReads.reduce((s, r) => s + parseInt(r.net_pence, 10), 0)
@@ -1110,8 +1110,8 @@ class PayoutService {
       // subscription income qualify.
       `WITH reads AS (
          SELECT r.publication_id,
-                SUM(r.amount_pence) AS gross_pence,
-                SUM(${readNetSql('r.amount_pence', '$1')}) AS net_pence
+                SUM(r.chargeable_pence) AS gross_pence,
+                SUM(${readNetSql('r.chargeable_pence', '$1')}) AS net_pence
          FROM read_events r
          WHERE r.publication_id IS NOT NULL
            AND r.state = 'platform_settled'
@@ -1248,16 +1248,16 @@ class PayoutService {
       // Claim reads: r.publication_id, not the article's current publication —
       // the exact complement of the writer cycle's exclusion (see the
       // eligibility query's note).
-      const { rows: claimedReads } = await client.query<{ amount_pence: number }>(
+      const { rows: claimedReads } = await client.query<{ chargeable_pence: number }>(
         `UPDATE read_events
          SET writer_payout_id = $1
          WHERE read_events.publication_id = $2
            AND read_events.state = 'platform_settled'
            AND read_events.writer_payout_id IS NULL
-         RETURNING amount_pence`,
+         RETURNING chargeable_pence`,
         [payoutId, publicationId],
       )
-      const lockedGross = claimedReads.reduce((s, r) => s + r.amount_pence, 0)
+      const lockedGross = claimedReads.reduce((s, r) => s + r.chargeable_pence, 0)
 
       // §1.3: claim publication SUBSCRIPTION earnings (already NET) under this
       // payout — the publication twin of the writer cycle's F1 claim.
@@ -1315,7 +1315,7 @@ class PayoutService {
           // publication after accruing personal (publication_id NULL) reads
           // never has those reads claimed here — the writer cycle pays them.
           `SELECT r.article_id,
-                  COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence
+                  COALESCE(SUM(${readNetSql('r.chargeable_pence', '$2')}), 0) AS net_pence
            FROM read_events r
            WHERE r.article_id = ANY($1)
              AND r.writer_payout_id = $3

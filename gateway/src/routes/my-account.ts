@@ -29,7 +29,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
         `
         SELECT r.id as "readId", a.title as "articleTitle", a.nostr_d_tag as "articleDTag",
                w.display_name as "writerDisplayName", w.username as "writerUsername",
-               r.amount_pence as "chargePence", r.read_at as "readAt",
+               r.chargeable_pence as "chargePence", r.read_at as "readAt",
                ts.settled_at as "settledAt",
                r.is_subscription_read as "isSubscriptionRead"
         FROM read_events r
@@ -131,12 +131,12 @@ export async function myAccountRoutes(app: FastifyInstance) {
               'debit' AS type,
               'article_read' AS category,
               art.title AS description,
-              re.amount_pence,
+              re.chargeable_pence AS amount_pence,
               '/article/' || art.nostr_d_tag AS link
             FROM read_events re
             JOIN articles art ON art.id = re.article_id
             WHERE re.reader_id = $1
-              AND re.amount_pence > 0
+              AND re.chargeable_pence > 0
               AND re.is_subscription_read = FALSE
 
             ${
@@ -156,7 +156,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
             FROM read_events re
             JOIN articles art ON art.id = re.article_id
             WHERE re.reader_id = $1
-              AND (re.amount_pence = 0 OR re.is_subscription_read = TRUE)
+              AND (re.chargeable_pence = 0 OR re.is_subscription_read = TRUE)
             `
                 : ""
             }
@@ -174,7 +174,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
               -- credit is net of the inspirer-bound (released|paid) shares.
               -- Dial A: released|paid are the only accrual states. No-op when no
               -- accruals exist (feature dark).
-              (${readNetSql("re.amount_pence", "$2")}
+              (${readNetSql("re.chargeable_pence", "$2")}
                 - COALESCE((SELECT SUM(ta.amount_pence) FROM tribute_accruals ta
                             WHERE ta.read_event_id = re.id
                               AND ta.state IN ('released', 'paid')), 0))::int AS amount_pence,
@@ -184,7 +184,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
             JOIN accounts reader ON reader.id = re.reader_id
             WHERE re.writer_id = $1
               AND re.reader_id != $1
-              AND re.amount_pence > 0
+              AND re.chargeable_pence > 0
               AND re.state IN ('platform_settled', 'writer_paid')
 
             UNION ALL
@@ -295,20 +295,20 @@ export async function myAccountRoutes(app: FastifyInstance) {
 
             UNION ALL
 
-            SELECT 'debit', re.amount_pence, re.read_at
+            SELECT 'debit', re.chargeable_pence, re.read_at
             FROM read_events re
-            WHERE re.reader_id = $1 AND re.amount_pence > 0 AND re.is_subscription_read = FALSE
+            WHERE re.reader_id = $1 AND re.chargeable_pence > 0 AND re.is_subscription_read = FALSE
 
             UNION ALL
 
             SELECT 'credit',
-              (${readNetSql("re.amount_pence", "$3")}
+              (${readNetSql("re.chargeable_pence", "$3")}
                 - COALESCE((SELECT SUM(ta.amount_pence) FROM tribute_accruals ta
                             WHERE ta.read_event_id = re.id
                               AND ta.state IN ('released', 'paid')), 0))::int,
               re.read_at
             FROM read_events re
-            WHERE re.writer_id = $1 AND re.reader_id != $1 AND re.amount_pence > 0
+            WHERE re.writer_id = $1 AND re.reader_id != $1 AND re.chargeable_pence > 0
               AND re.state IN ('platform_settled', 'writer_paid')
 
             UNION ALL

@@ -645,7 +645,7 @@ class SettlementService {
         // views / dashboard stop claiming pool money as personal earnings). The
         // reads still advanced to platform_settled above; the publication payout
         // cycle distributes them.
-        `SELECT id, writer_id, ${readNetSql("amount_pence", "$2")} AS net_pence
+        `SELECT id, writer_id, ${readNetSql("chargeable_pence", "$2")} AS net_pence
          FROM read_events
          WHERE tab_settlement_id = $1 AND state = 'platform_settled'
            AND publication_id IS NULL`,
@@ -699,7 +699,7 @@ class SettlementService {
           `WITH RECURSIVE settled_reads AS (
              SELECT re.id AS read_event_id,
                     re.article_id,
-                    ${readNetSql("re.amount_pence", "$2")}::numeric AS read_net
+                    ${readNetSql("re.chargeable_pence", "$2")}::numeric AS read_net
              FROM read_events re
              WHERE re.tab_settlement_id = $1
                AND re.state = 'platform_settled'
@@ -902,13 +902,13 @@ class SettlementService {
 
       const { rows: reads } = await client.query<{
         id: string;
-        amount_pence: number;
+        chargeable_pence: number;
         state: string;
         writer_id: string;
         publication_id: string | null;
         writer_payout_id: string | null;
       }>(
-        `SELECT id, amount_pence, state, writer_id, publication_id, writer_payout_id
+        `SELECT id, chargeable_pence, state, writer_id, publication_id, writer_payout_id
          FROM read_events
          WHERE tab_settlement_id = $1
            AND state IN ('platform_settled', 'writer_paid')`,
@@ -997,7 +997,7 @@ class SettlementService {
 
       const planReads: ReversalRead[] = reads.map((r) => ({
         id: r.id,
-        amountPence: r.amount_pence,
+        chargeablePence: r.chargeable_pence,
         state: r.state,
         writerId: r.writer_id,
         isPublication: r.publication_id !== null,

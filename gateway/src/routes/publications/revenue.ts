@@ -317,12 +317,12 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
         read_count: string
       }>(
         `SELECT
-           COALESCE(SUM(r.amount_pence), 0) AS gross_pence,
-           COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence,
+           COALESCE(SUM(r.chargeable_pence), 0) AS gross_pence,
+           COALESCE(SUM(${readNetSql('r.chargeable_pence', '$2')}), 0) AS net_pence,
            COALESCE(SUM(CASE WHEN r.state = 'platform_settled'
-             THEN ${readNetSql('r.amount_pence', '$2')} ELSE 0 END), 0) AS pending_pence,
+             THEN ${readNetSql('r.chargeable_pence', '$2')} ELSE 0 END), 0) AS pending_pence,
            COALESCE(SUM(CASE WHEN r.state = 'writer_paid'
-             THEN ${readNetSql('r.amount_pence', '$2')} ELSE 0 END), 0) AS paid_pence,
+             THEN ${readNetSql('r.chargeable_pence', '$2')} ELSE 0 END), 0) AS paid_pence,
            COUNT(r.id) AS read_count
          FROM read_events r
          WHERE r.publication_id = $1
@@ -358,7 +358,7 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
         `SELECT
            a.id AS article_id, a.title, a.slug, a.published_at,
            COUNT(r.id) AS read_count,
-           COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence
+           COALESCE(SUM(${readNetSql('r.chargeable_pence', '$2')}), 0) AS net_pence
          FROM articles a
          LEFT JOIN read_events r ON r.article_id = a.id
            AND r.publication_id = $1

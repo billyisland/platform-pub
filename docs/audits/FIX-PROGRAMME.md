@@ -23,6 +23,63 @@ starts.
 
 ## Progress
 
+- **2026-07-29 (the free allowance is a gift, and we stopped billing it back)** —
+  migration 164 + a 30-site sweep of the read money path. **P0: readers were
+  being charged for reads we had given them.**
+
+  Found while evaluating `docs/adr/FUNDS-SEGREGATION-INTEGRATION.md`, whose rev 1
+  asserted as a core invariant that allowance-covered pence "are never charged to
+  anyone, never accrue to any writer" — and instructed that the claim be copied
+  into `HOW-MONEY-MOVES.md` and a comment at `classifyRead` so future audits would
+  "stop re-deriving a gap that doesn't exist". The gap existed.
+  `convertProvisionalReads` flipped every provisional read to `accrued` at the
+  full `amount_pence` and debited the tab for all of it, so a reader who read on
+  the house and later attached a card was billed retroactively for the gift, and
+  the writer accrued on pence nobody had paid. Silent since the function was
+  written. F14 (2026-07-06) had already recorded the exact split a write-off
+  needed (`allowance_consumed_pence`, its own comment anticipating "a future
+  settlement write-off") and nothing ever consumed it.
+
+  Ruling (product): the aspiration was right and the code was wrong — a card does
+  not revoke a gift. Both legs move together, and they have to: charging the
+  reader less while still paying the writer would have created a fresh
+  platform-subsidised path rather than closing one.
+
+  - **Migration 164** — `read_events.chargeable_pence`, `GENERATED ALWAYS AS
+    (amount_pence − allowance_consumed_pence) STORED`. `amount_pence` keeps
+    meaning the list price, so no column changes meaning by row state. Backfills
+    the pre-F14 legacy shape (`on_free_allowance` TRUE with a 0 split — the old
+    coarse boolean), scoped to `provisional` rows only. Ends with a DO-block
+    assertion that no already-charged row carries a gift, so the sweep cannot
+    restate settled money; it is that property which made a 30-site change to the
+    payout core safe to ship in one go.
+  - **The sweep** — 30 references across `payout.ts`, `settlement.ts`,
+    `accrual.ts`, `publications/revenue.ts`, `my-account.ts`, each verified
+    against its `FROM read_events`. `chargeback.ts`'s `ReversalRead.amountPence`
+    renamed to `chargeablePence` so that path regresses as a compile error rather
+    than a silent `NaN`; `per-read-net.ts` now documents which of the two amounts
+    it takes.
+  - **Enforcement** — `scripts/check-read-chargeable.sh` (CI `backend` job),
+    mutation-verified in both directions. CLAUDE.md carries the invariant.
+  - **Tests** — `payment-service/tests/free-allowance-gift-integration.test.ts`,
+    DB-backed and rolled back, running the REAL exported statement. It is
+    DB-backed *because* a mocked `pool.query` cannot evaluate a generated column
+    — the §"mock must answer from the SQL" standard's third clause, stated out
+    loud in the file header. Each assertion is paired with a list-price control
+    showing what the old path billed. Mutation-checked: reverting the fix fails 2
+    of 5.
+  - Verified: 182/182 payment-service (DB), 0 lint errors, all 7 schema-drift
+    checks, ledger adjacency, and `getWriterEarnings` executed against the dev DB.
+    Dev held £36.25 of gifted reading that would have been billed on card-connect.
+
+  **Open — not done here.** (a) Readers already billed before 164 are NOT
+  refunded; restating them would break reader parity and `ledger_writer_earned`,
+  so it is a business decision, not a migration. Population:
+  `SELECT count(*), sum(allowance_consumed_pence) FROM read_events WHERE state <>
+  'provisional' AND allowance_consumed_pence <> 0` (0 on dev; run on prod).
+  (b) Four `gateway/tests/waitlist-digest.test.ts` failures are pre-existing —
+  confirmed by stashing this change — and untouched.
+
 - **2026-07-29 (the beta is closed, and the register has been looked at)** —
   no code. Two of the three largest items in CONSOLIDATED-TODO §11 discharged
   by deploying and then *looking*, which is the only tier of evidence either
