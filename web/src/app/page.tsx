@@ -62,19 +62,19 @@ const PROSE = [
 const FIGURES: Figure[] = [
   {
     key: 'canvas',
-    caption: 'Feeds are objects on a canvas — size them, stack them, turn them sideways',
+    caption: 'Feeds are objects on a canvas. Size them, stack them, turn them sideways, copy them, share them, hide them, delete them',
     description:
       'Four all.haus feeds arranged on one canvas, each framed in a different colour and numbered. A wide one fills the left, its top post carrying a photograph of a city skyline at dusk; below it a fourth feed runs sideways, its cards continuing off the right-hand edge. On the right, a narrow feed of headlines alone sits above a second narrow feed of short posts.',
   },
   {
     key: 'omnivore',
-    caption: 'Bluesky, Nostr, RSS — read together',
+    caption: 'Bluesky, Mastodon, Nostr, RSS and more — bring them all together in one place',
     description:
       'A single all.haus feed in close-up. Four posts sit in one column in the same card style, each labelled with where it came from: an RSS essay, a Bluesky post quoting another, a Nostr note, and a newsletter post from RSS.',
   },
   {
     key: 'reader',
-    caption: 'Read it — pay a few pence. No subscription required.',
+    caption: 'Secure cryptographic paywall, no subscription required. Pay a few pence to read the one piece you’re actually interested in',
     description:
       'A reading pane floating over a blurred workspace of feeds. The article inside it breaks off at a “Keep reading” panel: the price, forty pence, then a button to continue and a link to add a payment card, with a monthly subscription offered underneath as the alternative.',
   },
