@@ -17,7 +17,9 @@ import { createAllocationAwareStripe } from '../lib/stripe-client.js'
 import {
   packUnits,
   apportionCarve,
+  prorateWithheldFee,
   type EarningUnit,
+  type FundingSource,
 } from '../lib/allocation-packer.js'
 import {
   lockFundingSources,
@@ -81,6 +83,39 @@ interface SplitResult {
   flatFeesPaidPence: number
   flatFeeShareIds: string[]
 }
+
+/**
+ * Complete a publication payout when NO SPLIT IS LEFT 'pending' — the one home
+ * for that rule, used by `finalisePublicationPayout`, `confirmPublicationSplit`
+ * and `completePublicationParentBySplit`.
+ *
+ * THE ZOMBIE THIS FIXES. The predicate was `NOT EXISTS (split WHERE status <>
+ * 'completed')` while the resume sweep retries only 'pending' splits. So a
+ * single terminally-'failed' split left the parent 'pending' FOREVER: every
+ * cycle the sweep picked it up, found nothing to retry, finalised, failed the
+ * same test, and left the row exactly as it was. Nothing in the system could
+ * resolve it. (Audit F4 introduced that predicate to stop a still-in-flight
+ * split being masked as a finished payout, which is right — but 'failed' is not
+ * in flight, it is *done*, and it is already visible on the split's own row.)
+ *
+ * A failed split does not mean the payout failed: the pool was claimed, the
+ * reads consumed, and the other members paid. It means one recipient needs a
+ * manual re-pay (§1.2). A split still 'pending' — recipient KYC-incomplete —
+ * DOES hold the parent open, so the sweep retries it next cycle; that arm is
+ * unchanged.
+ *
+ * Exported so the integration test executes THIS statement rather than a copy
+ * of it, which is what stops the test and production drifting apart.
+ */
+export const PUBLICATION_PAYOUT_COMPLETE_SQL = `
+  UPDATE publication_payouts pp
+     SET status = 'completed', completed_at = now()
+   WHERE pp.id = $1
+     AND pp.status = 'pending'
+     AND NOT EXISTS (
+       SELECT 1 FROM publication_payout_splits s
+        WHERE s.publication_payout_id = pp.id
+          AND s.status = 'pending')`
 
 export function computePublicationSplits(
   grossPence: number,
@@ -1704,6 +1739,7 @@ class PayoutService {
           pub.publication_id,
           parseInt(pub.gross_pence, 10),
           config.platformFeeBps,
+          config.payoutMaxSlices,
         )
         if (paidPence !== null) {
           processed++
@@ -1752,8 +1788,13 @@ class PayoutService {
     publicationId: string,
     _grossPence: number,
     feeBps: number,
+    payoutMaxSlices: number,
   ): Promise<number | null> {
-    const reserved = await this.reservePublicationPayout(publicationId, feeBps)
+    const reserved = await this.reservePublicationPayout(
+      publicationId,
+      feeBps,
+      payoutMaxSlices,
+    )
     if (!reserved) return null
 
     const totalTransferred = await this.processPublicationSplits(reserved.payoutId)
@@ -1773,6 +1814,7 @@ class PayoutService {
   private async reservePublicationPayout(
     publicationId: string,
     feeBps: number,
+    payoutMaxSlices: number,
   ): Promise<{ payoutId: string } | null> {
     return withTransaction(async (client) => {
       await client.query(
@@ -1802,13 +1844,20 @@ class PayoutService {
       // Claim reads: r.publication_id, not the article's current publication —
       // the exact complement of the writer cycle's exclusion (see the
       // eligibility query's note).
-      const { rows: claimedReads } = await client.query<{ chargeable_pence: number }>(
+      const { rows: claimedReads } = await client.query<{
+        chargeable_pence: number
+        tab_settlement_id: string | null
+      }>(
+        // tab_settlement_id rides along for §3.4: a split's net is a bps share
+        // of a pool spanning many charges, so it has no single natural funding
+        // charge — the pool's contributing settlements become the packer's
+        // PREFERENCE SET instead.
         `UPDATE read_events
          SET writer_payout_id = $1
          WHERE read_events.publication_id = $2
            AND read_events.state = 'platform_settled'
            AND read_events.writer_payout_id IS NULL
-         RETURNING chargeable_pence`,
+         RETURNING chargeable_pence, tab_settlement_id`,
         [payoutId, publicationId],
       )
       const lockedGross = claimedReads.reduce((s, r) => s + r.chargeable_pence, 0)
@@ -1821,14 +1870,17 @@ class PayoutService {
       // Never reintroduce an ungated claim. publication_payout_id makes each
       // earning claimed exactly once; a terminal split failure keeps the claim
       // (same manual re-pay posture as the reads, §1.2).
-      const { rows: claimedSubs } = await client.query<{ amount_pence: number }>(
+      const { rows: claimedSubs } = await client.query<{
+        amount_pence: number
+        tab_settlement_id: string | null
+      }>(
         `UPDATE subscription_events
          SET publication_payout_id = $1
          WHERE publication_id = $2
            AND event_type = 'subscription_earning'
            AND publication_payout_id IS NULL
            AND settled_at IS NOT NULL
-         RETURNING amount_pence`,
+         RETURNING amount_pence, tab_settlement_id`,
         [payoutId, publicationId],
       )
       const subNetPence = claimedSubs.reduce((s, r) => s + r.amount_pence, 0)
@@ -1911,15 +1963,42 @@ class PayoutService {
         computePublicationSplits(lockedGross, feeBps, articleShares, articleEarnings, standingMembers, subNetPence)
 
       // --- Insert all splits as pending ---
+      const insertedSplits: Array<{ id: string; amountPence: number }> = []
       for (const split of splits) {
         if (split.amountPence <= 0) continue
-        await client.query(
+        const { rows: [splitRow] } = await client.query<{ id: string }>(
           `INSERT INTO publication_payout_splits
              (publication_payout_id, account_id, share_bps, amount_pence, share_type, article_id, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'pending')`,
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+           RETURNING id`,
           [payoutId, split.accountId, split.shareBps, split.amountPence,
            split.shareType, split.articleId],
         )
+        insertedSplits.push({ id: splitRow.id, amountPence: split.amountPence })
+      }
+
+      // --- Funding (§3.4) — everything above this line is unchanged -----------
+      // Attribution is settled: computePublicationSplits decided who gets what
+      // and is not reopened. What follows only decides WHICH CHARGES pay those
+      // already-decided amounts, and turns the transfer under each split into
+      // one child per charge drawn on. Flag off ⇒ no children, and
+      // processPublicationSplits takes the single-transfer path exactly as
+      // before.
+      if (allocatedFundsEnabled()) {
+        await this.packPublicationSplits(client, {
+          payoutId,
+          publicationId,
+          payoutMaxSlices,
+          splits: insertedSplits,
+          withheldFeePence: platformFeePence,
+          settlementIds: [
+            ...new Set(
+              [...claimedReads, ...claimedSubs]
+                .map((r) => r.tab_settlement_id)
+                .filter((id): id is string => id !== null),
+            ),
+          ],
+        })
       }
 
       // --- Reserve flat-fee shares under this payout ---
@@ -1950,6 +2029,139 @@ class PayoutService {
 
       return { payoutId }
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // packPublicationSplits — the funding half of the publication Txn 1 (§3.4).
+  //
+  // Runs INSIDE reservePublicationPayout's transaction, after the splits are
+  // inserted and before anything is written back.
+  //
+  // TWO THINGS MAKE THIS CYCLE DIFFERENT FROM THE WRITER ONE.
+  //
+  // 1. ATTRIBUTION HAS NO PER-READ DECOMPOSITION. A split is a bps share of a
+  //    POOL — the pool spans many charges, and `sub_net_pence` may have no
+  //    charge behind it at all — so unlike a read, a split has no natural
+  //    funding charge. Rather than invent an attribution, resolve it at the
+  //    funding layer: ONE UNIT PER SPLIT, whose preference is the SET of the
+  //    pool's contributing settlements. The packer already takes a set
+  //    (`preferredSettlementIds`), so this needs nothing of it.
+  //
+  // 2. THE FEE IS ALREADY WITHHELD, AND THAT IS EXACTLY WHY IT MUST BE CLAIMED.
+  //    The tempting reading — the pooled fee came off when the pool was
+  //    computed, so charging an application fee would take it twice — is right
+  //    in its premise and wrong in its conclusion. Under allocation the FULL
+  //    charge is locked, so a fee never claimed as an `application_fee_amount`
+  //    never leaves allocated state at all. It is not taken twice; it is taken
+  //    ZERO times, and roughly a tenth of all publication revenue would
+  //    accumulate as locked allocated funds every cycle. `prorateWithheldFee`
+  //    routes it out to platform balance where it already belonged, FLOORED so
+  //    the remainder is dust rather than an over-draw Stripe would reject. No
+  //    recipient's net changes and `computePublicationSplits` is not reopened.
+  //
+  // THE BUDGET IS SHARED ACROSS SPLITS, so the pack cannot be a per-split call
+  // against a pristine source list — two splits would both be told the same
+  // charge has room and the second transfer would be rejected. The remainders
+  // are threaded by hand between calls, which is safe precisely because the
+  // sources were locked once, in primary-key order, for the whole of Txn 1.
+  //
+  // A SPLIT IS ONE INDIVISIBLE UNIT, so it lands on a single charge or falls to
+  // the residual — it is never spread across charges. For a large publication,
+  // whose pool by construction spans many charges, that means a member's share
+  // can exceed any single charge's remaining allocation and route to platform
+  // balance. That is SAFE (it is ordinary today's behaviour) but it is not
+  // segregated, and it will show up as publication-heavy residual in the §3.3d
+  // metric. Splitting a divisible unit across charges is the fix if the
+  // measurement demands one; it is deliberately not done here, because it would
+  // reintroduce the fee-proration rounding this module exists to avoid.
+  // ---------------------------------------------------------------------------
+  private async packPublicationSplits(
+    client: PoolClient,
+    input: {
+      payoutId: string
+      publicationId: string
+      payoutMaxSlices: number
+      splits: Array<{ id: string; amountPence: number }>
+      withheldFeePence: number
+      settlementIds: string[]
+    },
+  ): Promise<void> {
+    const { payoutId, publicationId, payoutMaxSlices, splits, withheldFeePence } = input
+    if (splits.length === 0) return
+
+    // Locked in one statement in primary-key order — the pack order is
+    // data-dependent and must not also be the lock order, or two concurrent
+    // packers take the same rows in opposite orders and deadlock.
+    const sources = await lockFundingSources(client, input.settlementIds)
+
+    // The proration denominator is what is actually being DISTRIBUTED, so a
+    // split the compute clamped to zero (skipped at insert) is correctly absent
+    // from it.
+    const distributedPence = splits.reduce((s, sp) => s + sp.amountPence, 0)
+
+    // Local, mutable remainders. `packUnits` does not mutate its input, so
+    // without this each split would be packed against the full budget.
+    const remaining = new Map(sources.map((s) => [s.settlementId, s.remainingPence]))
+    const preference = sources.map((s) => s.settlementId)
+
+    let residualPence = 0
+
+    for (const split of splits) {
+      const feePence = prorateWithheldFee(
+        withheldFeePence,
+        split.amountPence,
+        distributedPence,
+      )
+
+      const unit: EarningUnit = {
+        id: split.id,
+        source: 'publication_payout_splits',
+        netPence: split.amountPence,
+        feePence,
+        // The whole pool's charges, in the locked (primary-key) order. No one
+        // of them is more "this split's" charge than another.
+        preferredSettlementIds: preference,
+      }
+
+      const live: FundingSource[] = sources.map((s) => ({
+        ...s,
+        remainingPence: remaining.get(s.settlementId) ?? 0,
+      }))
+
+      // One unit can only ever produce one slice, so this never overflows —
+      // the residual is always available as a last resort. maxSlices is passed
+      // for consistency with the writer cycle rather than because it can bind.
+      const { slices } = packUnits([unit], live, { maxSlices: payoutMaxSlices })
+
+      for (const slice of slices) {
+        if (slice.settlementId) {
+          remaining.set(
+            slice.settlementId,
+            (remaining.get(slice.settlementId) ?? 0) - (slice.netPence + slice.feePence),
+          )
+        } else {
+          residualPence += slice.netPence
+        }
+      }
+
+      // The split IS the parent: its children are the transfers underneath it.
+      // Nothing is stamped onto a claim row here, because the publication cycle
+      // claims its reads under the PAYOUT rather than under any split.
+      await insertChildren(client, 'publication_payout_splits', split.id, slices)
+    }
+
+    if (residualPence > 0) {
+      logger.warn(
+        {
+          payoutId,
+          publicationId,
+          residualPence,
+          distributedPence,
+          sources: sources.length,
+        },
+        'Publication splits partly funded from platform balance — no single charge had room for the whole split',
+      )
+    }
   }
 
   // Stripe loop: for each split still in 'pending', call Stripe with a stable
@@ -1989,6 +2201,22 @@ class PayoutService {
       // survives into the thunk closure below (control-flow narrowing of the
       // mutable `acc.stripe_connect_id` does not persist into a callback).
       const destination = acc.stripe_connect_id
+
+      // Keyed on the DATA, not the flag (§3.4). A split reserved with
+      // segregation ON must pay through its children even if an operator flips
+      // the flag off mid-flight — the children exist, their draws are recorded,
+      // and one aggregate transfer would double-pay against them.
+      if (await hasChildren('publication_payout_splits', split.id)) {
+        const paid = await this.completePublicationSplitChildren(
+          payoutId,
+          split.id,
+          split.account_id,
+          destination,
+        )
+        totalTransferred += paid
+        continue
+      }
+
       // Keyed on split.id, NOT account_id: computePublicationSplits can emit
       // two splits for the same account in one payout (a standing member who
       // also holds an article share), and a per-account key would make the
@@ -2081,6 +2309,89 @@ class PayoutService {
     return totalTransferred
   }
 
+  // ---------------------------------------------------------------------------
+  // completePublicationSplitChildren — the segregated path for ONE split (§3.4).
+  //
+  // One transfer per funding charge, each completed or failed independently,
+  // then the split settled once no child is left pending. Because the packing
+  // committed in Txn 1, this is a REPLAY: it never re-packs, so a crash-resume
+  // reproduces exactly the same transfers under exactly the same keys.
+  //
+  // Returns the pence actually paid, which is what the caller adds to its
+  // running total — NOT the split's reserved amount. A split whose second child
+  // Stripe rejected paid less than it claimed, and `completeParentIfSettled`
+  // restates `amount_pence` to Σ completed children so the row, the ledger and
+  // Stripe agree. That restatement is also what keeps the F5 chargeback
+  // proration honest: it reverses against what was paid, not what was intended.
+  // ---------------------------------------------------------------------------
+  private async completePublicationSplitChildren(
+    payoutId: string,
+    splitId: string,
+    accountId: string,
+    destination: string,
+  ): Promise<number> {
+    const spec: ChildCycleSpec = {
+      parentTable: 'publication_payout_splits',
+      parentId: splitId,
+      destination,
+      metadata: {
+        publication_payout_id: payoutId,
+        split_id: splitId,
+        account_id: accountId,
+      },
+
+      postLedger: async (client, child) => {
+        // Publication-member credit — money received. +amount, counterparty =
+        // platform (NULL). One entry PER CHILD, for its own net. The ref stays
+        // the PARENT split row and must: `ledger_publication_distribution`
+        // hard-filters `ref_table = 'publication_payout_splits'` and joins on
+        // that table's id, so re-pointing it at the child would silently empty
+        // the view — and reconcile-ledger's ledger_orphans check ends in a
+        // default-deny catch-all over reversal ref_tables that halts ALL
+        // payouts on an unknown one.
+        await recordLedger(client, {
+          accountId,
+          counterpartyId: null,
+          amountPence: child.net_pence,
+          triggerType: 'publication_split',
+          refTable: 'publication_payout_splits',
+          refId: splitId,
+        })
+      },
+
+      // No-ops, and not by oversight. The publication cycle claims its reads
+      // under the PAYOUT, not under any split, so a split owns no claim rows to
+      // advance — `finalisePublicationPayout` advances them all at once — and a
+      // terminally failed split keeps its claim rather than releasing it, which
+      // is the existing §1.2 posture: the split is marked failed and visible,
+      // and re-pay is manual (an automatic retry would need a fresh split row,
+      // since the idempotency key would otherwise dedupe to the failed
+      // transfer).
+      advanceUnits: async () => {},
+      releaseUnits: async () => {},
+    }
+
+    const result = await executePendingChildren(this.stripe, spec)
+
+    const completion = await withTransaction((client) =>
+      completeParentIfSettled(client, 'publication_payout_splits', splitId),
+    )
+
+    logger.info(
+      {
+        payoutId,
+        splitId,
+        accountId,
+        children: result,
+        splitCompleted: completion.completed,
+        amountPence: completion.paidPence,
+      },
+      'Publication split children executed',
+    )
+
+    return completion.completed ? completion.paidPence : 0
+  }
+
   // Txn 2: advance reserved read_events to writer_paid and flip the payout
   // row to 'initiated'. Safe to call repeatedly — both UPDATEs are
   // idempotent (WHERE status='platform_settled' / no-op on already-initiated).
@@ -2098,24 +2409,12 @@ class PayoutService {
         [publicationId, payoutId],
       )
 
-      // Audit F4 (2026-07-06): complete the parent payout off the create response
-      // when EVERY split has completed (no in-flight/pending/failed sibling) —
-      // mirrors the old confirmPublicationSplit parent-completion but at create
-      // time. If a split is still 'pending' (recipient KYC-incomplete), the payout
-      // is left 'pending' so resumePendingPublicationPayouts retries it next cycle
-      // (an improvement over the old unconditional 'initiated', which the resume
-      // sweep — keyed on status='pending' — would never revisit).
-      await client.query(
-        `UPDATE publication_payouts pp
-            SET status = 'completed', completed_at = now()
-          WHERE pp.id = $1
-            AND pp.status = 'pending'
-            AND NOT EXISTS (
-              SELECT 1 FROM publication_payout_splits s
-               WHERE s.publication_payout_id = pp.id
-                 AND s.status <> 'completed')`,
-        [payoutId],
-      )
+      // Complete the parent off the create response when no split is left
+      // 'pending'. The rule, and the zombie it fixes, live on the constant.
+      // This is also the rule `completeParentIfSettled` already applies to the
+      // payouts that carry `payout_transfers` children; it had simply never
+      // been applied to this legacy parent.
+      await client.query(PUBLICATION_PAYOUT_COMPLETE_SQL, [payoutId])
     })
   }
 
@@ -2788,6 +3087,30 @@ class PayoutService {
   // the parent publication_payouts row 'completed' too.
   // ---------------------------------------------------------------------------
   async confirmPublicationSplit(stripeTransferId: string): Promise<void> {
+    // §3.5 — resolve a CHILD first. With N transfers under one split,
+    // `publication_payout_splits.stripe_transfer_id` can hold one id of N, so a
+    // handler keyed on it silently drops every other child's event. Null means
+    // the legacy single-transfer shape (a pre-flip split), which falls through
+    // to the lookup below unchanged.
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'publication_payout_splits') return
+      // Completion is keyed off the create response (F4), so the child is
+      // already 'completed' and its ledger entry posted; this event is a
+      // belt-and-braces re-evaluation of the split, nothing more.
+      const completion = await withTransaction((client) =>
+        completeParentIfSettled(client, 'publication_payout_splits', child.parent_id),
+      )
+      if (completion.completed) {
+        await this.completePublicationParentBySplit(child.parent_id)
+      }
+      logger.info(
+        { stripeTransferId, childId: child.id, splitId: child.parent_id },
+        'Publication split child confirmed',
+      )
+      return
+    }
+
     const { rows } = await pool.query<{ id: string; publication_payout_id: string }>(
       `UPDATE publication_payout_splits
           SET status = 'completed'
@@ -2801,21 +3124,8 @@ class PayoutService {
       return
     }
 
-    // Mark the parent 'completed' only when EVERY split has completed — a still
-    // in-flight ('initiated'/'pending') or 'failed' split leaves the parent
-    // 'initiated' so a failed split isn't masked as a finished payout.
     const payoutId = rows[0].publication_payout_id
-    await pool.query(
-      `UPDATE publication_payouts pp
-          SET status = 'completed', completed_at = now()
-        WHERE pp.id = $1
-          AND pp.status <> 'completed'
-          AND NOT EXISTS (
-            SELECT 1 FROM publication_payout_splits s
-             WHERE s.publication_payout_id = pp.id
-               AND s.status <> 'completed')`,
-      [payoutId],
-    )
+    await pool.query(PUBLICATION_PAYOUT_COMPLETE_SQL, [payoutId])
 
     logger.info(
       { stripeTransferId, splitId: rows[0].id, payoutId },
@@ -2837,6 +3147,13 @@ class PayoutService {
     stripeTransferId: string,
     amountReversedPence: number | null,
   ): Promise<void> {
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'publication_payout_splits') return
+      await this.reversePublicationSplitChild(child, amountReversedPence)
+      return
+    }
+
     await withTransaction(async (client) => {
       // Partial-reversal handling mirrors reverseWriterPayout: cumulative
       // transfer.amount_reversed → post only the delta over the ledger's
@@ -2887,6 +3204,100 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
+  // reversePublicationSplitChild — one child of a multi-child split was clawed
+  // back. Reverses THAT CHILD's net only; siblings and the split's restated
+  // amount are untouched.
+  //
+  // Idempotency is the child's own `reversed_pence` under its row lock (see
+  // `reverseChild`) rather than the split-level cumulative-SUM guard the legacy
+  // path uses — that guard sums `writer_payout_reversal` entries against the
+  // split row, and now N children share that ref, so it cannot tell them apart.
+  // The ref itself stays the split, because `ledger_publication_distribution`
+  // filters on it.
+  // ---------------------------------------------------------------------------
+  private async reversePublicationSplitChild(
+    child: ChildRow,
+    amountReversedPence: number | null,
+  ): Promise<void> {
+    await withTransaction(async (client) => {
+      const { rows: splitRows } = await client.query<{ id: string; account_id: string }>(
+        `SELECT id, account_id FROM publication_payout_splits WHERE id = $1 FOR UPDATE`,
+        [child.parent_id],
+      )
+      if (splitRows.length === 0) {
+        logger.warn({ childId: child.id }, 'reversePublicationSplit: child has no parent split')
+        return
+      }
+      const { id: splitId, account_id: accountId } = splitRows[0]
+
+      const delta = await reverseChild(client, child, amountReversedPence)
+      if (delta <= 0) {
+        logger.info(
+          { splitId, childId: child.id },
+          'reversePublicationSplit: already posted — no-op (redelivery)',
+        )
+        return
+      }
+
+      // Same trigger type as the legacy path and as F5's split-recipient
+      // chargeback reversals: ledger_writer_earnings sums publication_split (+)
+      // and writer_payout_reversal (−) per account, so they net.
+      await recordLedger(client, {
+        accountId,
+        counterpartyId: null,
+        amountPence: -delta,
+        triggerType: 'writer_payout_reversal',
+        refTable: 'publication_payout_splits',
+        refId: splitId,
+      })
+
+      // The split is 'reversed' only when nothing of it is left standing.
+      const { rows: [tally] } = await client.query<{ outstanding: string }>(
+        `SELECT COALESCE(SUM(net_pence - reversed_pence), 0) AS outstanding
+           FROM payout_transfers
+          WHERE parent_table = 'publication_payout_splits' AND parent_id = $1
+            AND status IN ('completed', 'reversed')`,
+        [splitId],
+      )
+      if (parseInt(tally.outstanding, 10) <= 0) {
+        await client.query(
+          `UPDATE publication_payout_splits SET status = 'reversed' WHERE id = $1`,
+          [splitId],
+        )
+      }
+
+      logger.warn(
+        {
+          splitId,
+          childId: child.id,
+          accountId,
+          reversedPence: delta,
+          stripeTransferId: child.stripe_transfer_id,
+        },
+        'Publication split child reversed by Stripe',
+      )
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // completePublicationParentBySplit — apply the parent rule after one split
+  // reached a terminal state.
+  //
+  // "NO SPLIT PENDING", never "every split completed" — see
+  // finalisePublicationPayout for why that distinction is the whole fix.
+  // ---------------------------------------------------------------------------
+  private async completePublicationParentBySplit(splitId: string): Promise<void> {
+    // Resolve the payout, then run the ONE completion statement — rather than a
+    // second variant of the predicate that could drift from it.
+    const { rows } = await pool.query<{ publication_payout_id: string }>(
+      `SELECT publication_payout_id FROM publication_payout_splits WHERE id = $1`,
+      [splitId],
+    )
+    if (rows.length === 0) return
+    await pool.query(PUBLICATION_PAYOUT_COMPLETE_SQL, [rows[0].publication_payout_id])
+  }
+
+  // ---------------------------------------------------------------------------
   // handleFailedPublicationSplit — Stripe webhook on transfer.failed for a
   // PUBLICATION split. Marks the split 'failed' so the failure is visible
   // (previously it was silently mis-routed to handleFailedPayout, which never
@@ -2898,6 +3309,33 @@ class PayoutService {
   // row, so reconciliation stays clean).
   // ---------------------------------------------------------------------------
   async handleFailedPublicationSplit(stripeTransferId: string, reason: string): Promise<void> {
+    const child = await findChildByTransferId(stripeTransferId)
+    if (child) {
+      if (child.parent_table !== 'publication_payout_splits') return
+      // No unit release: a publication split owns no claim rows (its reads are
+      // claimed under the payout), and the §1.2 posture is that a failed split
+      // keeps its claim for manual re-pay.
+      const failed = await withTransaction((client) =>
+        failChild(client, child.id, reason),
+      )
+      if (failed) {
+        // Re-evaluate the split: with this child no longer pending it may now
+        // be settled at a smaller, restated amount — or, if it was the only
+        // child, failed outright.
+        const completion = await withTransaction((client) =>
+          completeParentIfSettled(client, 'publication_payout_splits', child.parent_id),
+        )
+        if (completion.completed || completion.failedOutright) {
+          await this.completePublicationParentBySplit(child.parent_id)
+        }
+      }
+      logger.warn(
+        { stripeTransferId, childId: child.id, splitId: child.parent_id, reason },
+        'Publication split child transfer failed',
+      )
+      return
+    }
+
     const { rows } = await pool.query<{ id: string }>(
       `UPDATE publication_payout_splits
           SET status = 'failed'

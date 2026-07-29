@@ -1243,6 +1243,75 @@ class SettlementService {
   }
 
   // ---------------------------------------------------------------------------
+  // recordRefundDraw — a refund consumed part of a charge's allocation.
+  //
+  // Spec: FUNDS-SEGREGATION-INTEGRATION.md §3.5 (`charge.refunded`, both arms).
+  //
+  // WHY THE PARTIAL ARM IS A FLIP BLOCKER, not a nicety. A refund takes money
+  // out of the charge, and under allocation it takes it out of the SEGREGATED
+  // balance. Stripe's number drops; ours — `allocated_pence − Σ draws` — does
+  // not, so the packer keeps offering a remainder the charge can no longer
+  // fund, and the next payout builds a slice Stripe rejects. The full-refund
+  // arm degrades gently (`reverseSettlement` moves the reads to
+  // `charged_back`, so they leave the pool anyway), but the partial arm today
+  // does nothing at all beyond a WARN: the reads stay `platform_settled` and
+  // stay payable against a charge that has been drained. That is the wedge.
+  //
+  // ONE ROW PER SETTLEMENT, HOLDING THE CUMULATIVE TOTAL. Stripe reports
+  // `charge.amount_refunded` cumulatively, so a second partial refund is a
+  // larger absolute figure rather than an increment — the opposite of
+  // `reverseChild`'s per-child deltas, which is why this upserts to GREATEST
+  // rather than accumulating. GREATEST and not a bare assignment because
+  // webhook delivery is not ordered: an out-of-order redelivery of the FIRST
+  // partial must not shrink the budget back. Over-recording a refund can only
+  // make us under-draw — the charge looks emptier than it is, its earnings
+  // route to another charge or to the residual — which is the safe direction,
+  // the same asymmetry `prorateWithheldFee` floors for.
+  //
+  // Deliberately NOT inside `reverseSettlement`'s transaction. It must run for
+  // a partial refund, where that method is never called at all, and it must
+  // still run when that method early-returns on an already-claimed reversal:
+  // the allocation fact is independent of whether we have unwound the reads.
+  //
+  // A lost dispute is NOT handled here, per §3.5: disputed funds stay
+  // allocated, and unallocating them takes a Stripe support request. The
+  // `syncAllocations` sweep is the backstop that eventually re-reads the truth.
+  // ---------------------------------------------------------------------------
+  // Exported below the class as RECORD_REFUND_DRAW_SQL so the integration test
+  // executes THIS statement rather than a copy — the upsert's monotonicity is a
+  // property of the SQL and of the (ref_table, ref_id, kind) unique, so a test
+  // running its own copy could not detect a regression here at all.
+  async recordRefundDraw(
+    stripeChargeId: string,
+    amountRefundedPence: number,
+  ): Promise<void> {
+    if (!allocatedFundsEnabled()) return;
+    if (amountRefundedPence <= 0) return;
+
+    const { rows } = await pool.query<{ id: string }>(
+      `SELECT id FROM tab_settlements WHERE stripe_charge_id = $1`,
+      [stripeChargeId],
+    );
+    if (rows.length === 0) {
+      // Not a tab-settlement charge (a Connect charge, a test object). Same
+      // posture as reverseSettlement's no-match arm: log, don't fail.
+      logger.warn(
+        { stripeChargeId, amountRefundedPence },
+        "recordRefundDraw: no settlement for charge — ignoring",
+      );
+      return;
+    }
+    const settlementId = rows[0].id;
+
+    await pool.query(RECORD_REFUND_DRAW_SQL, [settlementId, amountRefundedPence]);
+
+    logger.info(
+      { settlementId, stripeChargeId, amountRefundedPence },
+      "Refund recorded against the charge's allocation budget",
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // syncAllocations — read each charge's segregated balance BACK from Stripe.
   //
   // Spec: FUNDS-SEGREGATION-INTEGRATION.md §3.3a. The fourth sweep of the
@@ -1350,5 +1419,25 @@ class SettlementService {
     return { checked: candidates.length, synced };
   }
 }
+
+/**
+ * Record what a refund drew from a charge's segregated allocation (§3.5).
+ *
+ * ONE ROW PER SETTLEMENT, HOLDING THE CUMULATIVE TOTAL. Stripe reports
+ * `charge.amount_refunded` cumulatively, so a second partial refund arrives as a
+ * larger absolute figure rather than an increment — hence GREATEST rather than
+ * accumulation. GREATEST rather than a bare assignment because webhook delivery
+ * is not ordered: a late redelivery of the FIRST partial must not shrink the
+ * budget back. Over-recording can only make us under-draw, which is the safe
+ * direction.
+ *
+ * Exported so the integration test runs the real statement (see the method).
+ */
+export const RECORD_REFUND_DRAW_SQL = `
+  INSERT INTO allocated_draws
+    (settlement_id, kind, ref_table, ref_id, gross_pence)
+  VALUES ($1, 'refund', 'tab_settlements', $1, $2)
+  ON CONFLICT (ref_table, ref_id, kind)
+  DO UPDATE SET gross_pence = GREATEST(allocated_draws.gross_pence, EXCLUDED.gross_pence)`;
 
 export const settlementService = new SettlementService();

@@ -248,6 +248,11 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     //   • charge.refunded — but FULL refunds only. A partial refund needs
     //     proportional unwinding the per-read model doesn't support; we log and
     //     skip rather than reverse the whole settlement incorrectly.
+    //
+    // Under funds segregation (§3.5) the ALLOCATION accounting is a separate
+    // axis and has no such restriction: both refund arms record what the refund
+    // drew from the charge's segregated balance, because that balance falls
+    // whether or not we unwind the reads.
     // -------------------------------------------------------------------------
     case 'charge.dispute.closed': {
       const dispute = event.data.object as Stripe.Dispute
@@ -260,12 +265,26 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         logger.error({ disputeId: dispute.id }, 'dispute.closed missing charge — cannot reverse')
         break
       }
+      // §3.5 deliberately does NOT insert an allocated_draws row here. Disputed
+      // funds stay in the allocated state and unallocating them requires a
+      // Stripe support request, so there is nothing for our budget to record and
+      // nothing to automate. The syncAllocations sweep re-reads the charge's
+      // real remaining allocation on its own cadence, which is the backstop if
+      // Stripe's number does move.
       await settlementService.reverseSettlement(chargeId, 'chargeback_lost')
       break
     }
 
     case 'charge.refunded': {
       const charge = event.data.object as Stripe.Charge
+      // §3.5 — record the allocation the refund consumed BEFORE deciding whether
+      // to unwind the reads, because the two are independent facts and only one
+      // of them has a partial arm. A refund drains the charge's SEGREGATED
+      // balance; if our drawing budget doesn't learn about it, the packer keeps
+      // offering a remainder the charge can no longer fund and the next payout
+      // builds a slice Stripe rejects. Idempotent (cumulative upsert), and a
+      // no-op with the flag off.
+      await settlementService.recordRefundDraw(charge.id, charge.amount_refunded)
       if (charge.amount_refunded < charge.amount) {
         // The per-read model can't proportionally unwind, so a partial refund
         // leaves the reader charged + writers paid. Emit the alertable

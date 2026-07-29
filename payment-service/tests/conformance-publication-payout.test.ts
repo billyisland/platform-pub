@@ -20,7 +20,10 @@ import { connectionError, invalidRequest, type LedgerRow } from './support/confo
 //
 // Covered:
 //   • multi-leg crash after leg 2 → resume finishes 3–4 once, 1–2 never re-paid
-//   • terminal error on one leg → that leg 'failed', siblings paid, parent pending
+//   • terminal error on one leg → that leg 'failed', siblings paid, and the
+//     parent COMPLETES — a failed leg is done, and freezing the parent on one
+//     was the zombie fixed 2026-07-29 (see the test for the full shape)
+//   • a still-'pending' leg DOES hold the parent open (the retry arm)
 //   • ambiguous error on one leg → that leg stays 'pending', re-paid on resume
 //   • resume-sweep idempotency (all-completed re-run is a no-op)
 //   • a KYC-incomplete recipient leaves its leg pending (parent not completed)
@@ -76,6 +79,8 @@ const db = {
   splits: [] as SplitRow[],
   reads: [] as ReadRow[],
   ledger: [] as LedgerRow[],
+  /** payout_transfers. Stays EMPTY here — this battery is the flag-off pin. */
+  children: [] as Array<{ parent_table: string; parent_id: string }>,
   parentSeq: 0,
   /** Crash on the Nth query matching `re` (1 = the first). */
   crashers: [] as Array<{ re: RegExp; remaining: number }>,
@@ -87,6 +92,7 @@ function reset() {
   db.splits = []
   db.reads = []
   db.ledger = []
+  db.children = []
   db.parentSeq = 0
   db.crashers = []
   transfers._reset()
@@ -165,11 +171,37 @@ function query(sql: string, params: unknown[] = []) {
     for (const r of db.reads) if (r.publication_id === publicationId && r.writer_payout_id === payoutId && r.state === 'platform_settled') { r.state = 'writer_paid'; n++ }
     return Promise.resolve({ rows: [], rowCount: n })
   }
-  // --- finalise: complete parent only when no non-completed sibling ---
+  // --- payout_transfers (segregation children) ---
+  // Answered from the fake table rather than hard-coded: with
+  // STRIPE_ALLOCATED_FUNDS off no child is ever inserted, so hasChildren() must
+  // report 0 and processPublicationSplits must take the single-transfer path —
+  // which is exactly the flag-off regression this battery pins (§5.13).
+  if (/count\(\*\) AS n FROM payout_transfers/.test(sql)) {
+    const n = db.children.filter((c) => c.parent_table === params[0] && c.parent_id === params[1]).length
+    return Promise.resolve(ok([{ n: String(n) }]))
+  }
+  if (/FROM payout_transfers/.test(sql)) {
+    return Promise.resolve(ok([]))
+  }
+
+  // --- finalise: complete the parent ---
+  // The blocking condition is READ OUT OF THE SQL, not restated here. A mock
+  // that hard-coded "no split pending" would pass just as happily against the
+  // pre-fix predicate (`s.status <> 'completed'`) — it would be pinning this
+  // file's opinion rather than the statement, which is exactly the failure the
+  // repo's mock rule names. Parsing the operator and the status literal makes
+  // the mutation visible: restore the old predicate and the zombie test below
+  // goes red here too, not only in the DB-backed battery.
   if (/UPDATE publication_payouts pp\s+SET status = 'completed'/.test(sql)) {
     const p = db.parents.get(params[0] as string)
-    const allDone = db.splits.filter((s) => s.publication_payout_id === params[0]).every((s) => s.status === 'completed')
-    if (p && p.status === 'pending' && allDone) { p.status = 'completed'; return Promise.resolve({ rows: [], rowCount: 1 }) }
+    const m = /AND s\.status (=|<>) '(\w+)'/.exec(sql)
+    if (!m) throw new Error(`unrecognised sibling predicate in: ${sql}`)
+    const [, op, want] = m
+    const blocks = (status: string) => (op === '=' ? status === want : status !== want)
+    const noneBlocking = !db.splits.some(
+      (s) => s.publication_payout_id === params[0] && blocks(s.status),
+    )
+    if (p && p.status === 'pending' && noneBlocking) { p.status = 'completed'; return Promise.resolve({ rows: [], rowCount: 1 }) }
     return Promise.resolve({ rows: [], rowCount: 0 })
   }
 
@@ -239,7 +271,19 @@ describe('publication payout — multi-leg crash after leg 2 of 4', () => {
 
 // ---------------------------------------------------------------------------
 describe('publication payout — per-leg terminal vs ambiguous', () => {
-  it('terminal on one leg → that leg failed, siblings paid, parent stays pending', async () => {
+  // This test asserted the OPPOSITE until 2026-07-29 ("a failed sibling blocks
+  // completion"), and in doing so it pinned a live zombie: the parent completed
+  // only when NO split was `<> 'completed'`, while the resume sweep retries only
+  // `pending` ones. So a terminally-failed leg left the parent 'pending'
+  // FOREVER — every cycle the sweep picked it up, found nothing to retry,
+  // finalised, failed the same test and left the row exactly as it was. Nothing
+  // in the system could resolve it.
+  //
+  // The rule is now "no split PENDING". A failed split does not mean the payout
+  // failed: the pool was claimed, the reads consumed and the other members paid.
+  // It means one recipient needs a manual re-pay (§1.2) — which is recorded on
+  // the split's own row, where it is visible, rather than by freezing the parent.
+  it('terminal on one leg → that leg failed, siblings paid, parent COMPLETES (no zombie)', async () => {
     seedPayout('pp-1', 'pub-1', [
       { account: 'A', amount: 1000 },
       { account: 'B', amount: 2000 },
@@ -250,9 +294,33 @@ describe('publication payout — per-leg terminal vs ambiguous', () => {
 
     expect(split('split-1').status).toBe('failed')
     expect(split('split-2').status).toBe('completed')
-    expect(db.parents.get('pp-1')!.status).toBe('pending') // a failed sibling blocks completion
+    expect(db.parents.get('pp-1')!.status).toBe('completed')
     expect(splitEntries()).toHaveLength(1) // only the paid leg
     expect(splitEntries()[0].account).toBe('B')
+
+    // The half of the bug that made it a zombie rather than a wrong status: the
+    // sweep must no longer see this payout at all. Under the old rule it came
+    // back on every cycle, forever, and re-ran finalise to no effect.
+    const before = transfers.calls.length
+    await payoutService.resumePendingPublicationPayouts()
+    expect(db.parents.get('pp-1')!.status).toBe('completed')
+    expect(transfers.calls.length).toBe(before) // nothing retried
+  })
+
+  it('a still-PENDING leg does hold the parent open — the retry arm is unchanged', async () => {
+    // The distinction the fix rests on: 'failed' is done, 'pending' is not.
+    // A KYC-incomplete recipient's leg stays pending and must keep the parent
+    // pending, or the resume sweep would stop retrying a leg that can still pay.
+    seedPayout('pp-1', 'pub-1', [
+      { account: 'A', amount: 1000, kyc: false },
+      { account: 'B', amount: 2000 },
+    ])
+    transfers.succeedNext()
+    await payoutService.resumePendingPublicationPayouts()
+
+    expect(split('split-1').status).toBe('pending')
+    expect(split('split-2').status).toBe('completed')
+    expect(db.parents.get('pp-1')!.status).toBe('pending')
   })
 
   it('ambiguous on one leg → that leg stays pending and is re-paid on resume', async () => {

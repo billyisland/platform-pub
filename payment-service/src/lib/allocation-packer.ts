@@ -39,8 +39,21 @@
 export interface EarningUnit {
   /** Opaque to the packer; the caller uses it to stamp the claim row. */
   id: string
-  /** Which claim table the id belongs to — the caller's release path needs it. */
-  source: 'read_events' | 'subscription_events' | 'tribute_accruals'
+  /**
+   * Which claim table the id belongs to — the caller's release path needs it.
+   *
+   * `publication_payout_splits` is the odd one and deliberately so: a split is
+   * not a claim row, it is the RECIPIENT row, and the publication cycle claims
+   * its reads under the *payout* rather than under any split. So a publication
+   * unit's id is its own parent's id and there is nothing to stamp or release —
+   * which is why that cycle's `advanceUnits`/`releaseUnits` are no-ops and a
+   * terminally failed split keeps its claim for manual re-pay (§1.2).
+   */
+  source:
+    | 'read_events'
+    | 'subscription_events'
+    | 'tribute_accruals'
+    | 'publication_payout_splits'
   /** What the recipient is paid. Always > 0 by the time it reaches the packer. */
   netPence: number
   /**

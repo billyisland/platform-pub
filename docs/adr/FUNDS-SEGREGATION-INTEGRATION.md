@@ -975,6 +975,12 @@ the brake needs its `DEPLOYMENT.md` row and compose default (§3.1); and the
 
 ## 10. As built (2026-07-29) — what exists, what diverges, what is missing
 
+**Updated later the same day (part 2).** The publication cycle, the
+`charge.refunded` allocation hooks and the `finalisePublicationPayout` zombie
+are now built, and the flag-ON assembly has DB-backed, mutation-verified
+coverage. Read §10.1a and §10.3 together; the tribute cycle, the reconcile
+sweep and the residual metric are still the honest remainder.
+
 Everything below is behind `STRIPE_ALLOCATED_FUNDS` (default off). Flag off is
 byte-identical to before: the four conformance batteries pass unchanged, which is §5.13.
 
@@ -1008,6 +1014,49 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
   `handleFailedPayout`.
 - **§4 tripwire** — `INSERT INTO payout_transfers` added to `PAYOUT_MARKER`;
   `payout-children.ts` registered.
+
+### 10.1a Built in part 2 (2026-07-29, later)
+
+- **§3.5 `charge.refunded`, both arms.** `settlementService.recordRefundDraw`
+  (statement exported as `RECORD_REFUND_DRAW_SQL`) inserts one
+  `allocated_draws` row per settlement, `kind = 'refund'`, holding the
+  CUMULATIVE refunded total. Called from the webhook BEFORE the reverse
+  decision, so the partial arm — which does nothing else but WARN — is covered:
+  that arm was the wedge, since the reads stay `platform_settled` and stay
+  payable against a charge that has been drained. Idempotent by the
+  `(ref_table, ref_id, kind)` unique; **GREATEST, not assignment**, because
+  webhook delivery is unordered and a late redelivery of the first partial must
+  not shrink the budget back. A lost dispute deliberately records nothing
+  (§3.5: disputed funds stay allocated), with `syncAllocations` as the backstop.
+- **§3.4 the publication cycle.** `packPublicationSplits` runs inside
+  `reservePublicationPayout`'s transaction: one unit per split, the pool's
+  contributing settlements (from the claimed reads' and subs'
+  `tab_settlement_id`) as the **preference set**, and
+  `prorateWithheldFee` supplying the per-split fee so the already-withheld
+  pooled fee actually leaves allocated state. `processPublicationSplits`
+  branches on `hasChildren` (data, not flag) into
+  `completePublicationSplitChildren`; the three transfer webhook handlers
+  (`confirmPublicationSplit`, `reversePublicationSplit`,
+  `handleFailedPublicationSplit`) resolve a child first.
+  `advanceUnits`/`releaseUnits` are **no-ops by design** — a split owns no claim
+  rows (its reads are claimed under the payout), and a terminally failed split
+  keeps its claim for manual re-pay (§1.2).
+- **The legacy `finalisePublicationPayout` zombie is fixed.** The rule is now
+  "no split PENDING", in one place — `PUBLICATION_PAYOUT_COMPLETE_SQL`, used by
+  all three call sites.
+- **Coverage.** `payment-service/tests/segregation-assembly-integration.test.ts`
+  — 14 DB-backed tests (real Postgres, always-rollback, `skipIf(!DB_URL)` so CI
+  stays green) over budget → pack → children → draws → complete → reverse, plus
+  the refund hook and the zombie. **Seven mutations were run and all seven turn
+  the suite red**: the zombie predicate restored; `prorateWithheldFee` back to
+  rev 2's `0`; the refund upsert's GREATEST dropped (in the test's copy AND in
+  production's statement); `completeParentIfSettled` blocking on a failed child;
+  `failChild` not releasing its draw; the draw recording net instead of gross.
+  Both SQL statements are **exported and executed by the test**, not copied, so
+  a regression in the service is detectable at all — and the publication
+  conformance mock now **parses the sibling predicate out of the SQL** rather
+  than restating it, so it catches the zombie mutation too (it did not, at
+  first: that was found by running the mutation, not by reading the mock).
 
 ### 10.2 Divergences from the spec above — read these, they are deliberate
 
@@ -1048,19 +1097,30 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
 
 ### 10.3 Not built — the honest remainder
 
-- **§3.4 both remaining cycles.** Publication: `prorateWithheldFee` is written and tested
-  but nothing calls it, so the pooled fee would still strand. Tribute: untouched.
-- **The legacy `finalisePublicationPayout` zombie is still live.** The "no child pending"
-  rule is implemented for parents that HAVE children; §3.3c asks for it on the publication
-  parent "in the same change" and that has not happened.
-- **§3.5 allocation hooks.** `charge.refunded` (full and partial) must insert
-  `allocated_draws` refund rows. Until it does, a partial refund wedges the packer once the
-  flag is on — this is a flip blocker, not a nicety.
+- **§3.4 the TRIBUTE cycle.** Untouched. Inert while `TRIBUTES_ENABLED` is off, but
+  leaving it unbuilt is how that flag becomes unflippable later. The shape is known and
+  smaller than the publication one: each `tribute_accruals` row is a unit with a real
+  preferred settlement and zero fee, and the child carve apportions across those units
+  through the existing `apportionCarve` (with the same two assertions the writer cycle
+  makes). `tribute_accruals.payout_transfer_id` already exists from migration 165.
+- **A publication split is ONE indivisible unit, so it never spreads across charges.**
+  Per §3.4 as written, but worth stating as a known limitation rather than leaving it
+  implicit: a pool spans many charges by construction, so a member's share can exceed any
+  single charge's remaining allocation and route to platform balance. Safe (it is ordinary
+  pre-flip behaviour) but NOT segregated, and it will show up as publication-heavy residual
+  in the §3.3d metric — which is the measurement that should decide whether a divisible
+  unit is worth the fee-proration rounding it would reintroduce. Do not decide it before
+  the metric exists.
 - **§3.6 reconcile**, **§3.3d residual metric** (the dial exists; nothing reads it),
   **§3.3f Balance-Transfer dust script**.
-- **Test coverage gap, stated plainly.** The packer is unit-tested and mutation-verified and
-  the per-child reversal has seven tests (§5 step 7b's unit-level twin). The flag-ON
-  reserve→pack→execute→complete assembly has NO automated coverage.
+- **Test coverage, and what it still does not reach.** The flag-ON assembly now has 14
+  DB-backed, mutation-verified tests (§10.1a). What they do NOT cover is
+  `executePendingChildren`'s Stripe call itself — it drives the module-level `pool`, so it
+  is unreachable from inside a rolled-back transaction, and the terminal/ambiguous split,
+  the row-stable key and the flip-gated ledger emit remain pinned only by the mock-based
+  conformance batteries. Nor is the publication reserve driven end-to-end with the flag ON:
+  `packPublicationSplits` is exercised through its parts, not through
+  `runPublicationPayoutCycle`.
 - **§5 step 0 was not run, and the design consumed placeholders in its place.**
   `allocated_residual_alert_bps` ships at 2000 as an explicit placeholder and WILL fire
   spuriously; `payout_max_slices` ships at 20 as a guess. Both are dials, so both are an

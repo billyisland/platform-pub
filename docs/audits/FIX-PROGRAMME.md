@@ -23,6 +23,74 @@ starts.
 
 ## Progress
 
+- **2026-07-29 (funds segregation, part 2 — the publication cycle, the refund hooks, and a
+  zombie that could never die)** — the publication payout cycle under segregation, the
+  `charge.refunded` allocation hooks on both arms, and the `finalisePublicationPayout`
+  fix. Still dark behind `STRIPE_ALLOCATED_FUNDS`. Spec:
+  `docs/adr/FUNDS-SEGREGATION-INTEGRATION.md` §10.1a (as-built) and §10.3 (what remains:
+  the TRIBUTE cycle, the §3.6 reconcile sweep, the §3.3d residual metric, and §5 step 0,
+  which is now the largest flip blocker). → CONSOLIDATED-TODO §1.13.
+
+  **The refund hook is the flip blocker, and its partial arm was the whole of it.** A
+  refund takes money out of a charge's segregated balance. Before this, our drawing budget
+  never learned: Stripe's number fell and ours did not, so the packer kept offering a
+  remainder the charge could no longer fund and the next payout built a slice Stripe would
+  reject. The FULL arm degraded gently by accident — `reverseSettlement` moves the reads to
+  `charged_back`, so they leave the pool anyway — but the PARTIAL arm did nothing beyond a
+  WARN, leaving reads `platform_settled` and payable against a drained charge. One
+  `allocated_draws` row per settlement now holds the CUMULATIVE refunded total, upserted
+  with **GREATEST rather than assignment**, because Stripe reports `amount_refunded`
+  cumulatively *and* webhook delivery is unordered — a late redelivery of the first partial
+  must not shrink the budget back. Recorded before the reverse decision, since the two are
+  independent facts and only one of them has a partial arm. A lost dispute deliberately
+  records nothing (§3.5: disputed funds stay allocated; `syncAllocations` is the backstop).
+
+  **The publication cycle's real problem was the fee, and rev 2 had it exactly inverted.**
+  The pooled fee is withheld when the pool is computed, so claiming an application fee on
+  top looks like taking it twice. Right premise, wrong conclusion: under allocation the
+  FULL charge is locked, so a fee never claimed as an `application_fee_amount` never leaves
+  allocated state at all. Not twice — ZERO times, with roughly a tenth of all publication
+  revenue accumulating as locked funds every cycle. `prorateWithheldFee` now routes it out,
+  FLOORED so the proration under-claims and the remainder is dust: over-claiming would
+  over-draw the charge and Stripe would reject the transfer, so the two error directions
+  are not symmetric. No recipient's net changes and `computePublicationSplits` is untouched.
+
+  Attribution needed no invention. A split is a bps share of a pool spanning many charges,
+  so it has no natural funding charge — resolved at the funding layer instead: one unit per
+  split, with the pool's contributing settlements as a **preference SET**, which the packer
+  already accepted. `advanceUnits`/`releaseUnits` are no-ops by design (a split owns no
+  claim rows; a failed split keeps its claim for manual re-pay, §1.2).
+
+  **The zombie.** `finalisePublicationPayout` completed its parent only when
+  `NOT EXISTS (split WHERE status <> 'completed')`, while the resume sweep retries only
+  `pending` splits. So one terminally-failed split froze the parent at `pending` forever:
+  every cycle the sweep picked it up, found nothing to retry, finalised, failed the same
+  test, and left the row exactly as it was — a state nothing in the system could resolve.
+  The rule is now "no split PENDING" ('failed' is *done*, and visible on its own row),
+  living in one exported constant used by all three call sites.
+
+  **Seven mutations, all detected — and two of them found real weaknesses in the tests
+  first.** New `segregation-assembly-integration.test.ts`: 14 DB-backed tests (real
+  Postgres, always-rollback, `skipIf(!DB_URL)` so CI stays green) closing §10.3's stated
+  gap, the flag-ON reserve→pack→children→complete assembly, which had no coverage at all.
+  DB-backed because that half is almost entirely SQL — `GREATEST(0, allocated_pence − Σ
+  draws)`, a UNIQUE-backed upsert, `count(*) FILTER` tallies — none of which a mocked
+  `pool.query` can evaluate. Mutations run: the zombie predicate restored;
+  `prorateWithheldFee` back to `0`; the refund GREATEST dropped; `completeParentIfSettled`
+  blocking on a failed child; `failChild` not releasing its draw; the draw recording net
+  instead of gross. **Two lessons the mutations taught, not the reading:** the first
+  version of the zombie test ran a COPY of the SQL and so could not have detected a
+  regression in `payout.ts` at all (both statements are now exported and executed by the
+  test); and the publication conformance mock RESTATED the completion rule in JS, staying
+  green against the pre-fix predicate — it now parses the operator and status literal out
+  of the SQL it is handed, per the repo's own mock rule, and catches the mutation too.
+
+  Verification: `tsc` clean, root lint 0 errors, both tripwires green
+  (`check-ledger-adjacency.sh` — its `payout.ts` registry floor re-read BY HAND to 13
+  against the two new call sites — and `check-read-chargeable.sh`), 224/224 tests with a
+  DB, 199 passed + 25 skipped without. Not runtime-verified against Stripe: everything here
+  is dark, and the sandbox probes (§5 step 0) still have not been run.
+
 - **2026-07-29 (funds segregation, part 1 — the payout stops being one transfer)** —
   migration 165 plus the packer, the shared child lifecycle and the writer cycle, all
   dark behind `STRIPE_ALLOCATED_FUNDS` (default off). Spec:

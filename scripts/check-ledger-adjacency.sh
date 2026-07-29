@@ -85,8 +85,12 @@ LEDGER_PRIMITIVE="shared/src/lib/ledger.ts"
 #
 # Funds segregation (migration 165) added two payout.ts call sites — the
 # per-child writer_payout entry and the per-child reversal — taking the file
-# from 9 actual sites to 11. Both numbers are RE-READ BY HAND against the call
-# sites, not derived, and the exercise is the point: the floor stood at 4 while
+# from 9 actual sites to 11. Segregation part 2 added the publication twins of
+# both (the per-child publication_split entry in
+# completePublicationSplitChildren and the per-child reversal in
+# reversePublicationSplitChild), taking it to 13. Every number here is RE-READ
+# BY HAND against the call sites, not derived, and the exercise is the point:
+# the floor stood at 4 while
 # the file had 9, so it would have gone on passing had the segregation change
 # DELETED four of them. Guard 1 is a per-file COUNT — it never notices a
 # lifecycle change (moving the writer entry from completeWriterPayout to
@@ -105,7 +109,7 @@ LEDGER_PRIMITIVE="shared/src/lib/ledger.ts"
 REGISTRY=(
   "payment-service/src/services/accrual.ts::2"
   "payment-service/src/services/settlement.ts::4"
-  "payment-service/src/services/payout.ts::11"
+  "payment-service/src/services/payout.ts::13"
   "payment-service/src/services/payout-children.ts::0"
   "gateway/src/routes/drives.ts::1"
   "gateway/src/routes/articles/subscription-convert.ts::1"
