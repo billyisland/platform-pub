@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict azymKBIDOkbGOiqYZeghNyTc0hxQ4NThbAPs9b2yLaOuBuLr5uuVAqzcEeudWjA
+\restrict Ex7KPftcJez82I8eYJuvcz1AtbX3CcHKwqQNu9rlXf9KvpGT4gagknDH9gpDPHM
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -796,7 +796,7 @@ CREATE TABLE public.allocated_draws (
 -- Name: TABLE allocated_draws; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.allocated_draws IS 'Drawing budget against a charge''s Stripe allocation (migration 165). One row per claim: transfer (+), refund (−, allocation consumed by a refund), reversal (−, funds returned to allocated state). NOT a ledger — it records no money movement and mirrors no ledger_entries row.';
+COMMENT ON TABLE public.allocated_draws IS 'Drawing budget against a charge''s Stripe allocation (migration 165; sign corrected in 166). The budget is allocated_pence - SUM(gross_pence), so a POSITIVE row consumes budget and a NEGATIVE row returns it. One row per claim: transfer (+, the child''s gross placed on the charge), refund (+, allocation consumed by a refund — cumulative amount_refunded, GREATEST-upserted because webhook delivery is unordered), reversal (-, funds returned to allocated state by a transfer reversal). NOT a ledger — it records no money movement and mirrors no ledger_entries row.';
 
 
 --
@@ -7416,7 +7416,8 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict azymKBIDOkbGOiqYZeghNyTc0hxQ4NThbAPs9b2yLaOuBuLr5uuVAqzcEeudWjA
+\unrestrict Ex7KPftcJez82I8eYJuvcz1AtbX3CcHKwqQNu9rlXf9KvpGT4gagknDH9gpDPHM
+
 
 --
 
@@ -7585,4 +7586,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('162_waitlist.sql'),
     ('163_waitlist_admission.sql'),
     ('164_read_chargeable_pence.sql'),
-    ('165_funds_segregation.sql');
+    ('165_funds_segregation.sql'),
+    ('166_allocated_draws_comment_sign.sql');
