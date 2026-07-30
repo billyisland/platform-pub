@@ -95,7 +95,7 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
             board.
           </DemoQuote>
           <DemoTag palette={palette}>
-            via Bluesky &middot; bergqvist.bsky.social &rarr;
+            via Bluesky &middot; bergqvist.all.haus &rarr;
           </DemoTag>
         </DemoPost>
 
@@ -106,7 +106,7 @@ export function OmnivoreDemo({ palette }: { palette: VesselPalette }) {
             of something I cannot name for eleven euros. He drew me a picture of
             how to cook it. The picture is also unidentifiable.
           </DemoBody>
-          <DemoTag palette={palette}>via Nostr &middot; aurelio@driftpost.net &rarr;</DemoTag>
+          <DemoTag palette={palette}>via Nostr &middot; aurelio@all.haus &rarr;</DemoTag>
         </DemoPost>
 
         <DemoPost palette={palette}>

@@ -162,6 +162,15 @@ function Card({
 // The protocol labels are the exception and must stay literally true: they ARE
 // the omnivore argument.
 //
+// "INVENTED" IS NOT ENOUGH FOR A HANDLE — a handle lives in a live registry, so
+// an invented one resolves to whoever happens to hold it (bergqvist.bsky.social
+// was invented here and turned out to be a real, registered account — under an
+// invented corruption accusation). A demo identifier that RESOLVES anywhere must
+// live in a namespace the operator controls: all.haus (which is also literally
+// true of the product — branded atproto handles and NIP-05 are both served from
+// it). Before shipping a new handle, resolve it against its real registry and
+// reserve the local part.
+//
 // THE CAST IS SHARED; THE POSTS ARE NOT. A visitor meets all three demos in one
 // scroll, so a card that appears twice reads as the page having run out of
 // things to show. No post body, headline or quote is repeated across the three
