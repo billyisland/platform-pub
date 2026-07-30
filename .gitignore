@@ -24,3 +24,8 @@ shared/src/**/*.d.ts.map
 
 # Claude Code harness state — churns every session, never meaningful to track (§0f-18)
 .claude/scheduled_tasks.lock
+
+# Inbound patch bundles — review their contents, never commit the archive
+# (a zip dodges every tripwire; the 2026-07-27 landing bundle carried a
+# hairline and real names in a form check-hairlines.sh cannot scan)
+*.zip

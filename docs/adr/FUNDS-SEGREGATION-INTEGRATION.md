@@ -7,11 +7,16 @@ against the live docs (all hold, verbatim); two substantive corrections (§3.5's
 claim was stale, §3.6 misstated the halt scope), citation fixes, and the GB cross-border
 open question (§7.5). Rev 3 rewrote §3.3c, §3.5 and §5 around per-child state; rev 1's
 per-settlement slice model remains withdrawn. See §9. Read §3.3 fresh.
-**Build status:** partially built, 2026-07-29 — migration 165, the packer, the shared child
-lifecycle and the **writer** cycle are in, dark behind `STRIPE_ALLOCATED_FUNDS=0`. The
-publication and tribute cycles, the refund/allocation hooks and the reconcile sweep are
-NOT. **Read §10 before doing anything else**: it is the as-built record, and it is where
-the code and this spec diverge.
+**Build status:** CODE COMPLETE, 2026-07-29, dark behind `STRIPE_ALLOCATED_FUNDS=0` — all
+three payout cycles (writer, publication, tribute) fund through the packer, and the
+refund/allocation hooks, the §3.6 reconcile sweep, the §3.3d residual metric and the dust
+script are all in. The remaining flip blocker is §5 step 0's MEASUREMENTS (harnesses
+committed 2026-07-30 — a credentials errand, not a build). **Read §10 before doing
+anything else**: it is the as-built record, and it is where the code and this spec
+diverge. *(This header previously froze at the part-1 state — "publication and tribute
+cycles … NOT [built]" — and stayed false at HEAD through four same-day docs commits while
+§10, the TODO and DEPLOYMENT.md all recorded the build complete; corrected 2026-07-30.
+Headers are what correction sweeps skip: when §10 moves, re-read this line.)*
 **Owner context:** Segregation locks pooled reader funds into a holding state on the platform
 account so they can only move to connected accounts — the regulatory point of the whole
 exercise. Everything below is gated behind `STRIPE_ALLOCATED_FUNDS=1` so live behaviour is

@@ -1267,7 +1267,7 @@ html.dark {
     position: relative;
     margin: 1.6em 2.4em;
     padding: 1.6em 1.8em 1.8em;
-    box-shadow: 0 0.8em 2.4em rgb(0 0 0 / 0.22);
+    box-shadow: 0 0.8em 2.4em rgb(var(--ah-true-black-rgb) / 0.22);
   }
 
   .ah-demo-grip {

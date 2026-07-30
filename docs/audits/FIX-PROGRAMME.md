@@ -112,7 +112,12 @@ starts.
   DB-backed segregation assembly tests actually ran; all three tripwires green.
   **Prod state, established afterwards and the same lesson twice.** A request to "deploy
   migration 165" turned out to be a no-op: 165 had been applied on 2026-07-29 at 16:35 UTC,
-  along with 162–164, and prod's schema was already fully current. I had asserted the
+  and prod's schema was already fully current. *(Corrected 2026-07-30: this entry
+  originally said "along with 162–164", which the `_migrations.applied_at` listing it was
+  itself based on contradicts — each migration went on separately as its code shipped: 162
+  at 2026-07-24 11:39 UTC, 163 at 2026-07-27 19:12 UTC, 164 at 2026-07-29 10:12 UTC, 165
+  at 16:35 UTC. All times here UTC, straight from the column. An entry preaching
+  state-from-evidence compressed the evidence it had into a falsehood.)* I had asserted the
   opposite earlier in the same session, inferring it from this queue's "not yet deployed"
   note about the closed-beta ship — which is exactly what the deploy note says never to do.
   Three read-only commands settle it and none of them is expensive: `_migrations` for the
@@ -435,7 +440,11 @@ starts.
   gateway + web rebuilt. `CLOSED_BETA` is a code constant rather than an env
   flag, so the deploy itself is the act: account creation is now reserved to
   the admit route, and the waiting list is the only door. Built 2026-07-24,
-  live five days later.
+  live five days later. *(Timing corrected 2026-07-30 from prod's
+  `_migrations.applied_at`: the migrations did NOT ride this deploy — 162 was
+  applied 2026-07-24 11:39 UTC and 163 on 2026-07-27 19:12 UTC, days before
+  the 07-29 image rebuild that actually closed the beta. "Live five days
+  later" is right about the code, not the schema.)*
 
   **The logged-out register was swept on `all.haus` in both modes at both
   form factors**, and read correctly as built — no changes required. That

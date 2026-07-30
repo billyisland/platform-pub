@@ -673,6 +673,19 @@ in §XI.2's spec; it earns its place because this whole section exists from an
 incident about not being told, and the panel is where you would look to find
 out whether you had been.
 
+> **Corrected 2026-07-30 — the paragraph above describes the panel as built on
+> 2026-07-27 MORNING, before that same day's D3 reversal removed
+> publish-interest end to end.** As shipped, the panel carries **no
+> publish-interest tile and no publish-interest column** (the route comment in
+> `admin-dashboard.ts` is the in-code record; the DB column survives unread,
+> per D3). The four counts as shipped are: total waiting · joined in the last
+> 7 days · admitted · **admitted-but-not-invited** (the retry-worthy state),
+> plus the last-digest tile; rows show address · joined · admission state ·
+> username once admitted (the §XI.6 additions). Note the D4 waitlist-copy
+> footnote says "opt-in removed entirely — see §XI.5", which pointed into the
+> stale text this note replaces; D3's reversal block is the authority on the
+> removal.
+
 **No actions, and the page says so** rather than showing a control that
 half-works: Admit needs `admitted_at` on the row to be safe, so it waits for
 its own item. There is no `admitted` column yet for the same reason.
