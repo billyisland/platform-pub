@@ -186,11 +186,20 @@ export async function sendWaitlistDigest(): Promise<number> {
       return 0;
     }
 
-    // WINDOW is asked of the watermark, never of the clock. Absent (first ever
-    // run) it reports the interval's worth of history, so a cold start is a
-    // digest and not a dump of the whole table.
-    const since =
-      watermark ?? new Date(now - intervalHours * 3600_000).toISOString();
+    // WINDOW is asked of the watermark, never of the clock — INCLUDING on cold
+    // start. Absent (first ever run) the window opens at epoch: everything
+    // never reported IS the report. The first cut instead took "the interval's
+    // worth of history" (now − 24h), reasoning a cold start should be a digest
+    // and not a dump of the whole table — but a clock-relative window quietly
+    // breaks the guarantee two comments up: any join older than the interval at
+    // first-run time falls OUTSIDE it, is never reported, and the watermark it
+    // would have set never lands, so it stays unreported forever. That is not
+    // hypothetical: the deploy that shipped this worker landed >24h after the
+    // three 2026-07-27 joins it was written for, the first run reported
+    // nothing, and the check "the first thing that happens should be an email
+    // naming them" silently evaluated to no email at all. A whole-table first
+    // digest at operator scale is the correct behaviour, and it happens once.
+    const since = watermark ?? new Date(0).toISOString();
 
     // `$1::timestamptz` and `created_at::text`, both deliberate: Postgres keeps
     // MICROSECONDS and a JS Date keeps milliseconds, so a watermark that has

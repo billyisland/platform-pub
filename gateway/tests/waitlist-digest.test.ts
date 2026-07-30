@@ -12,6 +12,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 //   · the watermark advances to the NEWEST REPORTED ROW's created_at, never to
 //     now() — a row arriving mid-run must be in the next digest, not lost;
 //   · nothing new → no send AND no watermark write (the window stays open);
+//   · COLD START opens the window at EPOCH, not now − interval: a clock-shaped
+//     first window silently orphans any join older than the interval, forever
+//     (it happened — the 2026-07-27 rows were never reported, because the
+//     deploy landed a day later). It also made four of these tests wall-clock
+//     dependent: they rotted red 24h after their fixtures were written;
 //   · not yet due → no send, and no read of the waitlist at all;
 //   · a send failure → NO watermark write, so the next run retries the same
 //     rows (D7: the row is the product, the mail is the courtesy);
@@ -164,6 +169,23 @@ describe("waitlist operator digest", () => {
     // A bare UPDATE against an absent key matches zero rows and reports
     // success — the way jetstream_healthy silently never persisted.
     expect(sql.trimStart().startsWith("UPDATE")).toBe(false);
+  });
+
+  it("cold start reports joins OLDER than the interval — the window opens at epoch", async () => {
+    // The regression that shipped: no watermark + a now−24h first window meant
+    // any join more than a day old at first-run time was never reported and
+    // never watermarked — unreported forever. Pin the clock far past every
+    // fixture so this fails against a clock-relative window no matter when it
+    // runs (the old shape passed or failed depending on the day of the week).
+    vi.setSystemTime(new Date("2026-12-01T00:00:00Z"));
+
+    const n = await sendWaitlistDigest();
+
+    expect(n).toBe(3);
+    expect(sent[0].textBody).toContain("one@example.com");
+    // ...and the watermark lands, so the whole-table digest happens ONCE.
+    expect(markerWrites()[0].params[1]).toBe(NEW_EXACT);
+    vi.useRealTimers();
   });
 
   it("reports only rows newer than the watermark", async () => {

@@ -633,6 +633,28 @@ nothing · a three-day-old watermark with a digest an hour ago stays quiet.
 **Not yet driven on prod**, where the three real rows will produce one digest on
 the next deploy — the first thing that happens should be an email naming them.
 
+**Correction (2026-07-30): that check silently evaluated to no email at all,
+and the guarantee above it did not hold on cold start.** The deploy landed
+2026-07-29, more than 24h after the three 2026-07-27 rows — and the first cut's
+cold-start window was `now − interval`, a CLOCK-relative window, so the first
+run found nothing, moved neither key (correctly), and the trailing window slid
+on past those rows forever. "A join can never fall between two digests" was
+only true once a watermark existed; before one, any join older than the
+interval at first-run time was unreported for good — indistinguishable, from
+the operator's inbox, from the digest being broken. Fixed by opening the
+cold-start window at **epoch**: everything never reported IS the first report,
+once, and the watermark then takes over (worker comment carries the reasoning;
+the new test pins it with the clock deliberately set months past the fixtures,
+so a regression to a clock-shaped window fails on any day of the week). The
+same clock-relative window had also rotted four of the digest's own unit tests
+red 24h after their fixtures were written — found red on master 2026-07-30,
+green again under the epoch window with no fixture change. Prod note: whether
+the fix retroactively surfaces the 2026-07-27 rows depends on prod's watermark
+state at deploy — absent (no digest ever sent), the first run reports the whole
+list, them included; present (some later join was reported first), they are
+behind it, and the panel — where the operator has in fact already admitted
+people — is the surface that covered them.
+
 ### XI.5 As built — the panel's read half (2026-07-27)
 
 `GET /admin/dashboard/waitlist` (`admin-dashboard.ts`, `requireAdmin`) +

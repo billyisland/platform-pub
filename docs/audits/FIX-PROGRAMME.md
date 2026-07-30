@@ -23,6 +23,43 @@ starts.
 
 ## Progress
 
+- **2026-07-30 (review batch 1: a handle that resolved, a window shaped like a clock, and
+  four tests that rotted red)** — the act-now findings of the three-day commit review
+  (2026-07-27..30), all three verified before fixing.
+  - **`bergqvist.bsky.social` was a real person.** The landing demos' invented-content
+    rule was enforced by literary judgement, never by resolution: the "invented" Bluesky
+    handle under the omnivore demo's corruption-accusation post resolves to a real,
+    registered account (`did:plc:7asklo4dkbqs3cdwbxlc33uu`, created 2024-12-31 — checked
+    against the live API, both before and after the fix). `aurelio@driftpost.net` was the
+    same class one registration away. Both moved into the operator-controlled namespace
+    (`bergqvist.all.haus`, `aurelio@all.haus` — also literally true of the product, which
+    serves branded atproto handles and NIP-05 from that domain); the rule gained its
+    mechanical half in CLAUDE.md + `CanvasDemo.tsx`'s note: an identifier that RESOLVES
+    lives only in a namespace we control, checked against its registry before shipping.
+  - **The digest's cold-start window was a clock, and it broke the worker's own
+    guarantee.** `waitlist-digest.ts` opened a watermark-less window at `now − interval`,
+    so any join older than the interval at first-run time was never reported and never
+    watermarked — unreported forever. On prod this meant the §XI.4 verification ("the
+    three real rows will produce one digest on the next deploy") silently evaluated to no
+    email: the deploy landed >24h after the rows. Cold start now opens at **epoch** — the
+    whole unreported list is the first report, once. Corrections written where the false
+    guarantee stood: worker comment, CLOSED-BETA-ADR §XI.4 (dated correction, incl. what
+    the fix does and does not retroactively heal on prod), CONSOLIDATED-TODO §3.7 prod
+    note.
+  - **The same clock had rotted the digest suite red on master.** Four cold-start tests
+    (fixtures dated 2026-07-27) fell out of the `now − 24h` window a day after they were
+    written and failed permanently — the 07-29 entry's "(b) pre-existing — untouched"
+    note below is corrected in place: true relative to that change, but master carried a
+    red suite and a third of the digest's mutation net was dead. The epoch window makes
+    the cold-start path clock-independent, so all four are green again with **no fixture
+    change**; a new test pins the epoch window with the clock deliberately set months
+    past the fixtures, so a regression to a clock-shaped window fails on any day of the
+    week, not just the day it was written.
+  - Verified: 15/15 `waitlist-digest.test.ts`; mutation-checked by reverting the window
+    fix in place — 5 tests go red (the four resurrected + the new pin), restore goes
+    green; `check-hairlines.sh` clean on both demo files; `next build` passes. Demo
+    change not rendered in a browser (byline text only, the fc8ca95e precedent).
+
 - **2026-07-30 (the segregation step-0 harnesses, and a finding that was my own tooling)**
   — §5 step 0 is the sole remaining blocker between the funds-segregation build and a flag
   flip, and it had never been run, so `allocated_residual_alert_bps` and
@@ -382,7 +419,12 @@ starts.
   `SELECT count(*), sum(allowance_consumed_pence) FROM read_events WHERE state <>
   'provisional' AND allowance_consumed_pence <> 0` (0 on dev; run on prod).
   (b) Four `gateway/tests/waitlist-digest.test.ts` failures are pre-existing —
-  confirmed by stashing this change — and untouched.
+  confirmed by stashing this change — and untouched. *(Corrected 2026-07-30:
+  "pre-existing" was true relative to this change but was not a diagnosis — the
+  four were CLOCK-ROT, cold-start tests whose fixtures fell out of the worker's
+  `now − 24h` first window a day after they were written, leaving master's
+  suite permanently red and a third of the digest's mutation net dead. Fixed
+  with the cold-start window itself — see the 2026-07-30 entry.)*
 
 - **2026-07-29 (the beta is closed, and the register has been looked at)** —
   no code. Two of the three largest items in CONSOLIDATED-TODO §11 discharged
