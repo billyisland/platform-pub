@@ -740,7 +740,18 @@ staging env with `STRIPE_ALLOCATED_FUNDS=1`. Webhooks: staging endpoint with the
 own signing secrets, or `stripe listen --forward-to localhost:3001/webhooks/stripe`.
 
 **Step 0 — do these before building anything.** They retire real uncertainty at near-zero
-cost and two of them produce numbers the design needs as inputs:
+cost and two of them produce numbers the design needs as inputs.
+
+> **Written, not run (2026-07-30).** The build went ahead of this section, so both halves
+> now exist as runnable harnesses and the only thing missing is credentials:
+> `scripts/segregation-probes.ts` (probes 1, 4, 6, 7, 7b — plus `--countries` for the §7.5
+> enumeration) and `scripts/segregation-baseline.sql` (the §3.3d residual baseline, the
+> §7.2 slice distribution, and the connect-id list). The probes talk to Stripe raw, per
+> this section's own instruction, and print what comes back rather than asserting our
+> assumptions onto it. **Read Query 0 of the SQL before Query A** — see the caveat in
+> §10.3's step-0 bullet, which is the one thing about these queries that is not obvious.
+
+The list:
 
 - Run steps 1, 4, 6, 7 and **7b** below against the sandbox with no §3.3 code at all.
   7b is the one rev 2 never thought to ask: reverse **one child of a multi-child transfer
@@ -1217,5 +1228,27 @@ in this repo can reach.
   spuriously; `payout_max_slices` ships at 20 as a guess. Both are dials, so both are an
   UPDATE — but §3.3d's warning stands: a threshold set without the baseline gets muted, and
   a muted alert is worse than none.
+  - **The harnesses were written 2026-07-30** (`scripts/segregation-probes.ts`,
+    `scripts/segregation-baseline.sql`) so this is now a credentials errand rather than a
+    build. Still unrun: no segregation Sandbox key exists on the dev stack (its
+    `STRIPE_SECRET_KEY` is the literal placeholder `sk_test_...`), and the baseline needs
+    production.
+  - **A trap in the residual query, which is why it leads with a diagnostic.** Query A must
+    tell a credit-funded `subscription_earning` from a charge-funded one. The exact test is
+    `tab_settlement_id IS NULL` — but migration 165 added that column with **no backfill,
+    deliberately** ("stamped going forward"), so every pre-165 row carries NULL whatever
+    funded it and the exact classifier reads them all as credit-funded. Run it on prod
+    today, before 165 is deployed, and it reports a ~100% residual and a meaningless dial.
+    So Query 0 reads `_migrations.applied_at` and states which classifier the window
+    supports, and Query A reports the exact and a `settled_at < created_at + 1 minute`
+    heuristic side by side. The heuristic works on pre-165 rows and errs toward a LARGER
+    residual — the safer direction for a threshold. The exact row only becomes authoritative
+    once 165 is on prod **and** a full 30-day window has accrued behind it.
+  - **`payout_max_slices` is measured as an upper bound**, and says so: the packer
+    co-locates units onto a shared charge where one has room, and collapses all residual
+    units into a single `platform_balance` slice, so realised slices are ≤ the measured
+    figure. Exact measurement is impossible pre-flip — remaining allocation per charge is
+    unknown until charges carry allocation at all. An upper bound is the right side to err
+    on for a cap, given §10.3's carve × slice-cap interaction above.
 - **§0's `DEPLOYMENT.md:794` webhook-scope contradiction is untouched.** It needs the
   dashboard observation, not an edit.

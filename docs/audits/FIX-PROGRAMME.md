@@ -23,6 +23,58 @@ starts.
 
 ## Progress
 
+- **2026-07-30 (the segregation step-0 harnesses, and a finding that was my own tooling)**
+  — §5 step 0 is the sole remaining blocker between the funds-segregation build and a flag
+  flip, and it had never been run, so `allocated_residual_alert_bps` and
+  `payout_max_slices` are live placeholders rather than measurements. Neither half can be
+  run from a dev laptop — dev's `STRIPE_SECRET_KEY` is the literal placeholder
+  `sk_test_...`, there is no sandbox, and the baselines need production — so what shipped
+  is the harness for both, leaving a credentials errand rather than a build.
+  **`scripts/segregation-probes.ts`** runs probes 1, 4, 6, 7 and 7b against a
+  segregation-enabled Sandbox, plus a read-only `--countries` mode for the §7.5
+  enumeration. It drives Stripe raw, per step 0's own instruction to run "with no §3.3 code
+  at all", importing exactly one thing from the repo (the preview API version, which must
+  not drift) and otherwise printing what comes back: a stated expectation is recorded as a
+  check with a verdict and never halts the run, because an unexpected shape is the finding.
+  7b is the point of the exercise — two children on one charge, then a *partial* reversal
+  of one, dumping the whole `transfer.reversed` payload, because `reversed_pence` and
+  `prorateCarveReversal` both rest on `amount_reversed` being cumulative and nobody has
+  ever seen that event. It reads the event off `events.list` rather than waiting on a
+  delivery, so no tunnel is needed, and refuses an `sk_live_` key for anything that moves
+  money. **`scripts/segregation-baseline.sql`** is the two production readings, strictly
+  read-only — and it leads with a *diagnostic* because the obvious query is wrong here:
+  migration 165 added `subscription_events.tab_settlement_id` with no backfill by design,
+  so on a DB where 165 has not run every earning classifies as credit-funded and the
+  residual comes out ~100%. Query 0 reads `_migrations` and states which classifier the
+  window supports; Query A prints the exact and a `settled_at < created_at + 1 minute`
+  heuristic side by side, the heuristic erring toward a larger residual, which is the safe
+  direction for a threshold. The slice distribution copies writer eligibility exactly from
+  `reserveWriterPayout` (`publication_id IS NULL` included — publication reads are the
+  pool's, and dropping that filter inflates the count with reads the cycle never sees) and
+  is documented as an **upper bound**, since the packer co-locates units and collapses all
+  residual units into one slice. Validated as far as credentials allow: the SQL runs clean
+  end-to-end against dev (one wrong column found and fixed — `publication_payout_splits`
+  has no `completed_at`), the harness typechecks strict/NodeNext, both refusal paths fire.
+  **And the correction worth keeping.** Along the way `allocation-packer.ts` was found to
+  contain a NUL byte — its residual sentinel was `'\0residual'` — which makes `file` report
+  the module as `data`. I reported this as blinding `check-ledger-adjacency.sh` and
+  `check-read-chargeable.sh`, having demonstrated that grep matched nothing in the file.
+  **That was wrong, and the way it was wrong is the lesson**: `grep` in the agent's shell is
+  a wrapper around ugrep with `-I` (skip binary files), while the tripwires and CI run GNU
+  grep, whose `-l` still lists a matching binary file and whose `-c` still counts
+  correctly. Established by planting a real `INSERT INTO payout_transfers` violation in the
+  file with the NUL restored and watching Guard 3 catch it and name it. The guards were
+  never blind; I had measured my instrument. The NUL was removed anyway as hygiene for
+  human tooling (ripgrep, ugrep and `grep -I` all skip the file in silence, and a search
+  that finds nothing looks exactly like a file with nothing in it), the sentinel is only
+  ever a `Map` key so nothing behavioural moves, and the in-code comment now records why it
+  was *not* a guard problem rather than leaving the scare behind. Verified by mutation
+  rather than a green suite: making the sentinel unique per unit turns
+  `allocation-packer.test.ts:159` red, the test asserting residual units collapse into a
+  single slice. 247/247 payment-service tests with `TEST_DATABASE_URL` set so the 26
+  DB-backed segregation assembly tests actually ran; all three tripwires green.
+  → CONSOLIDATED-TODO §1.13 + attack order 1b; ADR §5 step 0 + §10.3.
+
 - **2026-07-29 (the landing demos' copy, and the paywall figure nobody had looked at in
   dark mode)** — the three `/` demos were rewritten for content, and one real defect fell
   out of rendering them. **The copy.** The invented world had drifted into parody: a
