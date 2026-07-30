@@ -73,6 +73,24 @@ starts.
   `allocation-packer.test.ts:159` red, the test asserting residual units collapse into a
   single slice. 247/247 payment-service tests with `TEST_DATABASE_URL` set so the 26
   DB-backed segregation assembly tests actually ran; all three tripwires green.
+  **Prod state, established afterwards and the same lesson twice.** A request to "deploy
+  migration 165" turned out to be a no-op: 165 had been applied on 2026-07-29 at 16:35 UTC,
+  along with 162–164, and prod's schema was already fully current. I had asserted the
+  opposite earlier in the same session, inferring it from this queue's "not yet deployed"
+  note about the closed-beta ship — which is exactly what the deploy note says never to do.
+  Three read-only commands settle it and none of them is expensive: `_migrations` for the
+  schema, `git log -1` for the source, `docker compose images` for what is actually
+  RUNNING — and the third is the one that matters, because prod's source sat at that
+  morning's commit while its images dated from 07-29 ~16:10. Reading `git log` alone would
+  have said the latest code was live; it was not. What that build window contains is
+  segregation parts 1 and 2 but **not part 3** (17:02), so the tribute cycle,
+  `allocation-reconcile.ts` and the residual metric are on prod's disk and not in its
+  containers — harmless, since the sweep gates on `allocatedFundsEnabled()` and no-ops while
+  the flag is off, and parts 1+2 are coherent alone (part 3's carve-ordering fix was to code
+  part 3 itself introduced). The one live consequence is good news: `confirmSettlement`'s
+  `tab_settlement_id` stamp shipped in part 1, so it has been filling since 07-29 ~16:10 and
+  the baseline query's exact classifier becomes authoritative around 2026-08-28. Until then
+  its heuristic row is the honest one, and it needs no deploy to run.
   → CONSOLIDATED-TODO §1.13 + attack order 1b; ADR §5 step 0 + §10.3.
 
 - **2026-07-29 (the landing demos' copy, and the paywall figure nobody had looked at in

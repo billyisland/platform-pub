@@ -1230,20 +1230,26 @@ in this repo can reach.
   a muted alert is worse than none.
   - **The harnesses were written 2026-07-30** (`scripts/segregation-probes.ts`,
     `scripts/segregation-baseline.sql`) so this is now a credentials errand rather than a
-    build. Still unrun: no segregation Sandbox key exists on the dev stack (its
-    `STRIPE_SECRET_KEY` is the literal placeholder `sk_test_...`), and the baseline needs
-    production.
+    build. The two halves are blocked differently: the **probes** need a segregation Sandbox
+    key, which no dev stack has (its `STRIPE_SECRET_KEY` is the literal placeholder
+    `sk_test_...`); the **baseline** needs only production DB access and is runnable today.
   - **A trap in the residual query, which is why it leads with a diagnostic.** Query A must
     tell a credit-funded `subscription_earning` from a charge-funded one. The exact test is
     `tab_settlement_id IS NULL` — but migration 165 added that column with **no backfill,
-    deliberately** ("stamped going forward"), so every pre-165 row carries NULL whatever
-    funded it and the exact classifier reads them all as credit-funded. Run it on prod
-    today, before 165 is deployed, and it reports a ~100% residual and a meaningless dial.
-    So Query 0 reads `_migrations.applied_at` and states which classifier the window
-    supports, and Query A reports the exact and a `settled_at < created_at + 1 minute`
-    heuristic side by side. The heuristic works on pre-165 rows and errs toward a LARGER
-    residual — the safer direction for a threshold. The exact row only becomes authoritative
-    once 165 is on prod **and** a full 30-day window has accrued behind it.
+    deliberately** ("stamped going forward"), so every row predating the stamp carries NULL
+    whatever funded it and the exact classifier reads them all as credit-funded. On a DB
+    where 165 has not run at all, that is a ~100% residual and a meaningless dial. So Query 0
+    reads `_migrations.applied_at` and states which classifier the window supports, and
+    Query A reports the exact and a `settled_at < created_at + 1 minute` heuristic side by
+    side. The heuristic works on pre-stamp rows and errs toward a LARGER residual — the safer
+    direction for a threshold.
+  - **On production the stamp started 2026-07-29** (migration applied 16:35 UTC; the part-1
+    code that writes the column live in the backend images built ~16:10 that day), so a
+    30-day window run today straddles the boundary and the **heuristic** row is the honest
+    one. The exact row becomes authoritative around **2026-08-28**, when a full window sits
+    behind the stamp. Recorded here because it was got wrong twice in one session by
+    inferring prod's state from this file rather than querying it: `_migrations.applied_at`
+    and `docker compose images` are the evidence, and both are one command away.
   - **`payout_max_slices` is measured as an upper bound**, and says so: the packer
     co-locates units onto a shared charge where one has room, and collapses all residual
     units into a single `platform_balance` slice, so realised slices are ≤ the measured
