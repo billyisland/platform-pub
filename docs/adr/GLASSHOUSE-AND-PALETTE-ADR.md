@@ -473,7 +473,7 @@ Two solutions rejected, both of which look correct and are not. A `mask-image` o
 the scroller dims at-rest content at the top, i.e. it degrades the reading surface
 permanently to fix a transient collision. Padding alone pushes the body down but
 leaves the handle sitting on bare background, and a flush hero image still bleeds
-under it. The `py-12` page-style overlays (Ledger/Dashboard/Library/Network/
+under it. The `py-12` page-style overlays (Ledger, Dashboard, Library, Network,
 Settings) get the clearance for free; the flush `MessagesInbox` is the worked
 example (centre column `pt-6`, send form `pr-7` under `headerRightInset`).
 
