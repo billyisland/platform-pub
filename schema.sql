@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Ex7KPftcJez82I8eYJuvcz1AtbX3CcHKwqQNu9rlXf9KvpGT4gagknDH9gpDPHM
+\restrict nYrJzLPzaYgm7xm5dPnVPuIoPhxoVQQzehGolbCJgw80E2QruBfyzNF646FfObp
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1493,8 +1493,24 @@ CREATE TABLE public.publication_payout_splits (
     stripe_transfer_id text,
     status public.payout_status DEFAULT 'pending'::public.payout_status NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    attempt integer DEFAULT 1 NOT NULL,
+    replaced_by_split_id uuid,
     CONSTRAINT publication_payout_splits_share_type_check CHECK ((share_type = ANY (ARRAY['standing'::text, 'article_revenue'::text, 'flat_fee'::text])))
 );
+
+
+--
+-- Name: COLUMN publication_payout_splits.attempt; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.publication_payout_splits.attempt IS 'Re-pay attempt number, 1 for an originally computed split. A replacement minted after a terminal Stripe rejection carries its predecessor''s attempt + 1; the re-pay sweep refuses to mint past a cap so a permanently broken destination cannot be retried forever.';
+
+
+--
+-- Name: COLUMN publication_payout_splits.replaced_by_split_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.publication_payout_splits.replaced_by_split_id IS 'Set on a failed split when a replacement has been minted for it, pointing at that replacement. NULL means never re-paid. Explicit rather than inferred, because one account can legally hold two splits in one payout (standing + article share).';
 
 
 --
@@ -4909,6 +4925,13 @@ CREATE INDEX idx_pub_payouts_status ON public.publication_payouts USING btree (s
 
 
 --
+-- Name: idx_pub_split_repay_candidates; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pub_split_repay_candidates ON public.publication_payout_splits USING btree (publication_payout_id) WHERE ((status = 'failed'::public.payout_status) AND (replaced_by_split_id IS NULL));
+
+
+--
 -- Name: idx_publications_custom_domain; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6765,6 +6788,14 @@ ALTER TABLE ONLY public.publication_payout_splits
 
 
 --
+-- Name: publication_payout_splits publication_payout_splits_replaced_by_split_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.publication_payout_splits
+    ADD CONSTRAINT publication_payout_splits_replaced_by_split_id_fkey FOREIGN KEY (replaced_by_split_id) REFERENCES public.publication_payout_splits(id);
+
+
+--
 -- Name: publication_payouts publication_payouts_publication_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7416,7 +7447,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Ex7KPftcJez82I8eYJuvcz1AtbX3CcHKwqQNu9rlXf9KvpGT4gagknDH9gpDPHM
+\unrestrict nYrJzLPzaYgm7xm5dPnVPuIoPhxoVQQzehGolbCJgw80E2QruBfyzNF646FfObp
 
 
 --
@@ -7587,4 +7618,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('163_waitlist_admission.sql'),
     ('164_read_chargeable_pence.sql'),
     ('165_funds_segregation.sql'),
-    ('166_allocated_draws_comment_sign.sql');
+    ('166_allocated_draws_comment_sign.sql'),
+    ('167_publication_split_repay.sql');

@@ -618,6 +618,17 @@ export async function reverseChild(
   // with the platform while the principal returns to allocation — a silent
   // divergence between our model and Stripe's. This belongs in the ops runbook;
   // it is the kind of thing only ever done by hand at 2am.
+  //
+  // AND IF THAT CALL 500s, RETRY IT — do not conclude the flag is unsupported and
+  // reverse without it. Measured 2026-07-30 in the segregation sandbox: this exact
+  // call returned `StripeAPIError` 500 four times inside one ~40-minute window and
+  // then succeeded fifteen consecutive times, at shorter elapsed times than the
+  // failures. Reported to Stripe, who closed it as a transient backend issue with
+  // nothing wrong in the request shape. A timing hypothesis (the fee-refund path
+  // racing allocation state still settling) was tested at 0/2/5/15/30s and refuted
+  // 12/12. The trap at 2am is that reversing WITHOUT the flag succeeds cleanly and
+  // silently leaves the fee behind — the failure mode this note exists to prevent.
+  // Repro/isolation harness: scripts/segregation-reversal-isolate.ts.
   if (child.funding === 'allocated' && child.settlement_id) {
     await client.query(
       `INSERT INTO allocated_draws

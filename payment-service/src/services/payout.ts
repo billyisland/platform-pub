@@ -119,6 +119,75 @@ export const PUBLICATION_PAYOUT_COMPLETE_SQL = `
           AND s.status = 'pending')`
 
 // -----------------------------------------------------------------------------
+// The split re-pay sweep's SQL (§1.2, migration 167).
+//
+// Exported for the reason the statements above and below are: the integration
+// test executes THESE statements rather than copies of them. Every one is a
+// predicate a mocked `pool.query` would have to restate, and restating is how a
+// test comes to pin its own fixture instead of the code — the sweep itself
+// drives the module-level `pool` and so is unreachable from a rolled-back
+// transaction, exactly like `executePendingChildren`.
+// -----------------------------------------------------------------------------
+
+/**
+ * Splits eligible for a re-pay attempt. `replaced_by_split_id IS NULL` is what
+ * makes the sweep idempotent — a replacement minted on an earlier run takes its
+ * predecessor out of this set permanently, so a crash mid-sweep cannot mint two.
+ */
+export const PUB_SPLIT_REPAY_CANDIDATES_SQL = `
+  SELECT s.id, s.publication_payout_id, s.account_id, s.share_bps,
+         s.amount_pence, s.share_type, s.article_id, s.attempt,
+         pp.publication_id
+    FROM publication_payout_splits s
+    JOIN publication_payouts pp ON pp.id = s.publication_payout_id
+   WHERE s.status = 'failed'
+     AND s.replaced_by_split_id IS NULL
+     AND s.amount_pence > 0
+   ORDER BY s.created_at ASC`
+
+/**
+ * The replacement row. Attribution is COPIED, never recomputed: amount, bps,
+ * share_type and article_id come straight off the predecessor, because
+ * computePublicationSplits already decided them and a re-pay must not silently
+ * redistribute a pool.
+ */
+export const PUB_SPLIT_MINT_REPLACEMENT_SQL = `
+  INSERT INTO publication_payout_splits
+    (publication_payout_id, account_id, share_bps, amount_pence,
+     share_type, article_id, status, attempt)
+  VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+  RETURNING id`
+
+export const PUB_SPLIT_SUPERSEDE_SQL = `
+  UPDATE publication_payout_splits
+     SET replaced_by_split_id = $2
+   WHERE id = $1`
+
+/**
+ * A fresh pending split on a COMPLETED parent must reopen it, or
+ * resumePendingPublicationPayouts — which scans 'pending' parents only — never
+ * processes the row. PUBLICATION_PAYOUT_COMPLETE_SQL re-completes it once no
+ * split is pending, so this is a loop back into the normal lifecycle rather than
+ * a special case bolted beside it.
+ */
+export const PUB_SPLIT_REOPEN_PARENT_SQL = `
+  UPDATE publication_payouts
+     SET status = 'pending', completed_at = NULL
+   WHERE id = $1 AND status = 'completed'`
+
+/**
+ * The fee-proration denominator: what this payout is actually DISTRIBUTING.
+ * Excluding superseded rows is load-bearing — counted, the denominator would
+ * grow with every re-pay and quietly shrink each replacement's application fee
+ * below the one its predecessor carried.
+ */
+export const PUB_SPLIT_DISTRIBUTED_SQL = `
+  SELECT COALESCE(SUM(amount_pence), 0) AS total
+    FROM publication_payout_splits
+   WHERE publication_payout_id = $1
+     AND replaced_by_split_id IS NULL`
+
+// -----------------------------------------------------------------------------
 // The tribute cycle's per-child SQL (§3.4).
 //
 // Exported for the same reason as the statement above: the integration test
@@ -1751,6 +1820,21 @@ class PayoutService {
       return { processed: 0, totalPaidPence: 0 }
     }
 
+    // Mint replacements for terminally-rejected splits BEFORE the resume sweep,
+    // so a replacement minted now is paid on this cycle rather than the next one.
+    // It reopens the completed parents it touches, which is precisely what puts
+    // them back in the resume sweep's 'pending' scan below.
+    try {
+      const { minted, exhausted } = await this.repayFailedPublicationSplits()
+      if (minted > 0 || exhausted > 0) {
+        logger.info({ minted, exhausted }, 'Publication split re-pay sweep')
+      }
+    } catch (err) {
+      // Re-pay is a recovery path, not the cycle's job — a failure here must not
+      // stop this cycle from paying everyone whose split never failed.
+      logger.error({ err }, 'Publication split re-pay sweep failed — continuing with the cycle')
+    }
+
     // Resume any pending publication payouts from prior runs before taking on
     // new work. Stable idempotency keys on per-split transfers make this safe
     // to call repeatedly — Stripe deduplicates if the transfer already exists.
@@ -2523,6 +2607,229 @@ class PayoutService {
         )
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // repayFailedPublicationSplits — CONSOLIDATED-TODO §1.2, migration 167.
+  //
+  // A split Stripe terminally rejected at create time is marked 'failed' and, on
+  // its own, stays that way forever: the member is short and nothing retries them.
+  //
+  // WHY IT CANNOT SIMPLY BE RETRIED IN PLACE. The idempotency key
+  // `pub-split-${payoutId}-${splitId}` is row-stable on purpose — that is what
+  // lets the resume sweep retry an AMBIGUOUS failure without double-paying
+  // (2026-07-15 audit). Retrying the same row therefore dedupes straight back
+  // onto the transfer that was rejected. A correct re-pay must mint a FRESH row,
+  // whose new id yields a new key.
+  //
+  // WHY THE MONEY DOES NOT COME BACK BY ITSELF. The writer and tribute cycles
+  // release their units child by child, so a failed parent's work is re-paid
+  // under a fresh parent next cycle. A split owns no claim rows — the publication
+  // cycle claims its reads under the PAYOUT, and a split is a bps share of the
+  // resulting pool, with no per-read decomposition to release. So the money stays
+  // claimed by a payout that has already completed. Minting a replacement against
+  // that same parent is the only place the money can be paid from.
+  //
+  // WHAT THIS DELIBERATELY DOES NOT DO. It does not reopen attribution.
+  // computePublicationSplits decided who gets what and is not re-run; the
+  // replacement copies its predecessor's amount, bps, share_type and article_id
+  // verbatim. Anything else would let a re-pay silently redistribute a pool.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * How many times a split may be minted in total (the original plus its
+   * replacements) before the sweep gives up and leaves it for a human.
+   *
+   * A terminal rejection is a DETERMINISTIC one — `StripeInvalidRequestError`,
+   * per the deliberately narrow `isTerminalTransferError` — which in practice
+   * means the destination is closed, rejected or otherwise not payable. Retrying
+   * that forever would call Stripe every cycle for a member who can never be
+   * paid, and mint a row each time. Three attempts covers the case worth covering
+   * (an account fixed between cycles) without becoming a permanent spammer.
+   */
+  private static readonly PUB_SPLIT_MAX_ATTEMPTS = 3
+
+  async repayFailedPublicationSplits(): Promise<{ minted: number; exhausted: number }> {
+    const { rows: candidates } = await pool.query<{
+      id: string
+      publication_payout_id: string
+      account_id: string
+      share_bps: number | null
+      amount_pence: number
+      share_type: string
+      article_id: string | null
+      attempt: number
+      publication_id: string
+    }>(
+      PUB_SPLIT_REPAY_CANDIDATES_SQL,
+    )
+
+    if (candidates.length === 0) return { minted: 0, exhausted: 0 }
+
+    const config = await loadConfig()
+    let minted = 0
+    let exhausted = 0
+
+    for (const split of candidates) {
+      if (split.attempt >= PayoutService.PUB_SPLIT_MAX_ATTEMPTS) {
+        exhausted++
+        logger.error(
+          {
+            splitId: split.id,
+            payoutId: split.publication_payout_id,
+            publicationId: split.publication_id,
+            accountId: split.account_id,
+            amountPence: split.amount_pence,
+            attempt: split.attempt,
+          },
+          'Publication split has exhausted its re-pay attempts — needs manual intervention',
+        )
+        continue
+      }
+
+      // The destination is the whole reason the last attempt died, so check it
+      // BEFORE burning an attempt. An account still un-onboarded is not a failed
+      // re-pay, it is a re-pay that has not become possible yet — leave the row
+      // alone and let a later cycle find it once KYC lands.
+      const { rows: accRows } = await pool.query<{
+        stripe_connect_id: string | null
+        stripe_connect_kyc_complete: boolean
+      }>(
+        `SELECT stripe_connect_id, stripe_connect_kyc_complete FROM accounts WHERE id = $1`,
+        [split.account_id],
+      )
+      const acc = accRows[0]
+      if (!acc?.stripe_connect_id || !acc.stripe_connect_kyc_complete) continue
+
+      try {
+        await withTransaction(async (client) => {
+          // Re-read under the lock. Two cycles overlapping, or a `transfer.paid`
+          // arriving late, could have moved this row since the candidate scan.
+          const { rows: locked } = await client.query<{
+            status: string
+            replaced_by_split_id: string | null
+          }>(
+            `SELECT status, replaced_by_split_id
+               FROM publication_payout_splits
+              WHERE id = $1
+              FOR UPDATE`,
+            [split.id],
+          )
+          if (
+            locked.length === 0 ||
+            locked[0].status !== 'failed' ||
+            locked[0].replaced_by_split_id !== null
+          ) {
+            return
+          }
+
+          const { rows: [replacement] } = await client.query<{ id: string }>(
+            PUB_SPLIT_MINT_REPLACEMENT_SQL,
+            [
+              split.publication_payout_id,
+              split.account_id,
+              split.share_bps,
+              split.amount_pence,
+              split.share_type,
+              split.article_id,
+              split.attempt + 1,
+            ],
+          )
+
+          await client.query(PUB_SPLIT_SUPERSEDE_SQL, [split.id, replacement.id])
+
+          // Fund it, if segregation is on. The predecessor's children were failed
+          // by `failChild`, which DELETES their `allocated_draws` row — so the
+          // budget those children reserved is already back, and packing the
+          // replacement draws it afresh rather than double-drawing it. Flag off ⇒
+          // no children, and processPublicationSplits takes the aggregate path,
+          // exactly as it did for the original.
+          if (allocatedFundsEnabled()) {
+            const { rows: settlementRows } = await client.query<{ id: string }>(
+              // The pool's contributing settlements, recovered the same way the
+              // original pack found them: the reads and subscription earnings
+              // claimed under this payout. A split has no charge of its own, so
+              // the preference is the whole set (see packPublicationSplits).
+              `SELECT DISTINCT tab_settlement_id AS id
+                 FROM read_events
+                WHERE writer_payout_id = $1 AND tab_settlement_id IS NOT NULL
+                UNION
+               SELECT DISTINCT tab_settlement_id AS id
+                 FROM subscription_events
+                WHERE publication_payout_id = $1 AND tab_settlement_id IS NOT NULL`,
+              [split.publication_payout_id],
+            )
+
+            const { rows: [payoutRow] } = await client.query<{
+              platform_fee_pence: number
+              total_pool_pence: number
+              sub_net_pence: number
+            }>(
+              `SELECT platform_fee_pence, total_pool_pence, sub_net_pence
+                 FROM publication_payouts WHERE id = $1`,
+              [split.publication_payout_id],
+            )
+
+            await this.packPublicationSplits(client, {
+              payoutId: split.publication_payout_id,
+              publicationId: split.publication_id,
+              payoutMaxSlices: config.payoutMaxSlices,
+              splits: [{ id: replacement.id, amountPence: split.amount_pence }],
+              // The fee this split's share of the pool already had withheld. The
+              // original prorated the payout's whole withheld fee across every
+              // split; re-deriving that same proportion here keeps the
+              // replacement's application_fee identical to the one its
+              // predecessor would have carried, so a re-pay moves no fee money
+              // that the first attempt did not.
+              withheldFeePence: prorateWithheldFee(
+                payoutRow?.platform_fee_pence ?? 0,
+                split.amount_pence,
+                await this.distributedPenceFor(client, split.publication_payout_id),
+              ),
+              settlementIds: settlementRows.map((r) => r.id),
+            })
+          }
+
+          await client.query(PUB_SPLIT_REOPEN_PARENT_SQL, [split.publication_payout_id])
+        })
+
+        minted++
+        logger.warn(
+          {
+            splitId: split.id,
+            payoutId: split.publication_payout_id,
+            publicationId: split.publication_id,
+            accountId: split.account_id,
+            amountPence: split.amount_pence,
+            attempt: split.attempt + 1,
+          },
+          'Minted a replacement publication split after a terminal rejection',
+        )
+      } catch (err) {
+        // One member's re-pay failing must not cost the others theirs.
+        logger.error(
+          { err, splitId: split.id, payoutId: split.publication_payout_id },
+          'Failed to mint a replacement publication split — will retry next cycle',
+        )
+      }
+    }
+
+    return { minted, exhausted }
+  }
+
+  /**
+   * The proration denominator the original pack used: what this payout is
+   * actually DISTRIBUTING. Counts every split that is or was payable — a
+   * superseded 'failed' row is excluded (its replacement stands in its place),
+   * so the denominator does not grow with each re-pay and shrink every
+   * replacement's fee.
+   */
+  private async distributedPenceFor(client: PoolClient, payoutId: string): Promise<number> {
+    const { rows: [row] } = await client.query<{ total: string }>(
+      PUB_SPLIT_DISTRIBUTED_SQL,
+      [payoutId],
+    )
+    return parseInt(row?.total ?? '0', 10)
   }
 
   // ===========================================================================

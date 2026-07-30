@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-07-30 (publication-split re-pay: the row that had to be new)** — CONSOLIDATED-TODO
+  §1.2, migration 167. A split Stripe terminally rejected was marked `failed` and left
+  there forever: the member simply went short, and the tracker's standing answer was
+  "manual transfer".
+  - **Why it could not be retried in place, which is the whole shape of the fix.** The
+    idempotency key `pub-split-${payoutId}-${splitId}` is row-stable *on purpose* — that
+    is what lets the resume sweep retry an AMBIGUOUS failure without double-paying
+    (2026-07-15 audit). So a retry against the same row dedupes straight back onto the
+    transfer that was rejected. The fix is a **fresh row**, whose new id is a new key.
+  - **Why the money does not come back on its own.** The writer and tribute cycles release
+    their units child by child, so a failed parent is re-paid under a fresh parent next
+    cycle. A split owns no claim rows — the publication cycle claims its reads under the
+    PAYOUT, and a split is a bps share of the resulting pool with no per-read decomposition
+    to release. The money stays claimed by a payout that has already completed, so a
+    replacement against that same parent is the only place it can be paid from.
+  - **Two columns, each closing a specific way of getting it wrong.** `attempt` bounds the
+    retry at 3: a terminal rejection is a *deterministic* one (the narrow
+    `isTerminalTransferError` — `StripeInvalidRequestError` only), which in practice means
+    the destination is closed or rejected, and retrying that forever would call Stripe and
+    mint a row every cycle for a member who can never be paid.
+    `replaced_by_split_id` makes supersession an explicit pointer rather than a match on
+    `(payout, account, share_type, article_id)` — ambiguous, because
+    `computePublicationSplits` can legally emit two splits for one account in one payout
+    (standing + article share). That is the same collision that made the idempotency key
+    row-stable in the first place, arriving a second time in a new disguise.
+  - **The parent reopens, and that is a loop rather than a special case.** A fresh pending
+    split on a completed parent must reopen it or `resumePendingPublicationPayouts` — which
+    scans `pending` parents only — never processes the row; `PUBLICATION_PAYOUT_COMPLETE_SQL`
+    then re-closes it on its existing "no split PENDING" rule.
+  - **Segregation needed no new budget logic, which was worth checking rather than assuming.**
+    The predecessor's children were failed by `failChild`, whose single-statement DELETE of
+    the child's `allocated_draws` row returns that allocation to the budget. So re-packing
+    the replacement draws afresh instead of double-drawing. The fee is re-prorated from a
+    denominator that EXCLUDES superseded rows — counted, it would grow with every re-pay and
+    quietly shrink each replacement's application fee below the one its predecessor carried.
+  - **The safety argument, made falsifiable.** A replacement adds a row to a table three
+    money paths read, so the design rests on each of them seeing exactly one. Checked
+    against real Postgres rather than reasoned about: `ledger_publication_distribution` sums
+    LEDGER entries and a failed split posts none; settlement.ts's read selects
+    `IN ('initiated','completed')`; the F5 chargeback selection takes
+    `IN ('completed','reversed')`. A chargeback claws back the 600 actually paid, not 1200
+    against a member who received it once.
+  - **14 DB-backed tests, and the mutation pass that makes them evidence.** Five SQL
+    constants exported so the test executes production's own statements — the sweep drives
+    the module-level `pool` and is unreachable from a rolled-back transaction, exactly like
+    `executePendingChildren`. Three load-bearing predicates were then each removed in turn
+    (the candidate query's supersede filter, the fee denominator's, the reopen's
+    `status = 'completed'` gate) and each mutation was caught: 2, 2 and 1 failures. What is
+    NOT covered is said out loud in the file header — the sweep's control flow (attempt cap,
+    un-onboarded skip, re-read-under-lock) is pinned by nothing here.
+
 - **2026-07-30 (segregation §5 step 0: the probes RUN, and the payload nobody had seen)** —
   the sandbox half of step 0 is done. All five probes green against a segregation-enabled
   Stripe Sandbox; the two production baseline queries remain owed. Findings live in ADR §5's

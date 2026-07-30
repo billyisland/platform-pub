@@ -8,6 +8,7 @@
  *   npx tsx scripts/segregation-probes.ts --probe 1,4,6,7,7b
  *   npx tsx scripts/segregation-probes.ts --probe 7b --destination acct_123
  *   npx tsx scripts/segregation-probes.ts --countries          # §7.5, read-only
+ *   npx tsx scripts/segregation-probes.ts --f4                # audit F4, read-only
  *
  * WHY THIS DRIVES STRIPE AND NOT OUR CODE. §5 step 0 is explicit: run these
  * "against the sandbox with no §3.3 code at all". The point is to observe what
@@ -43,7 +44,14 @@
  * SAFETY. Refuses an `sk_live_` key for every probe that moves money, and
  * refuses the repo's placeholder key. `--countries` is read-only (accounts.list)
  * and is the one mode that WANTS the live key, since §7.5 asks about the real
- * connected accounts — it is allowed there, behind a banner.
+ * connected accounts — it is allowed there, behind a banner. `--f4` is read-only
+ * too (events.list) and accepts either, but only the sandbox has a denominator.
+ *
+ * ALSO HERE, AND NOT PART OF STEP 0. `--f4` settles the audit-F4 premise that
+ * webhook.ts has carried as an untested comment since 2026-07-06 — see the block
+ * above f4Events(). It lives in this file because it is the same technique that
+ * resolved the DEPLOYMENT.md webhook-scope contradiction: ask the event log what
+ * Stripe actually emitted, rather than reasoning about what it ought to.
  *
  * NOT IN STEP 0. Probes 2, 3, 5, 8-13 exercise our code and belong to the full
  * §5 run after the flag is on in staging. This file deliberately stops at the
@@ -64,6 +72,7 @@ const arg = (name: string): string | null => {
   return i >= 0 ? (argv[i + 1] ?? null) : null
 }
 const COUNTRIES_ONLY = argv.includes('--countries')
+const F4_ONLY = argv.includes('--f4')
 const PROBES = (arg('--probe') ?? '1,4,6,7,7b').split(',').map((s) => s.trim())
 const DESTINATION = arg('--destination')
 const OUT = arg('--out') ?? `segregation-probe-results.json`
@@ -822,15 +831,149 @@ async function countries(stripe: Stripe): Promise<void> {
 }
 
 // -----------------------------------------------------------------------------
+// Audit F4 — do transfer.paid / transfer.failed EVER fire for our transfers?
+//
+// The premise webhook.ts has carried since 2026-07-06: they do not, because the
+// legacy paid/failed events describe a CONNECTED account paying out to its own
+// bank, not the platform transferring TO a connected account. Payout completion
+// is therefore keyed off the transfers.create response, and the two switch cases
+// survive as guarded no-ops "pending a live-Stripe confirmation before deletion".
+// This is that confirmation.
+//
+// WHAT MAKES IT EVIDENCE RATHER THAN A NULL RESULT. Two empty lists prove
+// nothing on their own — an events endpoint that returned nothing at all would
+// look identical. So this counts four types together, and the verdict is only
+// meaningful when the first two are populated:
+//
+//   transfer.created    the DENOMINATOR. N transfers of exactly the shape in
+//                       question actually existed in this window.
+//   transfer.reversed   the POSITIVE CONTROL. transfer.* events for these very
+//                       transfers ARE delivered on this account (yesterday's 7b
+//                       reversals are the known hits).
+//   transfer.paid       expected ZERO.
+//   transfer.failed     expected ZERO.
+//
+// Same standard as 7b's cumulative check: a check that cannot fail proves
+// nothing. With created > 0 and reversed > 0, a zero paid/failed count is a real
+// observation about Stripe's behaviour; with both at zero it is UNKNOWN and says
+// so, rather than passing by default.
+//
+// Read-only (events.list), so it accepts a live key — though on a platform with
+// no connected accounts and no payouts the live event log has no denominator and
+// will correctly report UNKNOWN. The sandbox, where yesterday's probes left real
+// platform→connected transfers, is where the answer is.
+// -----------------------------------------------------------------------------
+
+const F4_TYPES = ['transfer.created', 'transfer.reversed', 'transfer.paid', 'transfer.failed'] as const
+
+async function f4Events(stripe: Stripe): Promise<ProbeResult> {
+  const checks: Check[] = []
+  const counts: Record<string, number> = {}
+  const samples: Record<string, unknown[]> = {}
+
+  for (const type of F4_TYPES) {
+    let n = 0
+    const seen: unknown[] = []
+    // events.list retains 30 days, which covers the sandbox probe runs. No
+    // `created` filter: the whole retained window is the widest net available,
+    // and a wider net can only strengthen a zero.
+    for await (const event of stripe.events.list({ type, limit: 100 })) {
+      n++
+      if (seen.length < 5) {
+        const t = event.data.object as Stripe.Transfer
+        seen.push({
+          event_id: event.id,
+          created: new Date(event.created * 1000).toISOString(),
+          transfer_id: t.id,
+          // `destination` present ⇒ platform→connected, the shape F4 is about.
+          destination: t.destination ?? null,
+          amount: t.amount,
+          amount_reversed: t.amount_reversed,
+          reversed: t.reversed,
+        })
+      }
+    }
+    counts[type] = n
+    samples[type] = seen
+  }
+
+  const created = counts['transfer.created'] ?? 0
+  const reversed = counts['transfer.reversed'] ?? 0
+  const paid = counts['transfer.paid'] ?? 0
+  const failed = counts['transfer.failed'] ?? 0
+
+  // The denominator and the control decide whether the next two checks can speak
+  // at all. Stated as their own checks so an empty account reports UNKNOWN
+  // loudly rather than handing back a pair of vacuous passes.
+  check(checks, 'DENOMINATOR: transfers of the shape in question exist in the window',
+    'transfer.created > 0', created, created > 0 ? 'PASS' : 'FAIL')
+  check(checks, 'POSITIVE CONTROL: transfer.* IS delivered for these transfers',
+    'transfer.reversed > 0', reversed, reversed > 0 ? 'PASS' : 'FAIL')
+
+  const canSpeak = created > 0 && reversed > 0
+  check(checks, 'F4: transfer.paid never fires for a platform→connected transfer',
+    0, paid, canSpeak ? (paid === 0 ? 'PASS' : 'FAIL') : 'UNKNOWN')
+  check(checks, 'F4: transfer.failed never fires for a platform→connected transfer',
+    0, failed, canSpeak ? (failed === 0 ? 'PASS' : 'FAIL') : 'UNKNOWN')
+
+  // Every created transfer carrying a `destination` is the confirmation that the
+  // denominator is the RIGHT denominator — a window full of some other transfer
+  // shape would satisfy `created > 0` while proving nothing about ours.
+  const createdSamples = samples['transfer.created'] as Array<{ destination: string | null }>
+  const allToConnected = createdSamples.length > 0 && createdSamples.every((s) => s.destination !== null)
+  check(checks, 'the counted transfers are platform→connected (destination set)',
+    true, allToConnected, createdSamples.length === 0 ? 'UNKNOWN' : allToConnected ? 'PASS' : 'FAIL')
+
+  return {
+    probe: 'F4',
+    title: 'transfer.paid / transfer.failed premise check (read-only events.list)',
+    status: 'ok',
+    observations: { counts, samples },
+    checks,
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Runner
 // -----------------------------------------------------------------------------
 
 async function main() {
-  const stripe = makeStripe(COUNTRIES_ONLY)
+  const stripe = makeStripe(COUNTRIES_ONLY || F4_ONLY)
 
   if (COUNTRIES_ONLY) {
     await countries(stripe)
     return
+  }
+
+  if (F4_ONLY) {
+    console.log('Audit F4 — transfer.paid / transfer.failed premise check')
+    console.log(`API version: ${ALLOCATED_FUNDS_API_VERSION}\n`)
+    process.stdout.write('scanning events.list … ')
+    const result = await f4Events(stripe)
+    results.push(result)
+    console.log('done\n')
+
+    const c = result.observations.counts as Record<string, number>
+    for (const type of F4_TYPES) {
+      console.log(`  ${type.padEnd(20)} ${String(c[type] ?? 0).padStart(5)}`)
+    }
+    console.log()
+    for (const chk of result.checks) {
+      const mark = chk.verdict === 'PASS' ? '✓' : chk.verdict === 'FAIL' ? '✗' : '?'
+      console.log(`  ${mark} ${chk.claim}`)
+      if (chk.verdict !== 'PASS') {
+        console.log(`      expected ${JSON.stringify(chk.expected)}, got ${JSON.stringify(chk.actual)}`)
+      }
+    }
+
+    writeFileSync(OUT, JSON.stringify({ apiVersion: ALLOCATED_FUNDS_API_VERSION, results }, null, 2))
+    console.log(`\nRaw observations → ${OUT}`)
+    console.log(
+      (c['transfer.paid'] ?? 0) === 0 && (c['transfer.failed'] ?? 0) === 0 && (c['transfer.created'] ?? 0) > 0 && (c['transfer.reversed'] ?? 0) > 0
+        ? '\n✓ Premise CONFIRMED. The two guarded no-op cases in webhook.ts can be deleted.\n'
+        : '\n⚠ Read the counts above before touching webhook.ts — the premise is NOT confirmed.\n',
+    )
+    process.exit(result.checks.some((k) => k.verdict !== 'PASS') ? 1 : 0)
   }
 
   console.log(`Funds segregation §5 step 0 — probes ${PROBES.join(', ')}`)
