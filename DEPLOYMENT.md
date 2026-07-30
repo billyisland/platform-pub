@@ -295,6 +295,41 @@ DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpu
 
 ## Upgrading
 
+### Step 0 — establish what is actually there
+
+Before deciding *whether* to deploy, and certainly before scoping one, read prod's state
+from prod. Not from a tracker, an ADR, or a "not yet deployed" note — those are written at
+intent-time and go stale silently, and acting on one has produced both a phantom deploy
+(the thing was already live) and a phantom no-op. Three commands, none of them expensive:
+
+```bash
+# 1. SCHEMA — what migrations have run
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -Xc "SELECT filename, applied_at FROM _migrations ORDER BY id DESC LIMIT 6"
+
+# 2. SOURCE — what commit the checkout sits on
+cd /root/platform-pub && git log --oneline -1
+
+# 3. RUNNING — when each image was actually built   ← the one that matters
+docker compose images
+```
+
+**The third is the one people skip, and the only one that answers "is the code live".** A
+checkout can sit hours or days ahead of the images built from it — `git reset --hard` costs
+nothing, `docker compose build` is the expensive step, so the two drift apart exactly when
+someone pulls and defers the rebuild. Read `git log` alone and you will report the newest
+commit as deployed when its code is nowhere in the running containers. Compare each
+service's image timestamp against the commit times of the work you care about
+(`git log -1 --format=%cd --date=format-local:'%Y-%m-%d %H:%M' <sha>`); an image predating a
+commit cannot contain it.
+
+Worked example, 2026-07-30: schema was fully current (165 of 165), the checkout was on that
+morning's commit, and the backend images were from 07-29 ~16:10 — which put segregation
+parts 1 and 2 inside them and part 3 (committed 17:02) outside. Schema and source both said
+"current"; only the image dates said which half of a day's work was actually running.
+
+### The sequence
+
 > **Always: pull → migrate → build → up → reload nginx.** Skipping migrate leaves the schema stale; skipping `--build` (or running `up`/`restart` alone) leaves the image stale. Use `--no-cache` on a service if a rebuild appears to produce no change.
 >
 > One general caution from the 2026-07-06 deploy of migration 145: a migration that **DROPs a column the running image still reads** inverts this order for that one deploy (build → up → migrate), else every request touching the column 500s for the whole rebuild window. Check destructive migrations against the *currently-deployed* code, not the new code.
