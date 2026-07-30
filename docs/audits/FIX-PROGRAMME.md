@@ -23,6 +23,32 @@ starts.
 
 ## Progress
 
+- **2026-07-30 (the card-decline prompt, and the balance that had been lying)** —
+  CONSOLIDATED-TODO §1.4, STRIPE audit S1.
+  - **The flag with no consumer is the worst shape a flag can have.**
+    `accounts.card_action_required_at` had been set by settlement declines and exposed on
+    `GET /my/tab` since the S1 audit, and nothing rendered it. The backend behaviour is
+    right — settlement backs off rather than retrying a card Stripe has called dead — but
+    the reader was told nothing, so from their side the tab just stopped working with no
+    explanation and no way to fix it. The copy IS the feature: what happened, what it means
+    now, and the one action that clears it. Not dismissible, because the state persists
+    until a card is attached and an affordance you can wave away would misrepresent it.
+  - **It rides the session, not the tab response.** Beside `hasPaymentMethod` on
+    `/auth/me`, so one source serves every surface and none of them needs its own fetch —
+    and it self-dismisses everywhere at once, because `connectPaymentMethod` already clears
+    the column in the same UPDATE that sets `stripe_customer_id`. One `fetchMe` does both.
+  - **The bug it turned up on the way.** Three of `TabOverview`'s four declared fields had
+    never existed on the wire: the route sends `tabBalancePence` and the type said
+    `balancePence`, with a raw pass-through API client between them and nothing to report
+    the mismatch. The ledger's net balance is `earnings − tabBalance`, so with `tabBalance`
+    permanently `undefined` and the fallback making it 0, **a reader who owed money saw a
+    balance as though they owed none.** `freeAllowanceTotalPence` and `recentReads` were
+    undefined too. Worth recording as a class: a hand-written response type is an
+    unchecked assertion about another service's JSON, and it fails silently and
+    optimistically — the reading that flatters is the one that survives review.
+  - Still owed and unchanged: the S2 live browser test of card attach incl. 3DS, which
+    needs real keys.
+
 - **2026-07-30 (publication-split re-pay: the row that had to be new)** — CONSOLIDATED-TODO
   §1.2, migration 167. A split Stripe terminally rejected was marked `failed` and left
   there forever: the member simply went short, and the tracker's standing answer was
