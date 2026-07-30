@@ -426,6 +426,73 @@ use.
 
 ---
 
+### 6 — The pane box: scroll ownership, sizing opt-ins, the top seam, `\`
+
+Recorded here 2026-07-30, moved out of CLAUDE.md, which had been the only home for
+it. Nothing below is a change of behaviour — it is the as-built mechanism behind
+four rules the guidance file keeps in one-line form.
+
+**Scroll ownership — `--gh-h`.** The pane clips (`overflow-hidden`) and publishes
+its on-screen height as the CSS var `--gh-h`. Every body sizes its own scroll
+region against that var (`max-h-[var(--gh-h)]` / `h-[var(--gh-h)]`), replacing an
+earlier fixed `calc(100vh - 64px)` that was wrong the moment the pane became
+movable and resizable. The rule this encodes: **a body owns its scroll and never
+relies on the wrapper** — otherwise pinned chrome scrolls away with the content.
+
+**Sizing opt-ins.** Three props, each a default the user can override:
+
+- `resizable` — a bottom-right stretch handle mirroring the vessel resize. Snaps
+  to the `GRID` lattice on release, clamps to the viewport, floors `MIN_W`/`MIN_H`,
+  and persists per overlay under `ah:overlay-size:<persistKey>` (the size twin of
+  `ah:overlay-pos:<persistKey>`). It also demotes `maxWidth` from a cap to a seed:
+  the prop sets the opening width, a stretch may exceed it. Opted in by the note
+  `Composer`, the article `EditorOverlay`, `MessagesOverlay` and `ReaderOverlay`.
+- `fillHeight` — see §X's Slice-4 follow-on notes in WORKSPACE-COLUMN-LAYOUT-ADR.
+- `coverNavRow` — likewise; it additionally *requires* the caller to un-mount the
+  nav row + muster while open.
+
+`fillHeight` and `coverNavRow` are defaults only: a persisted resized height wins
+over both, so a user who stretched the reader smaller keeps it.
+
+**The top seam.** A pane body that renders flush to the edges must keep static
+controls clear of the pinned chrome (grip band top-centre; resize grip
+bottom-right). That does not help a body whose content *scrolls*: the pane clips
+but never pads, so prose runs straight behind the grip pill. `topSeam` paints a
+short band of the pane's **own background** across the top edge — solid for
+`SEAM_SOLID` (20px, clearing the grip's 14–18px band), fading to nothing by
+`SEAM_H` (38px) — so text dissolves into the page before it reaches the furniture.
+
+It is invisible at rest, being the pane colour, and is sized to sit inside the
+body's own top padding: `ReaderOverlay` adds `pt-2` so both the external reader
+(32+8) and the native md skeleton (40+8) clear the fade. It layers `z-[4]` —
+above the body, which is static and in flow, below the feed frame's colour bar
+(`z-5`) and the pinned chrome (`z-10`) — so it hides neither. Desktop only, gated
+on the grip's own existence (`pane.startDrag`): no grip, no seam.
+
+Two solutions rejected, both of which look correct and are not. A `mask-image` on
+the scroller dims at-rest content at the top, i.e. it degrades the reading surface
+permanently to fix a transient collision. Padding alone pushes the body down but
+leaves the handle sitting on bare background, and a flush hero image still bleeds
+under it. The `py-12` page-style overlays (Ledger/Dashboard/Library/Network/
+Settings) get the clearance for free; the flush `MessagesInbox` is the worked
+example (centre column `pt-6`, send form `pr-7` under `headerRightInset`).
+
+**`\` toggles default placement.** Plain backslash flips the open pane between the
+user's custom arrangement (persisted `pos`/`size`) and the default one
+(snapped-centre, default width, fill-or-content height) — the pane-scoped mirror
+of the floor's regimented `\` (WORKSPACE-COLUMN-LAYOUT-ADR §V), which is inert
+while a pane is open because the floor handler guards on the Glasshouse presence
+registry. The two never both fire.
+
+Like the floor's, it is a transient **non-destructive view**: `pos`/`size` stay in
+state, so a second `\` restores them, and a drag or resize commits a new custom
+arrangement and clears the toggle. Guarded like every global binding (no
+modifiers, not in an editable field, not under Explain or the lightbox). Desktop
+only — `toggleDefault` is null on the mobile sheet, which has no movable
+placement.
+
+---
+
 ## IV. Consequences
 
 - The pane colour stops being a per-feed problem — the question "what colour reads
