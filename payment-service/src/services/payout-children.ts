@@ -319,9 +319,12 @@ export async function executePendingChildren(
 
     await withTransaction(async (client) => {
       // The guard is `status = 'pending'`, never merely `<> 'completed'`.
-      // `confirmPublicationSplit` guards only the latter today, so a stray
-      // `transfer.paid` can resurrect a `failed` split and even complete its
-      // parent; the child lifecycle must not copy that hole.
+      // The split-level `confirmPublicationSplit` guarded only the latter, so a
+      // stray `transfer.paid` could resurrect a `failed` split and even complete
+      // its parent. That handler is now deleted (audit F4 closed 2026-07-30: the
+      // event never fires for a platform→connected transfer), so the hole is
+      // gone rather than merely un-copied — but the rule stands on its own
+      // merits, and a `<> 'completed'` guard here would still be wrong.
       const flipped = await client.query(
         `UPDATE payout_transfers
             SET status = 'completed', stripe_transfer_id = $1, completed_at = now()

@@ -134,14 +134,23 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   // Cast to string: the Stripe SDK's Event.type union doesn't include every event
   // we handle at runtime (the transfer.* events below), so we widen it.
   //
-  // Audit F4 (2026-07-06): transfer.paid / transfer.failed do NOT fire for
-  // platform→connected-account transfers — Stripe emits only transfer.created /
-  // updated / reversed for those (the legacy paid/failed events are for a
-  // connected account's transfers to ITS OWN bank, not transfers TO the connected
-  // account). Payout completion is therefore keyed off the transfers.create
-  // response (payout.ts), not these webhooks. The paid/failed cases below are
-  // retained as GUARDED NO-OPS (completion at create-time + status guards make a
-  // stray delivery harmless) pending a live-Stripe confirmation before deletion.
+  // Audit F4 — MEASURED AND CLOSED 2026-07-30. transfer.paid / transfer.failed
+  // do NOT fire for platform→connected-account transfers: the legacy paid/failed
+  // events describe a CONNECTED account paying out to its own bank, not the
+  // platform transferring TO a connected account. Payout completion is therefore
+  // keyed off the transfers.create response (payout.ts), and the two cases that
+  // used to sit here as guarded no-ops "pending a live-Stripe confirmation" have
+  // been deleted along with the six service methods they were the only callers
+  // of. A stray delivery now falls to the default arm and is logged and ignored.
+  //
+  // The confirmation, since absence is easy to claim and hard to evidence:
+  // `events.list` over a segregation sandbox returned 29 transfer.created and 24
+  // transfer.reversed — every one with `destination` set, i.e. exactly the shape
+  // in question — against 0 transfer.paid and 0 transfer.failed. The created
+  // count is the denominator and the reversed count the positive control; two
+  // empty lists on their own would have been indistinguishable from an event log
+  // that returned nothing. Re-runnable: `segregation-probes.ts --f4`.
+  //
   // transfer.reversed IS delivered for these transfers and is handled below.
   switch (event.type as string) {
     // -------------------------------------------------------------------------
@@ -166,46 +175,6 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const pi = event.data.object as Stripe.PaymentIntent
       const failureMessage = pi.last_payment_error?.message ?? 'Unknown failure'
       await settlementService.handleFailedPayment(pi.id, failureMessage)
-      break
-    }
-
-    // -------------------------------------------------------------------------
-    // Stage 3: Writer payout
-    //
-    // FIX #14: Changed from transfer.created to transfer.paid.
-    // transfer.created fires when the transfer object is created in Stripe,
-    // NOT when funds actually arrive in the writer's account. Confirming
-    // a payout as 'completed' on creation is premature. transfer.paid fires
-    // when the transfer has actually been paid out to the connected account.
-    // -------------------------------------------------------------------------
-    case 'transfer.paid': {
-      const transfer = event.data.object as Stripe.Transfer
-      // Route by the metadata stamped at transfer creation. Writer, tribute, and
-      // publication-split transfers all emit transfer.paid/failed but land in
-      // different tables — confirmPayout only knows writer_payouts, so an
-      // un-routed tribute/pub transfer would hit its no-match no-op and never
-      // confirm (or, on failure, never roll back).
-      const m = transfer.metadata ?? {}
-      if (m.tribute_payout_id) {
-        await payoutService.confirmTributePayout(transfer.id)
-      } else if (m.publication_payout_id) {
-        await payoutService.confirmPublicationSplit(transfer.id)
-      } else {
-        await payoutService.confirmPayout(transfer.id)
-      }
-      break
-    }
-
-    case 'transfer.failed': {
-      const transfer = event.data.object as Stripe.Transfer
-      const m = transfer.metadata ?? {}
-      if (m.tribute_payout_id) {
-        await payoutService.handleFailedTributePayout(transfer.id, 'Transfer failed')
-      } else if (m.publication_payout_id) {
-        await payoutService.handleFailedPublicationSplit(transfer.id, 'Transfer failed')
-      } else {
-        await payoutService.handleFailedPayout(transfer.id, 'Transfer failed')
-      }
       break
     }
 

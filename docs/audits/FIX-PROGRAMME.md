@@ -23,6 +23,42 @@ starts.
 
 ## Progress
 
+- **2026-07-30 (audit F4 closed: the webhooks that were never coming)** — CONSOLIDATED-TODO
+  §1.1 item 1. Since 2026-07-06 `webhook.ts` had carried `transfer.paid` and
+  `transfer.failed` as guarded no-ops with a comment saying they do not fire for
+  platform→connected transfers, "pending a live-Stripe confirmation before deletion".
+  This is that confirmation, and then the deletion.
+  - **How you evidence an absence.** Two empty lists prove nothing — an events endpoint
+    returning nothing at all looks identical. So the probe counts FOUR types together and
+    the verdict is gated on the first two: `transfer.created` as the **denominator** (N
+    transfers of exactly this shape existed), `transfer.reversed` as the **positive
+    control** (`transfer.*` for these very transfers IS delivered here), then the two under
+    test. Result: **29 created, 24 reversed, 0 paid, 0 failed**, with `destination` set on
+    every sampled event. With the controls empty it reports UNKNOWN rather than passing by
+    default. Same standard as the M10 negative control and yesterday's cumulative-reversal
+    check: *a passing check proves nothing until it can fail.*
+  - **The same technique that resolved the webhook-scope contradiction the day before** —
+    ask the event log what Stripe actually emitted rather than reason about what it ought
+    to. Read-only, moves no money, re-runnable: `segregation-probes.ts --f4`.
+  - **386 lines deleted**: both switch cases and the six service methods they were the
+    ONLY callers of. Checked before cutting rather than after: no test referenced any of
+    them, and the two `rollback*PayoutRows` helpers survive because each retains its
+    terminal-create-rejection caller — their docblocks now say so, since "shared, so it
+    can't diverge" was the reason they were extracted and that reason is spent.
+  - **The ledger-adjacency floor did not move (19), and that is the interesting part.**
+    Deleting six money-path methods without changing the count means none of them posted a
+    ledger entry — which is the F4 design working exactly as stated: completion is keyed
+    off the `transfers.create` response, so the entry rides *there* and the webhook
+    handlers were pure status flips. Verified against the diff rather than assumed.
+  - **Three docs were giving actively wrong instructions and are fixed.** `DEPLOYMENT.md`
+    told the operator to verify `transfer.paid` webhooks were reaching `/webhooks/stripe`
+    — following it, they would have concluded the webhook wiring was broken. The
+    segregation ADR described the `confirmPublicationSplit` guard hole as live. And
+    UPSTREAM-EDGES-AUDIT-FIXES **F15** now carries a superseded note: its premise
+    ("tribute and publication transfers emit the same webhooks") was false, so the routing
+    that fix added was dispatching events that never arrive — a fix built on a
+    misunderstanding, doing nothing, for five weeks.
+
 - **2026-07-30 (the card-decline prompt, and the balance that had been lying)** —
   CONSOLIDATED-TODO §1.4, STRIPE audit S1.
   - **The flag with no consumer is the worst shape a flag can have.**

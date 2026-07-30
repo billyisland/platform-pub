@@ -87,8 +87,9 @@ interface SplitResult {
 
 /**
  * Complete a publication payout when NO SPLIT IS LEFT 'pending' — the one home
- * for that rule, used by `finalisePublicationPayout`, `confirmPublicationSplit`
- * and `completePublicationParentBySplit`.
+ * for that rule, used by `finalisePublicationPayout` and
+ * `completePublicationParentBySplit`. (A third caller, `confirmPublicationSplit`,
+ * was deleted with the transfer.paid branch — audit F4, 2026-07-30.)
  *
  * THE ZOMBIE THIS FIXES. The predicate was `NOT EXISTS (split WHERE status <>
  * 'completed')` while the resume sweep retries only 'pending' splits. So a
@@ -1212,10 +1213,12 @@ class PayoutService {
     )
     if (!outcome.ok) {
       // Terminal rejection (e.g. the destination's transfers capability was
-      // revoked): Stripe created NO transfer and never emits transfer.failed, so
-      // handleFailedPayout — keyed on stripe_transfer_id — would never fire and
-      // the row would sit 'pending' forever, its claimed reads frozen, resume
-      // retrying every cycle (the payout-side twin of the settlement orphan).
+      // revoked): Stripe created NO transfer, so there is no id to key anything
+      // on and the row would sit 'pending' forever, its claimed reads frozen,
+      // resume retrying every cycle (the payout-side twin of the settlement
+      // orphan). Note this is now the ONLY thing that resolves such a row:
+      // transfer.failed was never going to arrive for a platform→connected
+      // transfer, which audit F4 measured and closed on 2026-07-30.
       // Mark the payout failed and release its earnings so the next cycle re-pays
       // under a fresh id. (Ambiguous errors never reach here — the primitive
       // re-throws them so resume retries with the stable key → never double-pay.)
@@ -1458,58 +1461,6 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
-  // confirmPayout — called from Stripe webhook on transfer.paid
-  //
-  // FIX #14: Changed from transfer.created to transfer.paid. transfer.created
-  // fires when Stripe creates the transfer object, not when funds arrive.
-  // Marking a payout as 'completed' should only happen when the transfer
-  // actually lands.
-  // ---------------------------------------------------------------------------
-
-  async confirmPayout(stripeTransferId: string): Promise<void> {
-    // §3.5 — resolve a CHILD first. With N transfers per payout,
-    // `writer_payouts.stripe_transfer_id` can hold one id of N, so a handler
-    // keyed on it silently drops every other child's event. Null means the
-    // legacy single-transfer shape (a pre-flip payout), which falls through to
-    // the lookup below unchanged.
-    const child = await findChildByTransferId(stripeTransferId)
-    if (child) {
-      // Completion is keyed off the create response (F4), so the child is
-      // already 'completed' and its ledger entry posted; this event is a
-      // belt-and-braces re-evaluation of the parent, nothing more.
-      if (child.parent_table !== 'writer_payouts') return
-      await withTransaction((client) =>
-        this.finaliseWriterPayoutParent(client, child.parent_id),
-      )
-      logger.info(
-        { stripeTransferId, childId: child.id, payoutId: child.parent_id },
-        'Writer payout child confirmed',
-      )
-      return
-    }
-
-    const { rows } = await pool.query<{ id: string }>(
-      `UPDATE writer_payouts
-       SET status = 'completed', completed_at = now()
-       WHERE stripe_transfer_id = $1
-         AND status != 'completed'
-       RETURNING id`,
-      [stripeTransferId]
-    )
-
-    if (rows.length === 0) {
-      // Either the webhook fired for an unknown transfer, or the row was
-      // already 'completed' (duplicate delivery — Stripe retries 3× on 2xx
-      // failures). Both are safe no-ops, but worth logging: an unknown
-      // transfer ID in production may indicate a mis-routed webhook.
-      logger.warn({ stripeTransferId }, 'confirmPayout: no row updated')
-      return
-    }
-
-    logger.info({ stripeTransferId, payoutId: rows[0].id }, 'Writer payout confirmed')
-  }
-
-  // ---------------------------------------------------------------------------
   // reverseWriterPayout — Stripe webhook on transfer.reversed for a WRITER
   // payout (F4). Funds were clawed back to the platform — possibly PARTIALLY:
   // Stripe emits transfer.reversed for partial reversals too, carrying the
@@ -1662,72 +1613,15 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
-  // handleFailedPayout — called from Stripe webhook on transfer.failed
-  // Rolls reads back to platform_settled so they are retried on next cycle
-  // ---------------------------------------------------------------------------
-
-  async handleFailedPayout(stripeTransferId: string, reason: string): Promise<void> {
-    const child = await findChildByTransferId(stripeTransferId)
-    if (child) {
-      if (child.parent_table !== 'writer_payouts') return
-      await withTransaction(async (client) => {
-        if (!(await failChild(client, child.id, reason))) return
-        await this.releaseWriterChildRows(client, child)
-      })
-      // Re-evaluate the parent in its own transaction: with this child no longer
-      // pending, the payout may now be settled at a smaller, restated amount.
-      // "No child PENDING" — never "every child completed" — is what stops a
-      // single failure zombifying the parent forever.
-      await withTransaction((client) =>
-        this.finaliseWriterPayoutParent(client, child.parent_id),
-      )
-      logger.warn(
-        { stripeTransferId, childId: child.id, payoutId: child.parent_id, reason },
-        'Writer payout child transfer failed — its units released for re-pay',
-      )
-      return
-    }
-
-    await withTransaction(async (client) => {
-      // A payout that previously reached 'completed' (e.g. a transfer.paid
-      // webhook that later reversed) needs completed_at nulled out alongside
-      // the status flip — otherwise reporting shows the payout as both failed
-      // and completed at some historical timestamp. failed_reason is only
-      // overwritten when empty so a subsequent retry doesn't lose the first
-      // failure's context.
-      // Audit F4 (2026-07-06): guard on status != 'completed'. Completion is now
-      // keyed off the create response (a payout reaches 'completed' the moment its
-      // transfer is created), so a stray/duplicate transfer.failed webhook — which
-      // shouldn't fire for platform→connected transfers at all — must never unwind
-      // a completed payout and re-release its already-paid reads.
-      const payoutRow = await client.query<{ id: string; writer_id: string }>(
-        `UPDATE writer_payouts
-         SET status = 'failed',
-             failed_reason = COALESCE(failed_reason, $1),
-             completed_at = NULL
-         WHERE stripe_transfer_id = $2
-           AND status != 'completed'
-         RETURNING id, writer_id`,
-        [reason, stripeTransferId]
-      )
-
-      if (payoutRow.rowCount === 0) return
-
-      const { id: payoutId, writer_id: writerId } = payoutRow.rows[0]
-
-      await this.rollbackWriterPayoutRows(client, payoutId)
-
-      logger.warn({ payoutId, writerId, stripeTransferId, reason }, 'Writer payout failed — reads rolled back')
-    })
-  }
-
-  // ---------------------------------------------------------------------------
   // rollbackWriterPayoutRows — release everything a writer_payout claimed:
   // reads back to platform_settled (unclaimed) and claimed subscription earnings.
   // (Dial A: a writer_payout no longer claims swept ROOT tribute returns — that
-  // machinery is gone.) Shared by handleFailedPayout (transfer.failed webhook)
-  // and failWriterPayoutTerminal (terminal create rejection) so the rollback
-  // can't diverge. Caller owns the transaction and the writer_payouts status flip.
+  // machinery is gone.) Called by failWriterPayoutTerminal (terminal create
+  // rejection); it was shared with handleFailedPayout until that transfer.failed
+  // handler was deleted (audit F4, 2026-07-30), so the "can't diverge" reason for
+  // extracting it is spent — it stays extracted because the rollback is the
+  // delicate half and reads better named. Caller owns the transaction and the
+  // writer_payouts status flip.
   // ---------------------------------------------------------------------------
   private async rollbackWriterPayoutRows(
     client: PoolClient,
@@ -3211,9 +3105,10 @@ class PayoutService {
     )
     if (!outcome.ok) {
       // Same terminal-rejection gap as completeWriterPayout: a revoked-capability
-      // create throws, no transfer object exists, no transfer.failed webhook ever
-      // fires, so handleFailedTributePayout never runs and the row sits 'pending'
-      // forever with its accruals frozen. Mark failed + release for re-pay on a
+      // create throws and no transfer object exists, so nothing else can ever
+      // resolve the row and it sits 'pending' forever with its accruals frozen.
+      // (No transfer.failed webhook was ever coming either way — audit F4,
+      // measured and closed 2026-07-30.) Mark failed + release for re-pay on a
       // deterministic rejection. (Ambiguous errors never reach here — the
       // primitive re-throws them so resume retries with the stable key → never
       // double-pay.) STRIPE audit S1 follow-on.
@@ -3362,7 +3257,7 @@ class PayoutService {
       parentId: payoutId,
       destination: stripeConnectId,
       // The webhook router dispatches on `tribute_payout_id`, so a child transfer
-      // must carry it or transfer.reversed lands in confirmPayout's writer branch.
+      // must carry it or transfer.reversed lands in reverseWriterPayout's branch.
       metadata: {
         tribute_payout_id: payoutId,
         tribute_id: tributeId,
@@ -3605,60 +3500,6 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
-  // confirmTributePayout — Stripe webhook on transfer.paid for a TRIBUTE transfer.
-  //
-  // Tribute transfers carry metadata.tribute_payout_id, so the webhook routes
-  // them here rather than to confirmPayout (which only knows writer_payouts).
-  // Mirrors confirmPayout: flip 'initiated' → 'completed' when the funds land.
-  // ---------------------------------------------------------------------------
-  async confirmTributePayout(stripeTransferId: string): Promise<void> {
-    // §3.5 — resolve a CHILD first. With N transfers per payout,
-    // `tribute_payouts.stripe_transfer_id` can hold one id of N, so a handler
-    // keyed on it silently drops every other child's event. Null means the legacy
-    // single-transfer shape, which falls through unchanged.
-    const child = await findChildByTransferId(stripeTransferId)
-    if (child) {
-      if (child.parent_table !== 'tribute_payouts') return
-      const ctx = await this.tributePayoutContext(child.parent_id)
-      if (!ctx) {
-        logger.warn({ childId: child.id }, 'confirmTributePayout: child has no parent payout')
-        return
-      }
-      // Completion is keyed off the create response (F4), so the child is already
-      // 'completed' and its ledger entry posted; this event is a belt-and-braces
-      // re-evaluation of the parent, nothing more.
-      await withTransaction((client) =>
-        this.finaliseTributePayoutParent(
-          client,
-          child.parent_id,
-          ctx.authorId,
-          ctx.inspirerId,
-          ctx.isRoot,
-        ),
-      )
-      logger.info(
-        { stripeTransferId, childId: child.id, tributePayoutId: child.parent_id },
-        'Tribute payout child confirmed',
-      )
-      return
-    }
-
-    const { rows } = await pool.query<{ id: string }>(
-      `UPDATE tribute_payouts
-          SET status = 'completed', completed_at = now()
-        WHERE stripe_transfer_id = $1
-          AND status <> 'completed'
-        RETURNING id`,
-      [stripeTransferId],
-    )
-    if (rows.length === 0) {
-      logger.warn({ stripeTransferId }, 'confirmTributePayout: no row updated')
-      return
-    }
-    logger.info({ stripeTransferId, tributePayoutId: rows[0].id }, 'Tribute payout confirmed')
-  }
-
-  // ---------------------------------------------------------------------------
   // reverseTributePayout — Stripe webhook on transfer.reversed for a TRIBUTE
   // payout (F4). Mirrors reverseWriterPayout on the tribute leg, including the
   // PARTIAL-reversal handling (cumulative transfer.amount_reversed → post only
@@ -3892,91 +3733,13 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
-  // handleFailedTributePayout — Stripe webhook on transfer.failed for a TRIBUTE
-  // transfer. Mirrors handleFailedPayout (writer): flip the row to 'failed' and
-  // roll its accruals back so the NEXT cycle re-pays them under a fresh
-  // tribute_payouts row (new id ⇒ new idempotency key ⇒ a genuinely new
-  // transfer, not a dedupe of the failed one).
-  //
-  // The +tribute_payout ledger entry posted at completion is LEFT in place
-  // (append-only); the re-pay posts a new one. This is the same reconciliation-
-  // only artefact the writer path carries on a failed transfer — reconcile-
-  // ledger.sql A10a/A10b exclude failed tribute_payouts so the tree-conservation
-  // checks stay green.
-  // ---------------------------------------------------------------------------
-  async handleFailedTributePayout(stripeTransferId: string, reason: string): Promise<void> {
-    const child = await findChildByTransferId(stripeTransferId)
-    if (child) {
-      if (child.parent_table !== 'tribute_payouts') return
-      const ctx = await this.tributePayoutContext(child.parent_id)
-      if (!ctx) {
-        logger.warn({ childId: child.id }, 'handleFailedTributePayout: child has no parent payout')
-        return
-      }
-      await withTransaction(async (client) => {
-        if (!(await failChild(client, child.id, reason))) return
-        await this.releaseTributeChildRows(
-          client,
-          child,
-          child.parent_id,
-          ctx.authorId,
-          ctx.inspirerId,
-          ctx.isRoot,
-        )
-      })
-      // Re-evaluate the parent in its own transaction: with this child no longer
-      // pending, the payout may now be settled at a smaller, restated amount.
-      // "No child PENDING" — never "every child completed" — is what stops a
-      // single failure zombifying the parent forever.
-      await withTransaction((client) =>
-        this.finaliseTributePayoutParent(
-          client,
-          child.parent_id,
-          ctx.authorId,
-          ctx.inspirerId,
-          ctx.isRoot,
-        ),
-      )
-      logger.warn(
-        { stripeTransferId, childId: child.id, tributePayoutId: child.parent_id, reason },
-        'Tribute payout child transfer failed — its accruals released for re-pay',
-      )
-      return
-    }
-
-    await withTransaction(async (client) => {
-      // Audit F4: guard on status <> 'completed' — completion is keyed off the
-      // create response, so a stray transfer.failed must not unwind a completed
-      // tribute payout and re-release its paid accruals.
-      const payoutRow = await client.query<{ id: string }>(
-        `UPDATE tribute_payouts
-            SET status = 'failed',
-                failed_reason = COALESCE(failed_reason, $1),
-                completed_at = NULL
-          WHERE stripe_transfer_id = $2
-            AND status <> 'completed'
-          RETURNING id`,
-        [reason, stripeTransferId],
-      )
-      if (payoutRow.rowCount === 0) return
-      const payoutId = payoutRow.rows[0].id
-
-      await this.rollbackTributePayoutRows(client, payoutId)
-
-      logger.warn(
-        { tributePayoutId: payoutId, stripeTransferId, reason },
-        'Tribute payout failed — accruals rolled back for re-pay',
-      )
-    })
-  }
-
-  // ---------------------------------------------------------------------------
   // rollbackTributePayoutRows — release everything a tribute_payout claimed: the
   // node's own released accruals back to 'released' (unclaimed). (Dial A: there
-  // is no child swept-return leg to roll back.) Shared by
-  // handleFailedTributePayout (transfer.failed webhook) and
-  // failTributePayoutTerminal (terminal create rejection). Caller owns the
-  // transaction and the tribute_payouts status flip.
+  // is no child swept-return leg to roll back.) Called by
+  // failTributePayoutTerminal (terminal create rejection); the second caller,
+  // handleFailedTributePayout, went with the transfer.failed handler (audit F4,
+  // 2026-07-30). Caller owns the transaction and the tribute_payouts status
+  // flip.
   // ---------------------------------------------------------------------------
   private async rollbackTributePayoutRows(
     client: PoolClient,
@@ -4085,59 +3848,6 @@ class PayoutService {
     logger.warn(
       { tributePayoutId: payoutId, reason },
       'Tribute payout transfer rejected by Stripe (no transfer created) — marked failed, accruals released for re-pay',
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // confirmPublicationSplit — Stripe webhook on transfer.paid for a PUBLICATION
-  // split transfer (metadata.publication_payout_id / split_id). Flips the split
-  // 'initiated' → 'completed'; when no sibling split is still in flight, marks
-  // the parent publication_payouts row 'completed' too.
-  // ---------------------------------------------------------------------------
-  async confirmPublicationSplit(stripeTransferId: string): Promise<void> {
-    // §3.5 — resolve a CHILD first. With N transfers under one split,
-    // `publication_payout_splits.stripe_transfer_id` can hold one id of N, so a
-    // handler keyed on it silently drops every other child's event. Null means
-    // the legacy single-transfer shape (a pre-flip split), which falls through
-    // to the lookup below unchanged.
-    const child = await findChildByTransferId(stripeTransferId)
-    if (child) {
-      if (child.parent_table !== 'publication_payout_splits') return
-      // Completion is keyed off the create response (F4), so the child is
-      // already 'completed' and its ledger entry posted; this event is a
-      // belt-and-braces re-evaluation of the split, nothing more.
-      const completion = await withTransaction((client) =>
-        completeParentIfSettled(client, 'publication_payout_splits', child.parent_id),
-      )
-      if (completion.completed) {
-        await this.completePublicationParentBySplit(child.parent_id)
-      }
-      logger.info(
-        { stripeTransferId, childId: child.id, splitId: child.parent_id },
-        'Publication split child confirmed',
-      )
-      return
-    }
-
-    const { rows } = await pool.query<{ id: string; publication_payout_id: string }>(
-      `UPDATE publication_payout_splits
-          SET status = 'completed'
-        WHERE stripe_transfer_id = $1
-          AND status <> 'completed'
-        RETURNING id, publication_payout_id`,
-      [stripeTransferId],
-    )
-    if (rows.length === 0) {
-      logger.warn({ stripeTransferId }, 'confirmPublicationSplit: no row updated')
-      return
-    }
-
-    const payoutId = rows[0].publication_payout_id
-    await pool.query(PUBLICATION_PAYOUT_COMPLETE_SQL, [payoutId])
-
-    logger.info(
-      { stripeTransferId, splitId: rows[0].id, payoutId },
-      'Publication split confirmed',
     )
   }
 
@@ -4303,63 +4013,6 @@ class PayoutService {
     )
     if (rows.length === 0) return
     await pool.query(PUBLICATION_PAYOUT_COMPLETE_SQL, [rows[0].publication_payout_id])
-  }
-
-  // ---------------------------------------------------------------------------
-  // handleFailedPublicationSplit — Stripe webhook on transfer.failed for a
-  // PUBLICATION split. Marks the split 'failed' so the failure is visible
-  // (previously it was silently mis-routed to handleFailedPayout, which never
-  // matched). Auto re-pay of a single failed split is NOT attempted: the split's
-  // reads are already advanced/reserved under the parent payout, and the stable
-  // idempotency key would dedupe a retry to the failed transfer — re-paying it
-  // needs a dedicated retry that mints a fresh split row (tracked as follow-up
-  // debt). The +publication_split ledger entry is left in place (A5 pairs per
-  // row, so reconciliation stays clean).
-  // ---------------------------------------------------------------------------
-  async handleFailedPublicationSplit(stripeTransferId: string, reason: string): Promise<void> {
-    const child = await findChildByTransferId(stripeTransferId)
-    if (child) {
-      if (child.parent_table !== 'publication_payout_splits') return
-      // No unit release: a publication split owns no claim rows (its reads are
-      // claimed under the payout), and the §1.2 posture is that a failed split
-      // keeps its claim for manual re-pay.
-      const failed = await withTransaction((client) =>
-        failChild(client, child.id, reason),
-      )
-      if (failed) {
-        // Re-evaluate the split: with this child no longer pending it may now
-        // be settled at a smaller, restated amount — or, if it was the only
-        // child, failed outright.
-        const completion = await withTransaction((client) =>
-          completeParentIfSettled(client, 'publication_payout_splits', child.parent_id),
-        )
-        if (completion.completed || completion.failedOutright) {
-          await this.completePublicationParentBySplit(child.parent_id)
-        }
-      }
-      logger.warn(
-        { stripeTransferId, childId: child.id, splitId: child.parent_id, reason },
-        'Publication split child transfer failed',
-      )
-      return
-    }
-
-    const { rows } = await pool.query<{ id: string }>(
-      `UPDATE publication_payout_splits
-          SET status = 'failed'
-        WHERE stripe_transfer_id = $1
-          AND status NOT IN ('failed', 'completed')
-        RETURNING id`,
-      [stripeTransferId],
-    )
-    if (rows.length === 0) {
-      logger.warn({ stripeTransferId }, 'handleFailedPublicationSplit: no row updated')
-      return
-    }
-    logger.warn(
-      { stripeTransferId, splitId: rows[0].id, reason },
-      'Publication split transfer failed — marked failed (manual/dedicated re-pay required)',
-    )
   }
 
   // ---------------------------------------------------------------------------

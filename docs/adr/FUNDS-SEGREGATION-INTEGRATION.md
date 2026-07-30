@@ -473,9 +473,11 @@ without it, per-child failure is unimplementable and §5.3 cannot pass.
   **per child**.
 - **Complete a child (Txn 2, once per child):** flip the child `pending → completed` with
   its `stripe_transfer_id` — the guard is `WHERE status = 'pending'`, never merely
-  `<> 'completed'` (today's `confirmPublicationSplit` guards only `<> 'completed'`,
-  `payout.ts:2241`, so a stray `transfer.paid` can resurrect a `failed` split and even
-  complete its parent; the child lifecycle must not copy that hole) — and **post that
+  `<> 'completed'` (the split-level `confirmPublicationSplit` guarded only
+  `<> 'completed'`, so a stray `transfer.paid` could resurrect a `failed` split and even
+  complete its parent; **that handler was deleted 2026-07-30** when audit F4 measured that
+  the event never fires for a platform→connected transfer, so the hole is gone rather than
+  merely un-copied — but the rule stands on its own merits) — and **post that
   child's ledger entry in the same transaction, gated on the flip's `rowCount`**. This is
   `processPublicationSplits`' existing shape
   (`payout.ts:1405–1526`), whose own comment explains why: if the flip committed but the
