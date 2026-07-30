@@ -149,6 +149,14 @@ export interface AccountInfo {
   freeAllowanceRemainingPence: number
   defaultArticlePricePence: number | null
   usernameChangedAt: string | null
+  /**
+   * Set when an off-session settlement charge terminally declined; the reader's
+   * tab is frozen until they re-attach a card. Carried on the account (rather
+   * than fetched per-surface from `/my/tab`) so every surface that already has
+   * the session — the paywall gate as much as the ledger — can tell the reader
+   * why nothing is moving. STRIPE audit S1.
+   */
+  cardActionRequiredAt: string | null
 }
 
 export async function getAccount(accountId: string): Promise<AccountInfo | null> {
@@ -167,11 +175,13 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     free_allowance_remaining_pence: number
     default_article_price_pence: number | null
     username_changed_at: Date | null
+    card_action_required_at: Date | null
   }>(
     `SELECT id, nostr_pubkey, username, display_name, bio, avatar_blossom_url,
             email, status, stripe_customer_id, stripe_connect_id,
             stripe_connect_kyc_complete, free_allowance_remaining_pence,
-            default_article_price_pence, username_changed_at
+            default_article_price_pence, username_changed_at,
+            card_action_required_at
      FROM accounts WHERE id = $1`,
     [accountId]
   )
@@ -194,6 +204,7 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     freeAllowanceRemainingPence: r.free_allowance_remaining_pence,
     defaultArticlePricePence: r.default_article_price_pence,
     usernameChangedAt: r.username_changed_at?.toISOString() ?? null,
+    cardActionRequiredAt: r.card_action_required_at?.toISOString() ?? null,
   }
 }
 

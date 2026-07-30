@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useAuth } from '../../stores/auth'
 import { auth } from '../../lib/api'
 import { CardSetup } from '../payment/CardSetup'
+import { CardActionRequired } from './CardActionRequired'
 
 export function PaymentSection() {
   const { user, fetchMe } = useAuth()
@@ -25,6 +26,12 @@ export function PaymentSection() {
 
   return (
     <div className="space-y-5">
+        {/* A frozen tab outranks everything else on this section: the reader is
+            here precisely because something is wrong with their card, and the
+            "Card connected" row below would otherwise reassure them that all is
+            well while settlement has stopped. */}
+        <CardActionRequired since={user.cardActionRequiredAt} />
+
         {/* Card on file */}
         <div>
           {user.hasPaymentMethod ? (

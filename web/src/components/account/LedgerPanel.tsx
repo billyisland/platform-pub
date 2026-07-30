@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation'
 import { account as accountApi, payment, type TabOverview, type WriterEarnings } from '../../lib/api'
 import { tributesEnabled } from '../../lib/api/tributes'
 import { BalanceHeader } from './BalanceHeader'
+import { CardActionRequired } from './CardActionRequired'
 import { AccountLedger } from './AccountLedger'
 import { SubscriptionsSection } from './SubscriptionsSection'
 import { PledgesSection } from './PledgesSection'
@@ -58,19 +59,39 @@ export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
   }
 
   const earningsPence = earnings?.earningsTotalPence ?? 0
-  const tabBalance = tab?.balancePence ?? 0
+  // `tabBalancePence` is the field the route actually sends. This read was
+  // `tab?.balancePence` — a name that has never been on the wire — so it was
+  // permanently `undefined`, the fallback made it 0, and the net balance below
+  // has been reporting earnings alone: a reader who owed money saw a balance as
+  // though they owed none. See the TabOverview docblock.
+  const tabBalance = tab?.tabBalancePence ?? 0
   const netBalance = earningsPence - tabBalance
+
+  // FREE_ALLOWANCE_TOTAL_PENCE. The route sends only what REMAINS, so the total
+  // is the constant the allowance is defined by (£5, per the "free allowance is
+  // a gift" invariant) rather than a field to read off the response — the
+  // previous `tab?.freeAllowanceTotalPence` was undefined too and always fell
+  // through to this same number.
+  const freeAllowanceTotalPence = 500
 
   const body = (
     <>
       {inOverlay && <PageHeader title="Ledger" />}
+
+      {/* Before the balance: a frozen tab is the reason the numbers below have
+          stopped moving, so it has to be read first. Read off the session rather
+          than the tab response so there is ONE source for this fact across every
+          surface that shows it — the store re-renders all of them when
+          CardSetup's fetchMe lands and the flag clears. */}
+      <CardActionRequired since={user.cardActionRequiredAt} />
+
       {dataLoading ? (
         <div className="h-32 animate-pulse bg-glasshouse-well mb-8" />
       ) : (
         <BalanceHeader
           balancePence={netBalance}
           freeAllowanceRemainingPence={tab?.freeAllowanceRemainingPence ?? user.freeAllowanceRemainingPence}
-          freeAllowanceTotalPence={tab?.freeAllowanceTotalPence ?? 500}
+          freeAllowanceTotalPence={freeAllowanceTotalPence}
           reservedForTributesPence={tributesEnabled() ? (earnings?.reservedPence ?? 0) : 0}
         />
       )}

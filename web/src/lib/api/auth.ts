@@ -21,6 +21,15 @@ export interface MeResponse {
   avatar: string | null
   email: string
   hasPaymentMethod: boolean
+  /**
+   * Non-null ⇒ an off-session settlement charge terminally declined and the
+   * reader's reading tab is FROZEN: settlement backs off and nothing further is
+   * charged until they re-attach a card. Rides the session payload rather than
+   * `/my/tab` so any surface can explain the freeze where the reader meets it.
+   * Cleared server-side the moment a card is attached. Rendered by
+   * `CardActionRequired`. STRIPE audit S1.
+   */
+  cardActionRequiredAt: string | null
   stripeConnectKycComplete: boolean
   freeAllowanceRemainingPence: number
   defaultArticlePricePence: number | null

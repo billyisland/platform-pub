@@ -38,11 +38,43 @@ export const payment = {
 // Account & Settings
 // =============================================================================
 
+/**
+ * `GET /my/tab` (gateway/src/routes/my-account.ts).
+ *
+ * The field names here are the ones the route actually sends. Three of the four
+ * it previously declared did not exist on the wire — `balancePence`,
+ * `freeAllowanceTotalPence` and `recentReads` were all silently `undefined`,
+ * and because the API client is a raw pass-through with no key remapping,
+ * nothing anywhere reported it. The live consequence was on the Ledger's net
+ * balance, which reads `earnings − tabBalance`: with `tabBalance` permanently 0,
+ * a reader who owed money saw a net balance as though they owed none.
+ *
+ * `tabBalancePence` is the LEDGER balance (`ledger_reader_balance`), not
+ * `reading_tabs.balance_pence` — see the route's own note on why display reads
+ * the ledger while settlement locks the column.
+ */
 export interface TabOverview {
-  balancePence: number
+  tabBalancePence: number
   freeAllowanceRemainingPence: number
-  freeAllowanceTotalPence: number
-  recentReads: { articleTitle: string; costPence: number; readAt: string }[]
+  lastSettledAt: string | null
+  /**
+   * Set when an off-session settlement charge terminally declined. The tab is
+   * frozen — settlement backs off and stops retrying — until the reader
+   * re-attaches a working card, so this is not a passive warning: nothing moves
+   * again until it is cleared. Rendered by `CardActionRequired`.
+   */
+  cardActionRequiredAt: string | null
+  reads: {
+    readId: string
+    articleTitle: string
+    articleDTag: string
+    writerDisplayName: string | null
+    writerUsername: string | null
+    chargePence: number
+    readAt: string
+    settledAt: string | null
+    isSubscriptionRead: boolean
+  }[]
 }
 
 export interface MySubscription {

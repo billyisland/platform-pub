@@ -309,6 +309,11 @@ export async function authRoutes(app: FastifyInstance) {
       avatar: account.avatarBlossomUrl,
       email: account.email,
       hasPaymentMethod: account.stripeCustomerId !== null,
+      // A frozen tab (terminal card decline) is a state the reader must be told
+      // about wherever they meet it, not only on the ledger — so it rides the
+      // session payload beside hasPaymentMethod rather than being fetched
+      // per-surface. Cleared by connectPaymentMethod. STRIPE audit S1.
+      cardActionRequiredAt: account.cardActionRequiredAt,
       stripeConnectKycComplete: account.stripeConnectKycComplete,
       freeAllowanceRemainingPence: account.freeAllowanceRemainingPence,
       defaultArticlePricePence: account.defaultArticlePricePence,
