@@ -51,14 +51,34 @@ starts.
     runs 3×/day and a too-early stamp self-heals, so the delay *confirms* the out-of-band
     design (`settlement.ts:1344`) rather than threatening it. `allocatedCharge()` now waits,
     and reports `allocation_visible_after_ms` so the number is evidence rather than folklore.
-  - **A Stripe-side defect, isolated to one parameter and then found to be intermittent.**
-    `refund_application_fee=true` on an allocated reversal returns `StripeAPIError` 500 —
-    four failures, then three passes, same parameter and account ~15 min apart.
-    `scripts/segregation-reversal-isolate.ts` (new) varies one ingredient at a time and is
-    re-runnable when Stripe answers. Not our code (we never create a reversal), but it
-    blocks `payout-children.ts:617`'s manual-reversal instruction, so the runbook needs
-    *retry it*. It is also evidence FOR the narrow `isTerminalTransferError`: a 500 is
-    `StripeAPIError`, correctly non-terminal, so the resume sweep retries under the same key.
+  - **A Stripe-side 500 that came and went — and an isolation that claimed more than it
+    could.** `refund_application_fee=true` on an allocated reversal returned
+    `StripeAPIError` 500 four times inside one ~40-minute window, then succeeded **15
+    consecutive times**. Final read: a transient incident on Stripe's side, not a latent
+    defect in the call shape. Request ids kept and reported anyway, since our payout
+    correction path depends on this call.
+    - **What the matrix could and could not show.** `scripts/segregation-reversal-isolate.ts`
+      (new) varied one ingredient at a time and, during the failing window, failed on both
+      flag-carrying cases while passing both without the flag — so the failure was
+      **specific to the fee-refund path, not a blanket reversal outage**. But every case ran
+      *inside* that window, so it showed correlation and not cause; the later successes
+      carry the same flag. The first draft of the ticket said "when and only when
+      `refund_application_fee=true`", which the evidence did not support, and it was caught
+      by being asked whether this was really a bug rather than our own probes.
+    - **A plausible follow-up hypothesis, tested and refuted.** That the fee-refund path
+      races allocation state still settling, so reversing too soon 500s. Tested directly
+      (`--mode delay`: same shape at 0/2/5/15/30s, twice each, plus no-flag controls at the
+      shortest delays) → **12/12 passed, including at a shorter elapsed time than the
+      failures had**. Written down because it was plausible, cheap, and wrong.
+    - **Standing lesson for the harness:** a matrix run entirely inside a failure window
+      shows correlation with whatever it varies and cannot show cause. Re-run across windows
+      before believing an isolation. Same family as "a passing check proves nothing until it
+      can fail" — here, a *failing* check proved less than it appeared to.
+    - It remains evidence FOR the narrow `isTerminalTransferError`: a 500 is
+      `StripeAPIError`, correctly non-terminal, so a transient like this leaves the child
+      `pending` and the resume sweep retries under the same idempotency key rather than
+      stranding it. A manual reversal has no such harness, so `payout-children.ts:617`'s
+      instruction still wants a *retry it* note in the runbook.
   - **Learned in passing:** `application_fee_amount` is only accepted alongside an allocated
     `source_transaction` (Stripe 400s otherwise, in terms) — so fee and allocation are
     inseparable, and `allocatedTransferParams()` is right to emit both or neither. And a

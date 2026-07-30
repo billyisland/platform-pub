@@ -849,13 +849,30 @@ cost and two of them produce numbers the design needs as inputs.
 >   application fee** to allocated state: 244 → 406 on 150/400 (+12 = 32 × 0.375), and
 >   244 → 514 on 250/400 (+20), which is the arithmetic `prorateCarveReversal` assumes.
 >
-> **Stripe-side defect — `refund_application_fee=true` on an allocated reversal returns an
-> INTERMITTENT HTTP 500.** Four failures then three passes, same parameter, same account,
-> ~15 minutes apart (`StripeAPIError` 500, "An unknown error occurred"; request ids
-> `req_4DTEz46YnXubwP`, `req_7A0AcYkGc6f8fU`). `scripts/segregation-reversal-isolate.ts`
-> isolated it to that one parameter while it was failing — reversal under allocation
-> otherwise works, with the fee omitted or absent — so the matrix is worth re-running before
-> concluding anything about a fix.
+> **A Stripe-side 500 that came and went — `refund_application_fee=true` on an allocated
+> reversal.** Final tally: **4 failures, all inside one ~40-minute window on 2026-07-30,
+> then 15 consecutive successes** (`StripeAPIError` 500, "An unknown error occurred";
+> request ids `req_HdeI2j3AgsrkAQ`, `req_jVnDOJKo4CFxW1`, `req_4DTEz46YnXubwP`,
+> `req_7A0AcYkGc6f8fU`). Treat it as a transient incident on Stripe's side, not a latent
+> defect in the call shape — but the request ids are worth reporting, because our payout
+> correction path depends on this call.
+>
+> **What the investigation established, and what it did not.** During the failing window an
+> interleaved matrix (`scripts/segregation-reversal-isolate.ts`, one ingredient varied at a
+> time) failed on both flag-carrying cases and passed on both without the flag — so it was
+> **specific to the fee-refund path, not a blanket reversal outage**. That is the whole of
+> the finding. It did NOT establish that the flag *causes* the 500, because every case in
+> that matrix ran inside the failing window; the later successes carry the same flag.
+> A follow-up hypothesis — that the fee-refund path races allocation state still settling,
+> so reversing too soon 500s — was tested directly (`--mode delay`: same shape, delays
+> 0/2/5/15/30s, twice each, plus no-flag controls) and **refuted**: 12/12 passed, including
+> at a shorter elapsed time than the failures had. Recorded because the hypothesis was
+> plausible, cheap to test, and wrong, and the next person to see this 500 should not spend
+> the afternoon on it again.
+>
+> **The lesson for the harness, not for Stripe:** a matrix run entirely inside a failure
+> window shows correlation with whatever it varies, and cannot show cause. Re-run across
+> windows before believing an isolation.
 >
 > Two consequences, and **neither is a defect in our code — we never create a reversal**
 > (the webhook handler only *responds* to `transfer.reversed`):
