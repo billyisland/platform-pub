@@ -173,13 +173,24 @@ async function runCase(stripe: Stripe, c: Case) {
     out.reversalId = reversal.id
     out.amount_reversed = reloaded.amount_reversed
   } catch (err) {
-    const e = err as Partial<Stripe.errors.StripeError> & { raw?: unknown }
+    // Full shape including the RAW body and response HEADERS — Stripe support
+    // asked for exactly these on the 2026-07-30 reversal 500, because the
+    // structured fields were empty (api_error, no code, no doc_url) and any
+    // internal trace or correlation id would surface there. We could not supply
+    // them then; we can now.
+    const e = err as Partial<Stripe.errors.StripeError> & {
+      raw?: unknown
+      headers?: Record<string, string>
+    }
     out.result = 'ERROR'
     out.error_type = e?.type ?? null
     out.error_code = e?.code ?? null
     out.error_status = e?.statusCode ?? null
     out.error_requestId = e?.requestId ?? null
-    out.error_message = e instanceof Error ? e.message : String(err)
+    out.error_doc_url = e?.doc_url ?? null
+    out.error_message = err instanceof Error ? err.message : String(err)
+    out.error_raw = e?.raw ?? null
+    out.error_headers = e?.headers ?? null
   }
   return out
 }

@@ -870,9 +870,22 @@ cost and two of them produce numbers the design needs as inputs.
 > plausible, cheap to test, and wrong, and the next person to see this 500 should not spend
 > the afternoon on it again.
 >
+> **Reported and closed by Stripe (2026-07-30).** They accepted it as a transient backend
+> issue, not an integration or request-shape problem, and flagged it internally with the four
+> request ids, the window and the parameter pattern. They named the same signal we did — that
+> reversals *without* the flag kept succeeding in the window points at the application-fee
+> refund path specifically rather than the endpoint, the destination or the currency. Their
+> one ask: **if it recurs, capture the RAW response body**, since an internal trace or
+> correlation id may not surface in the structured fields. We could not supply that, because
+> nothing retained it — now fixed in both harnesses (`describeStripeError()` in
+> `segregation-probes.ts`, and the isolate script's catch, both recording `raw` and the
+> response `headers`). No change required on our side.
+>
 > **The lesson for the harness, not for Stripe:** a matrix run entirely inside a failure
 > window shows correlation with whatever it varies, and cannot show cause. Re-run across
-> windows before believing an isolation.
+> windows before believing an isolation. Corollary, learned the same afternoon: **capture the
+> raw error body at the point of failure**, because by the time anyone asks for it the run
+> that produced it has been overwritten.
 >
 > Two consequences, and **neither is a defect in our code — we never create a reversal**
 > (the webhook handler only *responds* to `transfer.reversed`):

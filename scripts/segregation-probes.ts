@@ -245,6 +245,35 @@ async function readAllocationViaCharge(stripe: Stripe, chargeId: string): Promis
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * Everything a Stripe error carries — including the RAW body and the response
+ * HEADERS.
+ *
+ * Stripe support asked for exactly this (2026-07-30, on the reversal 500): when
+ * the structured fields are empty — `api_error`, no `code`, no `doc_url`, message
+ * "An unknown error occurred" — the raw body and headers are where any internal
+ * trace or correlation id would surface, and they are what makes an intermittent
+ * 500 traceable on their side. We could not supply them for that incident because
+ * nothing here retained them. One home, used by every catch in this file.
+ */
+export function describeStripeError(err: unknown): Record<string, unknown> {
+  const e = err as Partial<Stripe.errors.StripeError> & {
+    raw?: unknown
+    headers?: Record<string, string>
+  }
+  return {
+    type: e?.type ?? null,
+    code: e?.code ?? null,
+    statusCode: e?.statusCode ?? null,
+    requestId: e?.requestId ?? null,
+    doc_url: e?.doc_url ?? null,
+    message: err instanceof Error ? err.message : String(err),
+    // The two Stripe asked for.
+    raw: e?.raw ?? null,
+    headers: e?.headers ?? null,
+  }
+}
+
+/**
  * Poll the PI expand path until allocation appears, and REPORT HOW LONG IT TOOK.
  *
  * Allocation is not visible the instant `paymentIntents.create(confirm:true)`
@@ -572,13 +601,7 @@ async function probe7(stripe: Stripe, destination: string): Promise<ProbeResult>
       refund_application_fee: true,
     })
   } catch (err) {
-    const e = err as Partial<Stripe.errors.StripeError>
-    feeRefundError = {
-      type: e?.type ?? null,
-      statusCode: e?.statusCode ?? null,
-      requestId: e?.requestId ?? null,
-      message: err instanceof Error ? err.message : String(err),
-    }
+    feeRefundError = describeStripeError(err)
     reversal = await stripe.transfers.createReversal(transfer.id, {})
   }
   const expectedAfterReversal = feeRefundError === null ? AMOUNT : AMOUNT - fee
@@ -674,13 +697,7 @@ async function probe7b(stripe: Stripe, destination: string): Promise<ProbeResult
       refund_application_fee: true,
     })
   } catch (err) {
-    const e = err as Partial<Stripe.errors.StripeError>
-    feeRefundError = {
-      type: e?.type ?? null,
-      statusCode: e?.statusCode ?? null,
-      requestId: e?.requestId ?? null,
-      message: err instanceof Error ? err.message : String(err),
-    }
+    feeRefundError = describeStripeError(err)
     reversal = await stripe.transfers.createReversal(childA.id, { amount: partial })
   }
 
@@ -857,20 +874,13 @@ async function main() {
       // and indistinguishable from our own bug; the type/code/statusCode and
       // above all the requestId are what make it reportable to Stripe.
       const message = err instanceof Error ? err.message : String(err)
-      const e = err as Partial<Stripe.errors.StripeError> & { raw?: unknown }
+      const e = describeStripeError(err)
       results.push({
         probe: p,
         title: 'threw',
         status: 'error',
         error: message,
-        observations: {
-          error_type: e?.type ?? null,
-          error_code: e?.code ?? null,
-          error_statusCode: e?.statusCode ?? null,
-          error_requestId: e?.requestId ?? null,
-          error_doc_url: e?.doc_url ?? null,
-          error_raw: e?.raw ?? null,
-        },
+        observations: { error: e },
         checks: [],
       })
       console.log(

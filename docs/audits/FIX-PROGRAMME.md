@@ -70,10 +70,23 @@ starts.
       (`--mode delay`: same shape at 0/2/5/15/30s, twice each, plus no-flag controls at the
       shortest delays) → **12/12 passed, including at a shorter elapsed time than the
       failures had**. Written down because it was plausible, cheap, and wrong.
+    - **Reported and closed by Stripe the same day.** They accepted it as a transient backend
+      issue rather than anything in our integration or request shape, flagged it internally
+      with the four request ids / window / parameter pattern, and independently named the
+      same signal we had — that reversals without the flag kept succeeding in the window
+      points at the application-fee refund path specifically, not the endpoint, destination
+      or currency. **Their one ask was the one thing we could not give them: the RAW response
+      body**, where an internal trace or correlation id would surface when the structured
+      fields are empty. Nothing retained it, and the run that produced it had been
+      overwritten. Now fixed in both harnesses — `describeStripeError()` in
+      `segregation-probes.ts` is the one home (every catch in that file routes through it),
+      and the isolate script's catch matches; both record `raw` and the response `headers`.
     - **Standing lesson for the harness:** a matrix run entirely inside a failure window
       shows correlation with whatever it varies and cannot show cause. Re-run across windows
       before believing an isolation. Same family as "a passing check proves nothing until it
-      can fail" — here, a *failing* check proved less than it appeared to.
+      can fail" — here, a *failing* check proved less than it appeared to. Corollary from the
+      same afternoon: **capture the raw error body at the point of failure**, because by the
+      time anyone asks for it, the run that produced it is gone.
     - It remains evidence FOR the narrow `isTerminalTransferError`: a 500 is
       `StripeAPIError`, correctly non-terminal, so a transient like this leaves the child
       `pending` and the resume sweep retries under the same idempotency key rather than
