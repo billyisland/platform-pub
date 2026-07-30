@@ -110,6 +110,20 @@ starts.
     guessing — but it sits on the critical path, since no onboarded writers means no
     payouts, which means the two dials stay placeholders indefinitely.
     Verified: gateway 434 tests, `next build`, 0 lint errors, hairline check clean.
+  - **The `DEPLOYMENT.md` webhook-scope contradiction is settled, and the DOC was the wrong
+    one.** It claimed `transfer.*` is emitted on *connected* accounts, while production puts
+    `transfer.reversed` on the platform-scoped endpoint — and if the doc had been right,
+    transfer reversals would have been silently never delivered and §3.5's ledger semantics
+    would never fire. Measured rather than argued: `GET /v1/events?type=transfer.reversed`
+    returned three events on the platform account and **none** when re-run with a
+    `Stripe-Account:` header for the connected account. A Transfer is a platform-account
+    object; the connected account sees an incoming payment (`py_…`) and a refund of it
+    (`pyr_…`), never a `transfer.reversed` — both ids were sitting in 7b's payload the whole
+    time. Probe 7b had also already shown half of it unremarked, retrieving the event through
+    a plain platform-key `events.list`. `DEPLOYMENT.md`'s bullet is rewritten with the
+    two-endpoint scope table production actually runs, and its
+    `STRIPE_CONNECT_WEBHOOK_SECRET` row corrected from "only if a separate endpoint" to the
+    shape we run. Closes the last of the rev-3 review's two live defects.
 
 - **2026-07-30 (review batch 2: the flag-flip blockers, and the hygiene tail)** — the rest
   of the three-day review's queue, taken in the order it named. All verified before fixing.

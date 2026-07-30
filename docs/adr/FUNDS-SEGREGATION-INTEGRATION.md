@@ -41,7 +41,19 @@ unchanged until Stripe flips our live account.
 - Webhook handler verifies against both secrets and enforces a livemode guard keyed off
   the secret key prefix.
 
-> **Unresolved contradiction — settle this before the live flip.** `DEPLOYMENT.md:794`
+> **RESOLVED 2026-07-30 — the configuration above is CORRECT and `DEPLOYMENT.md` was wrong;
+> that file is now fixed.** Measured rather than reasoned: `GET /v1/events?type=transfer.reversed`
+> against the segregation sandbox returned three events on the **platform** account and
+> **none** when re-run with a `Stripe-Account:` header for the connected account. A Transfer
+> is a platform-account object; the connected account sees our transfer as an incoming
+> payment (`py_…`) and the reversal as a refund of it (`pyr_…`), never a `transfer.reversed`.
+> So `transfer.reversed` belongs on the **Your account** endpoint, exactly where §0 puts it,
+> and the failure mode feared below — reversals silently never delivered, §3.5's ledger
+> semantics never firing — does not exist. Probe 7b had in fact already demonstrated half of
+> this without anyone noticing: it retrieved the event through a plain platform-key
+> `events.list` with no connected-account header. The original note follows.
+>
+> **~~Unresolved contradiction — settle this before the live flip.~~** `DEPLOYMENT.md:794`
 > states that `transfer.*` events "are emitted on *connected* accounts" and reach us only
 > via the Connect-scoped endpoint. The configuration above puts `transfer.reversed` on the
 > **platform-account** endpoint. A Transfer is a platform-account object and Stripe
@@ -1390,5 +1402,7 @@ in this repo can reach.
     figure. Exact measurement is impossible pre-flip — remaining allocation per charge is
     unknown until charges carry allocation at all. An upper bound is the right side to err
     on for a cap, given §10.3's carve × slice-cap interaction above.
-- **§0's `DEPLOYMENT.md:794` webhook-scope contradiction is untouched.** It needs the
-  dashboard observation, not an edit.
+- ~~**§0's `DEPLOYMENT.md:794` webhook-scope contradiction is untouched.**~~ — **RESOLVED
+  2026-07-30.** It needed an observation rather than an edit, and got one: the event list,
+  asked twice, put `transfer.reversed` on the platform account and nowhere on the connected
+  one. Our config is right, `DEPLOYMENT.md` was wrong and is rewritten. See §0.
