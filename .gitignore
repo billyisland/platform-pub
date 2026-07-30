@@ -29,3 +29,7 @@ shared/src/**/*.d.ts.map
 # (a zip dodges every tripwire; the 2026-07-27 landing bundle carried a
 # hairline and real names in a form check-hairlines.sh cannot scan)
 *.zip
+
+# Segregation probe output — a run artifact, overwritten on every run.
+# The findings that matter live in FUNDS-SEGREGATION-INTEGRATION.md §5.
+segregation-probe-results.json

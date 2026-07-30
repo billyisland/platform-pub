@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-07-30 (segregation §5 step 0: the probes RUN, and the payload nobody had seen)** —
+  the sandbox half of step 0 is done. All five probes green against a segregation-enabled
+  Stripe Sandbox; the two production baseline queries remain owed. Findings live in ADR §5's
+  results block (`FUNDS-SEGREGATION-INTEGRATION.md`) — this is the index, not the record.
+  - **§3.5's re-keying is confirmed against the real `transfer.reversed` payload.** It
+    carries the CHILD transfer's own id (what `payout_transfers.stripe_transfer_id` resolves
+    on — not the charge, not the destination), a sibling child is untouched, and
+    `amount_reversed` is CUMULATIVE. The design was built against this without anyone ever
+    having seen it.
+  - **The cumulative check was vacuous until it was made falsifiable.** After ONE reversal
+    of 150, cumulative and per-reversal both read 150 — the check passed whichever was true
+    and proved neither. Reversing the same child a second time (150 → 250, with
+    `reversals.total_count: 2`) is what turned it into evidence. Same standard as the M10
+    negative control: *a passing check proves nothing until it can fail.*
+  - **`reversed` stays FALSE on a partially reversed transfer.** Anything keying on that
+    boolean misses every partial. Recorded because it is the obvious-looking wrong choice.
+  - **The application fee is PRORATED on a partial reversal** — 244 → 406 on 150/400
+    (+12 = 32 × 0.375), 244 → 514 on 250/400 (+20). That is the arithmetic
+    `prorateCarveReversal` assumes, now measured twice at different ratios.
+  - **A false negative that cost the session, and the fix.** Allocation is not visible when
+    `paymentIntents.create(confirm:true)` returns — it materialises ~1–3s later. A single
+    eager read reports `allocated_funds: null`, which is INDISTINGUISHABLE from a sandbox
+    with the beta switched off, and probe 1 read that way. Chased as far as "does
+    `syncAllocations` silently stamp every charge 0 and route everything to residual while
+    reporting success" before the second read came back populated. It does not: the sweep
+    runs 3×/day and a too-early stamp self-heals, so the delay *confirms* the out-of-band
+    design (`settlement.ts:1344`) rather than threatening it. `allocatedCharge()` now waits,
+    and reports `allocation_visible_after_ms` so the number is evidence rather than folklore.
+  - **A Stripe-side defect, isolated to one parameter and then found to be intermittent.**
+    `refund_application_fee=true` on an allocated reversal returns `StripeAPIError` 500 —
+    four failures, then three passes, same parameter and account ~15 min apart.
+    `scripts/segregation-reversal-isolate.ts` (new) varies one ingredient at a time and is
+    re-runnable when Stripe answers. Not our code (we never create a reversal), but it
+    blocks `payout-children.ts:617`'s manual-reversal instruction, so the runbook needs
+    *retry it*. It is also evidence FOR the narrow `isTerminalTransferError`: a 500 is
+    `StripeAPIError`, correctly non-terminal, so the resume sweep retries under the same key.
+  - **Learned in passing:** `application_fee_amount` is only accepted alongside an allocated
+    `source_transaction` (Stripe 400s otherwise, in terms) — so fee and allocation are
+    inseparable, and `allocatedTransferParams()` is right to emit both or neither. And a
+    segregation sandbox is identifiable read-only: an un-enrolled account rejects the preview
+    version header outright, which is how the right one of two sandboxes was found.
+  - Probe-side changes: poll-for-allocation, both retrieval paths asserted (they agree),
+    full Stripe error capture (`type`/`statusCode`/`requestId` — "An unknown error occurred"
+    alone is unactionable), `available + pending` for balance reads (available alone is
+    always 0 in a sandbox, so probe 6's check was vacuous), and a documented fallback that
+    harvests the payload when the 500 hits.
+  - **Not done, and still the flip blocker:** `scripts/segregation-baseline.sql` on
+    production — Query A sets `allocated_residual_alert_bps` (ships at 2000, a placeholder
+    that will fire spuriously) and Query B sets `payout_max_slices` (ships at 20, a guess).
+    Read-only, no Stripe key, runnable today. Read Query 0 first.
+
 - **2026-07-30 (review batch 2: the flag-flip blockers, and the hygiene tail)** — the rest
   of the three-day review's queue, taken in the order it named. All verified before fixing.
   - **The zero-net payout wedge is closed, and it was WIDER than the review said**

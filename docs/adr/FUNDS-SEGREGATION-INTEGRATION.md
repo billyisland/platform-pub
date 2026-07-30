@@ -744,11 +744,102 @@ Setup: switch the dashboard into the segregation-enabled Sandbox; use ITS API ke
 staging env with `STRIPE_ALLOCATED_FUNDS=1`. Webhooks: staging endpoint with the sandbox's
 own signing secrets, or `stripe listen --forward-to localhost:3001/webhooks/stripe`.
 
+> **Which sandbox is the segregation one — a read-only test (2026-07-30).** Sandbox and
+> classic test-mode keys share the `sk_test_` prefix, so the key does not say. Ask any
+> sandbox for something trivial while sending the preview version:
+>
+> ```bash
+> curl -s https://api.stripe.com/v1/balance -u "$KEY:" \
+>   -H "Stripe-Version: 2026-06-24.preview; allocated_funds_preview=v1"
+> ```
+>
+> An un-enrolled account **errors** — *"You do not have permission to pass this beta
+> header: allocated_funds_preview"* — rather than silently ignoring the header, so this is
+> authoritative and creates nothing. (Verified against both of our sandboxes.) A pass here
+> means the *header* is granted; it does not prove the account can carry allocation, which
+> is what probe 1 is for. `connect_reserved` in the balance response also confirms Connect
+> is enabled on that sandbox.
+
+> **Allocation is not visible the instant the charge returns (2026-07-30).** Stripe
+> materialises the `transit_balance` behind the `paymentIntents.create(confirm:true)`
+> response: an immediate read-back returns `allocated_funds: null`, and the SAME PI on the
+> SAME expand path carries `balance.pending == amount` a moment later. **Measured at ~1–3s**
+> (probe 1, 2026-07-30: visible on the third attempt, 3000ms of backoff; both retrieval
+> paths then agree). A single eager read is therefore indistinguishable from a sandbox with
+> the beta off — it cost a session before probe 1 was taught to poll and to report
+> `allocation_visible_after_ms`. Three seconds against a thrice-daily sweep is a margin of
+> four orders of magnitude, so this
+> **confirms** rather than threatens `syncAllocations`' out-of-band design (§3.3a,
+> `settlement.ts:1344`): the sweep runs 3×/day and a too-early stamp self-heals on the next
+> pass, so nothing must ever read allocation synchronously at settlement time. The
+> `allocated_funds` object is a `transit_balance`, a type this spec did not name; the
+> `balance.{pending,available}` shape `readAllocatedBalance()` destructures is confirmed
+> correct.
+
 **Step 0 — do these before building anything.** They retire real uncertainty at near-zero
 cost and two of them produce numbers the design needs as inputs.
 
-> **Written, not run (2026-07-30).** The build went ahead of this section, so both halves
-> now exist as runnable harnesses and the only thing missing is credentials:
+> **RUN — the Stripe half is COMPLETE (2026-07-30).** All five probes (1, 4, 6, 7, 7b) are
+> **green** against the segregation sandbox. Still owed from step 0: the two production
+> baseline queries (Query A/B — read-only, no Stripe key, runnable today) and the §7.5
+> country enumeration. What the run bought:
+>
+> - **1** — allocation lands at the full charge amount, and `readAllocatedBalance()`'s
+>   expected shape is confirmed against the real object (a `transit_balance`, a type this
+>   spec never named). Both retrieval paths — the PI expand `syncAllocations` uses, and a
+>   direct `charges.retrieve` — agree, which retires the worst hypothesis available: that
+>   the sweep would stamp every charge 0 and route everything to residual while reporting
+>   success.
+> - **4** — a fully refunded charge stops being drawable, and the rejection is a
+>   `StripeInvalidRequestError` ("Transfers using this transaction as a source must not
+>   exceed the source amount of £0.00"), i.e. exactly what `isTerminalTransferError` treats
+>   as terminal. §3.5's terminal/ambiguous split is confirmed on this arm against real
+>   Stripe behaviour rather than a mock.
+> - **6** — `gross = net + fee` leaves the allocation (1000 − 432 = 568), and a
+>   post-transfer full refund draws the remainder from platform balance.
+> - **New constraint, learned in passing:** `application_fee_amount` is **only** accepted on
+>   a transfer whose `source_transaction` is a charge using `allocated_funds` — Stripe 400s
+>   otherwise, in terms. So the explicit fee and allocation are inseparable, which is why
+>   `allocatedTransferParams()` (`stripe-client.ts:79`) is right to emit both or neither.
+>   A flag-off transfer must never carry a fee, and by construction it cannot.
+>
+> - **7 / 7b — §3.5's re-keying is CONFIRMED against the real payload**, which nobody had
+>   ever seen. `transfer.reversed` carries **the child transfer's own id** (what
+>   `payout_transfers.stripe_transfer_id` resolves on, not the charge or the destination),
+>   a sibling child is untouched, and `amount_reversed` is **cumulative** — proven
+>   falsifiably by reversing one child TWICE (150 then 100 → 250, with
+>   `reversals.total_count: 2`); a single reversal cannot distinguish cumulative from
+>   per-reversal and the check passed vacuously until the second one was added.
+>   **`reversed` stays `false` on a partially reversed transfer** — never key on that
+>   boolean, it misses every partial. Reversal returns principal **plus a PRORATED
+>   application fee** to allocated state: 244 → 406 on 150/400 (+12 = 32 × 0.375), and
+>   244 → 514 on 250/400 (+20), which is the arithmetic `prorateCarveReversal` assumes.
+>
+> **Stripe-side defect — `refund_application_fee=true` on an allocated reversal returns an
+> INTERMITTENT HTTP 500.** Four failures then three passes, same parameter, same account,
+> ~15 minutes apart (`StripeAPIError` 500, "An unknown error occurred"; request ids
+> `req_4DTEz46YnXubwP`, `req_7A0AcYkGc6f8fU`). `scripts/segregation-reversal-isolate.ts`
+> isolated it to that one parameter while it was failing — reversal under allocation
+> otherwise works, with the fee omitted or absent — so the matrix is worth re-running before
+> concluding anything about a fix.
+>
+> Two consequences, and **neither is a defect in our code — we never create a reversal**
+> (the webhook handler only *responds* to `transfer.reversed`):
+>
+> - **The transfer-CREATE path already handles this class correctly, and this is evidence
+>   for it.** A 500 is a `StripeAPIError`, which `isTerminalTransferError` deliberately does
+>   NOT treat as terminal (it is `StripeInvalidRequestError` only), so an ambiguous child is
+>   left `pending` and the resume sweep retries under the same idempotency key. The narrow
+>   classifier now has a real-world reason, not just a rationale.
+> - **A manual reversal has no such harness.** `payout-children.ts:617` instructs an operator
+>   to reverse **with** `refund_application_fee=true`, or the fee stays with the platform
+>   while the principal returns to allocation — and since the fee is only permitted on
+>   allocated transfers (above), every allocated child is affected. The runbook entry must
+>   say *retry it*: at 2am there is no idempotency key and no retry loop, only a person.
+
+> **The harnesses (the Stripe half is now run; the SQL half is not).** The build went ahead
+> of this section, so both halves
+> exist as runnable harnesses and what was missing was credentials:
 > `scripts/segregation-probes.ts` (probes 1, 4, 6, 7, 7b — plus `--countries` for the §7.5
 > enumeration) and `scripts/segregation-baseline.sql` (the §3.3d residual baseline, the
 > §7.2 slice distribution, and the connect-id list). The probes talk to Stripe raw, per

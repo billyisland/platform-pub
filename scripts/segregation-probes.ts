@@ -153,11 +153,21 @@ function makeStripe(readOnly: boolean): Stripe {
 // Helpers — deliberately raw. Nothing here interprets Stripe's shape for us.
 // -----------------------------------------------------------------------------
 
-/** Create and confirm a PI carrying allocation, and return its charge id. */
+/**
+ * Create and confirm a PI carrying allocation, and return once the allocation
+ * is actually visible — see the note at the end of the body.
+ */
 async function allocatedCharge(
   stripe: Stripe,
   label: string,
-): Promise<{ paymentIntentId: string; chargeId: string; raw: unknown }> {
+): Promise<{
+  paymentIntentId: string
+  chargeId: string
+  allocation: unknown
+  waitedMs: number
+  attempts: number
+  raw: unknown
+}> {
   const pi = await stripe.paymentIntents.create({
     amount: AMOUNT,
     currency: CURRENCY,
@@ -173,8 +183,35 @@ async function allocatedCharge(
     typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge?.id ?? '')
 
   if (!chargeId) throw new Error(`PI ${pi.id} produced no charge (status ${pi.status})`)
-  return { paymentIntentId: pi.id, chargeId, raw: { id: pi.id, status: pi.status } }
+
+  // WAIT FOR THE ALLOCATION TO EXIST BEFORE RETURNING. Stripe materialises the
+  // transit_balance a second or three after this call returns (§5's propagation
+  // note), and every caller either reads the allocation or immediately draws on
+  // it with `source_transaction`. Returning eagerly makes probe 4 report
+  // "allocation before refund: null" and gives 6/7/7b a charge that may not yet
+  // be drawable — a false negative indistinguishable from the beta being off,
+  // which is exactly what happened on 2026-07-30 before this existed.
+  const { raw, waitedMs, attempts } = await pollAllocation(stripe, pi.id)
+
+  return {
+    paymentIntentId: pi.id,
+    chargeId,
+    allocation: raw,
+    waitedMs,
+    attempts,
+    raw: { id: pi.id, status: pi.status },
+  }
 }
+
+/**
+ * How long to let a MUTATION (refund, transfer, reversal) settle before reading
+ * the allocation back. A fixed wait, not a poll: unlike creation — where the
+ * target is simply "non-null" — the expected post-mutation value is the very
+ * thing under test, so polling until it matched would assert our expectation
+ * onto Stripe rather than observe it. A FAIL on a post-mutation check is
+ * therefore worth re-reading by hand before it is believed.
+ */
+const POST_MUTATION_SETTLE_MS = 4000
 
 /**
  * Read the allocation back the way syncAllocations does — PI retrieve with
@@ -191,6 +228,52 @@ async function readAllocationRaw(stripe: Stripe, paymentIntentId: string): Promi
     : null
 }
 
+/**
+ * The same read, but on the CHARGE directly rather than through the PI.
+ * syncAllocations does not use this path; it exists so probe 1 can tell an
+ * expand-path problem from a propagation delay, which is the distinction that
+ * cost a session on 2026-07-30 (the eager read below reported allocation
+ * absent; both paths carried it a few minutes later).
+ */
+async function readAllocationViaCharge(stripe: Stripe, chargeId: string): Promise<unknown> {
+  const charge = (await stripe.charges.retrieve(chargeId, {
+    expand: ['allocated_funds.balance'],
+  })) as unknown as { allocated_funds?: unknown }
+  return charge.allocated_funds ?? null
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Poll the PI expand path until allocation appears, and REPORT HOW LONG IT TOOK.
+ *
+ * Allocation is not visible the instant `paymentIntents.create(confirm:true)`
+ * returns — Stripe materialises the `transit_balance` behind the response. A
+ * single eager read therefore observes `allocated_funds: null` and looks exactly
+ * like a sandbox with the beta switched off, which is the false negative this
+ * replaces. The waited-time is itself the deliverable: production reads
+ * allocation from a sweep running 3×/day (settlement.ts::syncAllocations, which
+ * is deliberately out of band for this very reason), so any delay short of hours
+ * confirms that design rather than threatening it.
+ */
+async function pollAllocation(
+  stripe: Stripe,
+  paymentIntentId: string,
+): Promise<{ raw: unknown; waitedMs: number; attempts: number }> {
+  const DELAYS_MS = [0, 1000, 2000, 4000, 8000, 15000, 30000]
+  let waitedMs = 0
+
+  for (let i = 0; i < DELAYS_MS.length; i++) {
+    if (DELAYS_MS[i] > 0) {
+      await sleep(DELAYS_MS[i])
+      waitedMs += DELAYS_MS[i]
+    }
+    const raw = await readAllocationRaw(stripe, paymentIntentId)
+    if (raw !== null) return { raw, waitedMs, attempts: i + 1 }
+  }
+  return { raw: null, waitedMs, attempts: DELAYS_MS.length }
+}
+
 /** pending + available, the sum stripe-client.ts::readAllocatedBalance takes. */
 function allocatedTotal(allocated: unknown): number | null {
   const bal = (allocated as { balance?: { pending?: number; available?: number } } | null)?.balance
@@ -202,6 +285,20 @@ async function platformBalancePence(stripe: Stripe): Promise<number> {
   const bal = await stripe.balance.retrieve()
   const gbp = bal.available.find((b) => b.currency === CURRENCY)
   return gbp?.amount ?? 0
+}
+
+/**
+ * AVAILABLE + PENDING. `available` alone is the wrong instrument in a sandbox:
+ * nothing has settled, so every charge sits in `pending`, available stays 0, and
+ * a genuine platform-balance draw is invisible — probe 6's post-transfer refund
+ * check returned UNKNOWN on exactly this (2026-07-30). Whether a draw lands in
+ * available or pending is Stripe's business; that it happened at all is ours.
+ */
+async function platformBalanceTotalPence(stripe: Stripe): Promise<number> {
+  const bal = await stripe.balance.retrieve()
+  const sum = (rows: Array<{ currency: string; amount: number }>) =>
+    rows.filter((b) => b.currency === CURRENCY).reduce((n, b) => n + b.amount, 0)
+  return sum(bal.available) + sum(bal.pending)
 }
 
 /**
@@ -243,18 +340,35 @@ async function probe1(stripe: Stripe): Promise<ProbeResult> {
   const checks: Check[] = []
   const before = await platformBalancePence(stripe)
 
-  const { paymentIntentId, chargeId } = await allocatedCharge(stripe, '1')
-  const allocated = await readAllocationRaw(stripe, paymentIntentId)
+  const {
+    paymentIntentId,
+    chargeId,
+    allocation: allocated,
+    waitedMs,
+    attempts,
+  } = await allocatedCharge(stripe, '1')
   const total = allocatedTotal(allocated)
+  const viaCharge = await readAllocationViaCharge(stripe, chargeId)
   const after = await platformBalancePence(stripe)
 
   check(checks, 'allocated_funds is present on the charge', true, allocated !== null)
   check(checks, 'allocated_funds.balance.pending == charge amount', AMOUNT, total)
+  // Both retrieval paths, because the difference between them is known to
+  // matter: a disagreement means syncAllocations' PI expand is reaching
+  // something charges.retrieve does not, and readAllocatedBalance() is wrong.
+  check(
+    checks,
+    'the charge-direct read agrees with the PI expand path',
+    allocatedTotal(allocated),
+    allocatedTotal(viaCharge),
+  )
   check(
     checks,
     'platform available balance unchanged by an allocated charge',
     before,
     after,
+    // Vacuous on a fresh sandbox — a card charge lands in PENDING, and an
+    // untouched platform balance is 0 either way. Recorded, never trusted.
     before === after ? 'PASS' : 'FAIL',
   )
 
@@ -270,6 +384,11 @@ async function probe1(stripe: Stripe): Promise<ProbeResult> {
       // or carries a third bucket, readAllocatedBalance() is wrong.
       allocated_funds_RAW: allocated,
       allocated_total_pence: total,
+      // How long allocation took to become visible. Read this before concluding
+      // anything from a run where allocation was absent.
+      allocation_visible_after_ms: waitedMs,
+      allocation_read_attempts: attempts,
+      allocated_funds_via_charge_RAW: viaCharge,
       platform_balance_before_pence: before,
       platform_balance_after_pence: after,
     },
@@ -283,10 +402,15 @@ async function probe1(stripe: Stripe): Promise<ProbeResult> {
 
 async function probe4(stripe: Stripe, destination: string): Promise<ProbeResult> {
   const checks: Check[] = []
-  const { paymentIntentId, chargeId } = await allocatedCharge(stripe, '4')
-  const beforeAllocated = allocatedTotal(await readAllocationRaw(stripe, paymentIntentId))
+  const {
+    paymentIntentId,
+    chargeId,
+    allocation: beforeRaw,
+  } = await allocatedCharge(stripe, '4')
+  const beforeAllocated = allocatedTotal(beforeRaw)
 
   const refund = await stripe.refunds.create({ charge: chargeId })
+  await sleep(POST_MUTATION_SETTLE_MS)
   const afterRaw = await readAllocationRaw(stripe, paymentIntentId)
   const afterAllocated = allocatedTotal(afterRaw)
 
@@ -360,14 +484,21 @@ async function probe6(stripe: Stripe, destination: string): Promise<ProbeResult>
     ...({ source_transaction: chargeId, application_fee_amount: fee } as Record<string, unknown>),
   } as Stripe.TransferCreateParams)
 
+  await sleep(POST_MUTATION_SETTLE_MS)
   const afterTransfer = allocatedTotal(await readAllocationRaw(stripe, paymentIntentId))
-  const balBefore = await platformBalancePence(stripe)
+  const balBefore = await platformBalanceTotalPence(stripe)
 
-  const refund = await stripe.refunds.create({ charge: chargeId })
+  const refund = await stripe.refunds.create({
+    charge: chargeId,
+    // The refund's own balance transaction is the direct evidence of what came
+    // out of platform balance — a delta between two balance reads is a proxy.
+    expand: ['balance_transaction'],
+  })
 
+  await sleep(POST_MUTATION_SETTLE_MS)
   const afterRefundRaw = await readAllocationRaw(stripe, paymentIntentId)
   const afterRefund = allocatedTotal(afterRefundRaw)
-  const balAfter = await platformBalancePence(stripe)
+  const balAfter = await platformBalanceTotalPence(stripe)
 
   check(
     checks,
@@ -380,6 +511,9 @@ async function probe6(stripe: Stripe, destination: string): Promise<ProbeResult>
     'the full refund exceeds what is left allocated, so part comes from platform balance',
     true,
     balAfter < balBefore,
+    // Still UNKNOWN rather than FAIL when it does not move: this measures
+    // Stripe's funding choice, and a sandbox that nets it elsewhere is a
+    // finding to read, not a failure to fix. Read refund_balance_transaction_RAW.
     balAfter < balBefore ? 'PASS' : 'UNKNOWN',
   )
 
@@ -395,6 +529,9 @@ async function probe6(stripe: Stripe, destination: string): Promise<ProbeResult>
       allocation_after_transfer_pence: afterTransfer,
       refundId: refund.id,
       refund_amount_pence: refund.amount,
+      // The direct evidence: what the refund actually debited, and from where.
+      refund_balance_transaction_RAW: refund.balance_transaction ?? null,
+      expected_platform_draw_pence: net + fee,
       allocation_after_refund_pence: afterRefund,
       allocated_funds_after_refund_RAW: afterRefundRaw,
       platform_balance_before_refund_pence: balBefore,
@@ -422,12 +559,31 @@ async function probe7(stripe: Stripe, destination: string): Promise<ProbeResult>
     ...({ source_transaction: chargeId, application_fee_amount: fee } as Record<string, unknown>),
   } as Stripe.TransferCreateParams)
 
+  await sleep(POST_MUTATION_SETTLE_MS)
   const afterTransfer = allocatedTotal(await readAllocationRaw(stripe, paymentIntentId))
 
-  const reversal = await stripe.transfers.createReversal(transfer.id, {
-    refund_application_fee: true,
-  })
+  // Same two-attempt fallback as 7b — see the note there. The EXPECTATION moves
+  // with it: without refund_application_fee the fee stays with the platform, so
+  // only the principal returns to allocation.
+  let feeRefundError: Record<string, unknown> | null = null
+  let reversal: Stripe.TransferReversal
+  try {
+    reversal = await stripe.transfers.createReversal(transfer.id, {
+      refund_application_fee: true,
+    })
+  } catch (err) {
+    const e = err as Partial<Stripe.errors.StripeError>
+    feeRefundError = {
+      type: e?.type ?? null,
+      statusCode: e?.statusCode ?? null,
+      requestId: e?.requestId ?? null,
+      message: err instanceof Error ? err.message : String(err),
+    }
+    reversal = await stripe.transfers.createReversal(transfer.id, {})
+  }
+  const expectedAfterReversal = feeRefundError === null ? AMOUNT : AMOUNT - fee
 
+  await sleep(POST_MUTATION_SETTLE_MS)
   const afterRaw = await readAllocationRaw(stripe, paymentIntentId)
   const afterReversal = allocatedTotal(afterRaw)
   const reloaded = await stripe.transfers.retrieve(transfer.id)
@@ -435,8 +591,10 @@ async function probe7(stripe: Stripe, destination: string): Promise<ProbeResult>
   check(checks, 'allocation after transfer', AMOUNT - (net + fee), afterTransfer)
   check(
     checks,
-    'reversal returns the gross to ALLOCATED state (this is what the `reversal` draw kind models)',
-    AMOUNT,
+    feeRefundError === null
+      ? 'reversal returns the gross to ALLOCATED state (this is what the `reversal` draw kind models)'
+      : 'reversal returns the PRINCIPAL to allocated state (fee withheld — refund_application_fee 500d)',
+    expectedAfterReversal,
     afterReversal,
   )
   check(checks, 'transfer.amount_reversed is CUMULATIVE', net, reloaded.amount_reversed)
@@ -449,6 +607,9 @@ async function probe7(stripe: Stripe, destination: string): Promise<ProbeResult>
       chargeId,
       transferId: transfer.id,
       reversalId: reversal.id,
+      // Non-null ⇒ the canonical shape 500d and this is the fee-withheld
+      // fallback; the allocation figures below are NOT what production sees.
+      refund_application_fee_error: feeRefundError,
       allocation_after_transfer_pence: afterTransfer,
       allocation_after_reversal_pence: afterReversal,
       allocated_funds_after_reversal_RAW: afterRaw,
@@ -489,17 +650,53 @@ async function probe7b(stripe: Stripe, destination: string): Promise<ProbeResult
     ...({ source_transaction: chargeId, application_fee_amount: b.fee } as Record<string, unknown>),
   } as Stripe.TransferCreateParams)
 
+  await sleep(POST_MUTATION_SETTLE_MS)
   const allocatedBoth = allocatedTotal(await readAllocationRaw(stripe, paymentIntentId))
 
   // Reverse child A only, and PARTIALLY — a partial is what forces the
   // cumulative question, and prorateCarveReversal()'s whole design rests on
   // amount_reversed being cumulative rather than per-reversal.
+  //
+  // TWO ATTEMPTS, deliberately. `refund_application_fee: true` is the canonical
+  // shape (payout-children.ts:617's manual-reversal instruction) and it returns
+  // HTTP 500 under the preview — isolated to that one parameter by
+  // scripts/segregation-reversal-isolate.ts on 2026-07-30. Rather than let a
+  // Stripe-side defect cost us the PAYLOAD — the thing this probe exists for,
+  // and the thing §3.5's re-keying and payout_transfers.reversed_pence rest on —
+  // fall back to a reversal without the flag, which succeeds, and record that
+  // the canonical shape failed. Delete the fallback once Stripe fixes the 500.
   const partial = 150
-  const reversal = await stripe.transfers.createReversal(childA.id, {
-    amount: partial,
-    refund_application_fee: true,
+  let feeRefundError: Record<string, unknown> | null = null
+  let reversal: Stripe.TransferReversal
+  try {
+    reversal = await stripe.transfers.createReversal(childA.id, {
+      amount: partial,
+      refund_application_fee: true,
+    })
+  } catch (err) {
+    const e = err as Partial<Stripe.errors.StripeError>
+    feeRefundError = {
+      type: e?.type ?? null,
+      statusCode: e?.statusCode ?? null,
+      requestId: e?.requestId ?? null,
+      message: err instanceof Error ? err.message : String(err),
+    }
+    reversal = await stripe.transfers.createReversal(childA.id, { amount: partial })
+  }
+
+  // A SECOND partial reversal on the same child. Without it, "amount_reversed is
+  // cumulative" is unfalsifiable: after one reversal of 150, cumulative and
+  // per-reversal both read 150, so the check passes whichever is true and proves
+  // neither. reversed_pence stages against this field, so the distinction is the
+  // whole question — 150 + 100 must read 250, not 100.
+  const partial2 = 100
+  await sleep(POST_MUTATION_SETTLE_MS)
+  await stripe.transfers.createReversal(childA.id, {
+    amount: partial2,
+    ...(feeRefundError === null ? { refund_application_fee: true } : {}),
   })
 
+  await sleep(POST_MUTATION_SETTLE_MS)
   const reloadedA = await stripe.transfers.retrieve(childA.id)
   const reloadedB = await stripe.transfers.retrieve(childB.id)
   const allocatedAfter = allocatedTotal(await readAllocationRaw(stripe, paymentIntentId))
@@ -516,7 +713,15 @@ async function probe7b(stripe: Stripe, destination: string): Promise<ProbeResult
   const eventObject = (event?.data?.object ?? null) as Record<string, unknown> | null
 
   check(checks, 'the sibling child B is untouched by A′s reversal', 0, reloadedB.amount_reversed)
-  check(checks, 'child A amount_reversed is the partial amount', partial, reloadedA.amount_reversed)
+  // The load-bearing one: two reversals of 150 and 100 must SUM to 250 on the
+  // transfer. A per-reversal field would read 100 here, and reversed_pence would
+  // silently under-record every staged reversal after the first.
+  check(
+    checks,
+    'child A amount_reversed is CUMULATIVE across two reversals (150 + 100)',
+    partial + partial2,
+    reloadedA.amount_reversed,
+  )
   check(
     checks,
     'a transfer.reversed event arrived',
@@ -535,7 +740,9 @@ async function probe7b(stripe: Stripe, destination: string): Promise<ProbeResult
   check(
     checks,
     'the event object carries a CUMULATIVE amount_reversed (what reversed_pence stages against)',
-    partial,
+    // events.list returns newest first, so this is the SECOND reversal's event —
+    // which must therefore carry the running total, not its own 100.
+    partial + partial2,
     eventObject?.amount_reversed ?? null,
   )
 
@@ -550,6 +757,11 @@ async function probe7b(stripe: Stripe, destination: string): Promise<ProbeResult
       allocation_after_both_transfers_pence: allocatedBoth,
       reversalId: reversal.id,
       reversal_amount_pence: partial,
+      // Non-null ⇒ the canonical `refund_application_fee: true` shape failed and
+      // this payload came from the fallback. The fee did NOT return with the
+      // principal, so do not read the allocation figures below as the shape
+      // production would see once Stripe fixes the 500.
+      refund_application_fee_error: feeRefundError,
       childA_amount_reversed: reloadedA.amount_reversed,
       childB_amount_reversed: reloadedB.amount_reversed,
       allocation_after_partial_reversal_pence: allocatedAfter,
@@ -639,16 +851,33 @@ async function main() {
     } catch (err) {
       // A probe that throws is a finding too — record and continue, so one
       // capability error does not cost the whole run.
+      //
+      // Record the WHOLE Stripe error, not just `message`. Stripe's generic
+      // `api_error` says only "An unknown error occurred", which is unactionable
+      // and indistinguishable from our own bug; the type/code/statusCode and
+      // above all the requestId are what make it reportable to Stripe.
       const message = err instanceof Error ? err.message : String(err)
+      const e = err as Partial<Stripe.errors.StripeError> & { raw?: unknown }
       results.push({
         probe: p,
         title: 'threw',
         status: 'error',
         error: message,
-        observations: {},
+        observations: {
+          error_type: e?.type ?? null,
+          error_code: e?.code ?? null,
+          error_statusCode: e?.statusCode ?? null,
+          error_requestId: e?.requestId ?? null,
+          error_doc_url: e?.doc_url ?? null,
+          error_raw: e?.raw ?? null,
+        },
         checks: [],
       })
-      console.log(`ERROR — ${message}`)
+      console.log(
+        `ERROR — ${message}` +
+          (e?.type ? ` [${e.type}${e.statusCode ? ' ' + e.statusCode : ''}]` : '') +
+          (e?.requestId ? ` req=${e.requestId}` : ''),
+      )
     }
   }
 
