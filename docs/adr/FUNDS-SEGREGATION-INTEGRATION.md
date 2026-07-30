@@ -1215,8 +1215,24 @@ in this repo can reach.
   determines the overflow, so excluding overflowed units from the carve is a
   fixpoint. **This is a third input to §5 step 0**: the slice distribution that
   sets `payout_max_slices` also decides how reachable this is.
-- **Test coverage, and what it still does not reach.** The flag-ON assembly now has 26
-  DB-backed, mutation-verified tests (§10.1a, §10.1b). What they do NOT cover is
+- ~~**Zero-net units could wedge a reserve** (found by the 2026-07-30 commit review,
+  finding 4)~~ — **FIXED 2026-07-30**. A fully-gifted read (`chargeable_pence = 0`,
+  migration 164) and a 1p-chargeable read (whose net FLOORS to 0 under
+  `perReadNetPence`) both settle and both get claimed — the claim deliberately has no
+  amount filter — and either could open its own slice: a `netPence: 0` child violating
+  `payout_transfers_net_positive`, aborting the whole reserve, and (packing being
+  deterministic) aborting the SAME writer every cycle. Gross 0 also "fitted" a
+  settlement id absent from the sources map, handing `openSlice` an undefined source.
+  Fixed in the packer itself so all three cycles are covered structurally: `packUnits`
+  sets `netPence <= 0` units aside in a new `zeroNet` result bucket (callers KEEP
+  their claims — the same childless-advance treatment as carve-zeroed reads; any fee
+  is dust for the Balance-Transfer sweep, the safe direction), and `usable` now
+  requires presence in the sources map before comparing remainders. Four packer tests
+  + two DB-backed assembly tests (the CHECK as a paired control, and the wedge shape
+  through pack→insert); mutation-verified — reverting the filter in place turns 5
+  tests red.
+- **Test coverage, and what it still does not reach.** The flag-ON assembly now has 28
+  DB-backed, mutation-verified tests (§10.1a, §10.1b, + the two zero-net tests above). What they do NOT cover is
   `executePendingChildren`'s Stripe call itself — it drives the module-level `pool`, so it
   is unreachable from inside a rolled-back transaction, and the terminal/ambiguous split,
   the row-stable key and the flip-gated ledger emit remain pinned only by the mock-based

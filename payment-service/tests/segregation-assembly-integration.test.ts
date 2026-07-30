@@ -252,6 +252,58 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
   }
 
   // ==========================================================================
+  // Zero-net units: the reserve wedge (review 2026-07-30, finding 4)
+  // ==========================================================================
+
+  describe('zero-net units never reach the child table', () => {
+    it('the CHECK is real: a zero-net child is uninsertable (paired control)', async () => {
+      // This is the DB half of the wedge: if a zero-net slice IS emitted, the
+      // insert aborts the whole reserve transaction — and packing being
+      // deterministic, the same writer aborts every cycle. The packer test
+      // proves no such slice is emitted; this proves the gate it would hit.
+      const payoutId = await insertWriterPayout(500)
+      await expect(
+        insertChildren(client, 'writer_payouts', payoutId, [
+          {
+            settlementId: null,
+            stripeChargeId: null,
+            funding: 'platform_balance',
+            netPence: 0,
+            feePence: 0,
+            units: [],
+          },
+        ]),
+      ).rejects.toMatchObject({ code: '23514' })
+    })
+
+    it('a claimed zero-net read is set aside, and the emitted slices insert clean', async () => {
+      // The wedge shape: the zero-net unit's own settlement has room and no
+      // other unit lands on it, so pre-fix it OPENED ITS OWN slice (gross 0
+      // "fits" anything) with netPence 0 — the uninsertable child above.
+      const giftedOwn = await insertSettlement(1000, 1000)
+      const realOwn = await insertSettlement(1000, 1000)
+      const payoutId = await insertWriterPayout(500)
+
+      const sources = await lockFundingSources(client, [giftedOwn, realOwn])
+      const { slices, zeroNet } = packUnits(
+        [unit('gifted', 0, 0, [giftedOwn]), unit('real', 500, 40, [realOwn])],
+        sources,
+        { maxSlices: MAX_SLICES },
+      )
+
+      expect(zeroNet.map((u) => u.id)).toEqual(['gifted'])
+
+      const childIds = await insertChildren(client, 'writer_payouts', payoutId, slices)
+      expect(childIds).toHaveLength(1)
+
+      const children = await childrenOf('writer_payouts', payoutId)
+      expect(children).toHaveLength(1)
+      expect(children[0].settlement_id).toBe(realOwn)
+      expect(children[0].net_pence).toBe(500)
+    })
+  })
+
+  // ==========================================================================
   // The budget: what the packer is told is drawable
   // ==========================================================================
 

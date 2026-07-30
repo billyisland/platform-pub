@@ -54,7 +54,11 @@ export interface EarningUnit {
     | 'subscription_events'
     | 'tribute_accruals'
     | 'publication_payout_splits'
-  /** What the recipient is paid. Always > 0 by the time it reaches the packer. */
+  /**
+   * What the recipient is paid. May legitimately be 0 (a fully-gifted read; a
+   * 1p-chargeable read whose net floors to 0) — `packUnits` sets such units
+   * aside as `zeroNet` rather than trusting callers to pre-filter.
+   */
   netPence: number
   /**
    * The platform fee that rode this unit, to be claimed as an
@@ -95,6 +99,22 @@ export interface PackResult {
   slices: PackedSlice[]
   /** Units that did not fit within `maxSlices` — the caller must UN-CLAIM these. */
   overflow: EarningUnit[]
+  /**
+   * Units with nothing to transfer (`netPence <= 0`) — the caller KEEPS their
+   * claims (they advance as childless claim rows at parent completion, exactly
+   * like carve-zeroed reads), and any fee they carried is left as dust for the
+   * Balance-Transfer sweep. Never un-claim these: un-claiming re-presents the
+   * same zero-net row every cycle forever.
+   *
+   * These exist because zero-net units are REAL: a fully-gifted read has
+   * `chargeable_pence = 0` (the free allowance is a gift — migration 164), and
+   * a 1p-chargeable read FLOORS to net 0 under `perReadNetPence`. Both settle,
+   * both get claimed (the claim deliberately has no amount filter), and before
+   * this bucket existed either one could open its own slice — a `netPence: 0`
+   * child that violates `payout_transfers_net_positive` and, because packing
+   * is deterministic, wedges the SAME writer's reserve every cycle.
+   */
+  zeroNet: EarningUnit[]
 }
 
 /**
@@ -233,6 +253,15 @@ export function packUnits(
   sources: FundingSource[],
   options: PackOptions,
 ): PackResult {
+  // Zero-net units are set aside BEFORE anything else looks at them (see
+  // PackResult.zeroNet for why they are real). Stripe rejects `amount: 0`, the
+  // child table's CHECK forbids it, and a gross of 0 "fits" every source —
+  // including, before `usable` also required presence, a settlement id absent
+  // from the sources map. Filtering here rather than in each caller is what
+  // makes the property structural for all three cycles at once.
+  const zeroNet = units.filter((u) => u.netPence <= 0)
+  const payable = units.filter((u) => u.netPence > 0)
+
   const remaining = new Map<string, number>()
   const byId = new Map<string, FundingSource>()
   for (const source of sources) {
@@ -240,7 +269,7 @@ export function packUnits(
     byId.set(source.settlementId, source)
   }
 
-  const ordered = [...units].sort((a, b) => {
+  const ordered = [...payable].sort((a, b) => {
     const aPref = a.preferredSettlementIds.length > 0 ? 0 : 1
     const bPref = b.preferredSettlementIds.length > 0 ? 0 : 1
     if (aPref !== bPref) return aPref - bPref
@@ -303,8 +332,14 @@ export function packUnits(
   // into needless overflow: once the slice budget is spent, a unit that fits an
   // ALREADY-OPEN slice costs no extra transfer and must still be placed.
   const choose = (unit: EarningUnit, gross: number, openOnly: boolean): string | null => {
+    // Presence first: a settlement id must actually BE a locked source before
+    // its remainder is compared. Without `.has`, an absent id read as 0
+    // remaining, which satisfied a gross of 0 — and `openSlice` was then handed
+    // `byId.get(chosen)!` = undefined. Zero-gross units no longer reach here at
+    // all (filtered above); this keeps the non-null assertion honest anyway.
     const usable = (settlementId: string) =>
-      (remaining.get(settlementId) ?? 0) >= gross &&
+      remaining.has(settlementId) &&
+      remaining.get(settlementId)! >= gross &&
       (!openOnly || slices.has(settlementId))
 
     // 1. The unit's own preferred settlement(s), in the caller's order.
@@ -371,7 +406,7 @@ export function packUnits(
     return (a.settlementId ?? '') < (b.settlementId ?? '') ? -1 : 1
   })
 
-  return { slices: out, overflow }
+  return { slices: out, overflow, zeroNet }
 }
 
 /**

@@ -52,17 +52,26 @@ function assertPackSound(
     expect(gross).toBeLessThanOrEqual(remaining.get(slice.settlementId!)!)
   }
 
-  // 2. Every unit is accounted for exactly once.
+  // 2. Every unit is accounted for exactly once — placed, overflowed, or set
+  //    aside as zero-net.
   const placed = result.slices.flatMap((s) => s.units.map((u) => u.id))
-  const seen = [...placed, ...result.overflow.map((u) => u.id)].sort()
+  const seen = [
+    ...placed,
+    ...result.overflow.map((u) => u.id),
+    ...result.zeroNet.map((u) => u.id),
+  ].sort()
   expect(seen).toEqual(units.map((u) => u.id).sort())
   expect(new Set(seen).size).toBe(seen.length)
 
   // 3. Slice totals are exactly the sum of their units — no unit split, no
-  //    rounding introduced.
+  //    rounding introduced — and every slice is INSERTABLE: the child table's
+  //    `payout_transfers_net_positive` CHECK forbids net <= 0, so a slice that
+  //    sums to nothing must never be emitted (it would abort the whole reserve,
+  //    deterministically, every cycle).
   for (const slice of result.slices) {
     expect(slice.netPence).toBe(slice.units.reduce((s, u) => s + u.netPence, 0))
     expect(slice.feePence).toBe(slice.units.reduce((s, u) => s + u.feePence, 0))
+    expect(slice.netPence).toBeGreaterThan(0)
   }
 
   // 4. An allocated slice always names its charge; a residual one never does.
@@ -170,6 +179,62 @@ describe('packUnits — the residual path (§3.3d)', () => {
 
     expect(result.slices[0].funding).toBe('platform_balance')
     assertPackSound(result, units, sources)
+  })
+})
+
+describe('packUnits — zero-net units never become a slice (the wedge)', () => {
+  // Zero-net units are real: a fully-gifted read has chargeable_pence = 0
+  // (migration 164), and a 1p-chargeable read floors to net 0 under
+  // perReadNetPence. Both settle, both get claimed. Before the zeroNet bucket,
+  // such a unit could open its own slice — a netPence: 0 child that violates
+  // payout_transfers_net_positive and, because packing is deterministic,
+  // aborts the SAME writer's reserve every cycle.
+
+  it('sets a fully-gifted read (net 0, fee 0) aside instead of opening a zero slice', () => {
+    const units = [unit(0, 0, ['s1'], 'gifted'), unit(500, 40, ['s1'], 'real')]
+    const sources = [source('s1', 1000)]
+    const result = packUnits(units, sources, CAP)
+
+    expect(result.zeroNet.map((u) => u.id)).toEqual(['gifted'])
+    expect(result.slices).toHaveLength(1)
+    expect(result.slices[0].netPence).toBe(500)
+    assertPackSound(result, units, sources)
+  })
+
+  it('sets a fee-floored read (net 0, fee 1) aside, leaving its fee as dust', () => {
+    // chargeable_pence = 1 at 10% fee: net = floor(1 × 9000 / 10000) = 0.
+    const units = [unit(0, 1, ['s1'], 'floored'), unit(500, 40, ['s1'], 'real')]
+    const sources = [source('s1', 1000)]
+    const result = packUnits(units, sources, CAP)
+
+    expect(result.zeroNet.map((u) => u.id)).toEqual(['floored'])
+    // The dust fee is NOT claimed by any slice — under-claiming is the safe
+    // direction; the Balance-Transfer sweep reclaims it.
+    expect(result.slices.reduce((s, sl) => s + sl.feePence, 0)).toBe(40)
+    assertPackSound(result, units, sources)
+  })
+
+  it('a zero-net unit alone produces NO slices at all', () => {
+    const units = [unit(0, 0, ['s1'], 'only')]
+    const sources = [source('s1', 1000)]
+    const result = packUnits(units, sources, CAP)
+
+    expect(result.slices).toHaveLength(0)
+    expect(result.zeroNet).toHaveLength(1)
+    assertPackSound(result, units, sources)
+  })
+
+  it('a preferred settlement ABSENT from the sources map cannot be chosen', () => {
+    // The usable() hole this pins: gross 0 satisfied `(remaining.get(id) ?? 0)
+    // >= gross` for a settlement that was never locked, and openSlice was then
+    // handed byId.get(chosen)! = undefined — a mislabeled slice keyed under a
+    // settlement id. Presence is now required before the remainder compares.
+    const units = [unit(0, 0, ['s-never-locked'], 'zero')]
+    const result = packUnits(units, [], CAP)
+
+    expect(result.slices).toHaveLength(0)
+    expect(result.zeroNet.map((u) => u.id)).toEqual(['zero'])
+    assertPackSound(result, units, [])
   })
 })
 

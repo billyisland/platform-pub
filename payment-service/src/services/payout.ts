@@ -1021,7 +1021,7 @@ class PayoutService {
     ]
     const sources = await lockFundingSources(client, settlementIds)
 
-    const { slices, overflow } = packUnits(units, sources, {
+    const { slices, overflow, zeroNet } = packUnits(units, sources, {
       maxSlices: config.payoutMaxSlices,
     })
 
@@ -1076,6 +1076,18 @@ class PayoutService {
       logger.info(
         { payoutId, writerId, zeroed: zeroed.length },
         'Reads fully consumed by the tribute carve — claimed, but no transfer',
+      )
+    }
+
+    // Same childless-claim treatment for units that arrived at the packer with
+    // no net at all (a fully-gifted read, or a 1p-chargeable read whose net
+    // floors to 0): claimed, no child, any fee left as dust. Never un-claimed —
+    // packing is deterministic, so un-claiming would re-present the same
+    // zero-net row every cycle.
+    if (zeroNet.length > 0) {
+      logger.info(
+        { payoutId, writerId, zeroNet: zeroNet.length },
+        'Zero-net units (gifted or fee-floored) — claimed, but no transfer',
       )
     }
 
@@ -2782,7 +2794,7 @@ class PayoutService {
     ]
     const sources = await lockFundingSources(client, settlementIds)
 
-    const { slices, overflow } = packUnits(units, sources, {
+    const { slices, overflow, zeroNet } = packUnits(units, sources, {
       maxSlices: config.payoutMaxSlices,
     })
 
@@ -2818,6 +2830,15 @@ class PayoutService {
       logger.info(
         { payoutId, tributeId, zeroed: zeroed.length },
         'Accruals fully consumed by the onward carve — claimed, but no transfer',
+      )
+    }
+
+    // Same childless-claim treatment for an accrual that arrived with no net
+    // (a floored-to-0p accrual): claimed, no child, never un-claimed.
+    if (zeroNet.length > 0) {
+      logger.info(
+        { payoutId, tributeId, zeroNet: zeroNet.length },
+        'Zero-net accruals — claimed, but no transfer',
       )
     }
 
