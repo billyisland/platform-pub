@@ -393,11 +393,27 @@ export async function authRoutes(app: FastifyInstance) {
           },
         });
 
-        // Generate onboarding link
+        // Generate onboarding link.
+        //
+        // Both URLs must be routes that EXIST. They pointed at
+        // `/settings/payments` until 2026-07-30, which has never existed since
+        // settings became a workspace overlay — `web/src/app/settings/` holds a
+        // single `page.tsx`, itself a shim — so every writer who completed
+        // Stripe KYC was returned to a 404, and so was every writer whose link
+        // expired. Nothing in the app reads either query param; they are
+        // breadcrumbs, forwarded by the shim for logs and future use.
+        //
+        // Via `/settings` rather than straight to `/reader?overlay=settings`,
+        // matching the OAuth callback's `?linked=` precedent: the shim is the
+        // compatibility surface for an EXTERNAL service returning the browser to
+        // us, and one convention for that is worth a redirect hop. Connect
+        // status is rendered by `account/PaymentSection` inside that panel, and
+        // a return from Stripe is a full page load, so `fetchMe()` runs fresh —
+        // no explicit refetch needed.
         const accountLink = await stripe.accountLinks.create({
           account: connectAccount.id,
-          refresh_url: `${process.env.APP_URL}/settings/payments?refresh=true`,
-          return_url: `${process.env.APP_URL}/settings/payments?onboarding=complete`,
+          refresh_url: `${process.env.APP_URL}/settings?refresh=true`,
+          return_url: `${process.env.APP_URL}/settings?onboarding=complete`,
           type: "account_onboarding",
         });
 

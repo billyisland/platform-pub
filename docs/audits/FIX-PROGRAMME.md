@@ -90,6 +90,26 @@ starts.
   - Noted for the first cycles: a residual share off a *tiny* denominator is arithmetically
     fine and statistically meaningless, so expect noise from that alert early. That is the
     sample, not the threshold.
+  - **Connect onboarding returned every writer to a 404, and still does on prod until this
+    deploys.** Found while reading the Stripe surfaces for the session above.
+    `accountLinks.create` sent both `refresh_url` and `return_url` to
+    `${APP_URL}/settings/payments` (`gateway/src/routes/auth.ts:399-400`) — a route that has
+    not existed since settings became a workspace overlay (`web/src/app/settings/` holds one
+    `page.tsx`, itself a redirect shim). So a writer who completed Stripe KYC landed on a
+    dead page, as did one whose account link expired. Now `${APP_URL}/settings?...`, which
+    the shim forwards into `/reader?overlay=settings` where `account/PaymentSection` renders
+    Connect status; a return from Stripe is a full page load, so `fetchMe()` runs fresh and
+    no explicit refetch is needed. Routed via the shim rather than straight at
+    `/reader?overlay=settings` to match the OAuth callback's `?linked=` precedent — the shim
+    is the compatibility surface for an external service returning the browser to us.
+    Nothing reads `onboarding=complete` / `refresh=true`, so they stay as breadcrumbs,
+    forwarded by the shim and added to `OVERLAY_PARAM_KEYS` so they are stripped from the
+    workspace URL like every other seed param rather than lingering.
+    **Sharpened by the baseline above: production has ZERO connected accounts.** Whether
+    anyone hit the 404 or nobody has tried on a gated site is unknown and not worth
+    guessing — but it sits on the critical path, since no onboarded writers means no
+    payouts, which means the two dials stay placeholders indefinitely.
+    Verified: gateway 434 tests, `next build`, 0 lint errors, hairline check clean.
 
 - **2026-07-30 (review batch 2: the flag-flip blockers, and the hygiene tail)** — the rest
   of the three-day review's queue, taken in the order it named. All verified before fixing.

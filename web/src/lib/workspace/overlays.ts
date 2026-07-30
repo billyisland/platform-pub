@@ -35,6 +35,11 @@ export const OVERLAY_PARAM_KEYS = [
   "conversation",
   "linked",
   "follows",
+  // Stripe Connect onboarding breadcrumbs, forwarded by the /settings shim.
+  // Listed here so they are stripped from the workspace URL like every other
+  // seed param, rather than lingering after the overlay opens.
+  "onboarding",
+  "refresh",
   "draft",
   "edit",
   "pub",

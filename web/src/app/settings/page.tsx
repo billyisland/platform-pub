@@ -10,14 +10,31 @@ import { redirect } from 'next/navigation'
 export default function SettingsPage({
   searchParams,
 }: {
-  searchParams: { linked?: string | string[]; follows?: string | string[] }
+  searchParams: {
+    linked?: string | string[]
+    follows?: string | string[]
+    onboarding?: string | string[]
+    refresh?: string | string[]
+  }
 }) {
   const params = new URLSearchParams({ overlay: 'settings' })
-  const linked = Array.isArray(searchParams.linked) ? searchParams.linked[0] : searchParams.linked
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
+
+  const linked = first(searchParams.linked)
   if (linked) params.set('linked', linked)
   // Post-link follow-import offer count (FOLLOW-GRAPH-IMPORT-ADR §7.1) —
   // rides the same channel as the connect flag.
-  const follows = Array.isArray(searchParams.follows) ? searchParams.follows[0] : searchParams.follows
+  const follows = first(searchParams.follows)
   if (follows) params.set('follows', follows)
+
+  // Stripe Connect onboarding returns here (gateway auth.ts::upgrade-writer):
+  // `?onboarding=complete` on success, `?refresh=true` when the account link
+  // expired or was abandoned. Nothing reads them yet — forwarded so the
+  // breadcrumb survives the hop rather than being silently dropped.
+  const onboarding = first(searchParams.onboarding)
+  if (onboarding) params.set('onboarding', onboarding)
+  const refresh = first(searchParams.refresh)
+  if (refresh) params.set('refresh', refresh)
+
   redirect(`/reader?${params.toString()}`)
 }
