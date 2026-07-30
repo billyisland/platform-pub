@@ -250,7 +250,24 @@ export function packUnits(
   })
 
   // Keyed by settlement id, or the sentinel for the single residual slice.
-  const RESIDUAL = ' residual'
+  //
+  // PLAIN ASCII, DELIBERATELY. This was once '\0residual', on the reasoning that
+  // a NUL cannot collide with a settlement id. True — and so is a bare word,
+  // since a settlement id is a UUID. What the NUL cost was readability by
+  // tooling: one NUL anywhere makes `file` report the whole module as `data`,
+  // and every search tool that skips binary files by default (ripgrep, ugrep,
+  // `grep -I`) then passes over this file in silence, matching nothing and
+  // exiting 1. A search that finds nothing looks exactly like a file with
+  // nothing in it.
+  //
+  // THE REPO'S OWN TRIPWIRES WERE NEVER AFFECTED, and it is worth recording why
+  // rather than leaving a scare in the comment: check-ledger-adjacency.sh and
+  // check-read-chargeable.sh run GNU grep, whose -l still lists a binary file
+  // that matches and whose -c still counts correctly (verified both ways, with
+  // a planted violation, before this line was changed). So this is hygiene for
+  // human tooling, not a guard fix. Nothing here needs a byte outside ASCII;
+  // don't reintroduce one.
+  const RESIDUAL = 'residual'
   const slices = new Map<string, PackedSlice>()
 
   const sliceCount = () => slices.size
