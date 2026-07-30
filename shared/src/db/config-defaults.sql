@@ -244,6 +244,23 @@ ON CONFLICT (key) DO NOTHING;
 -- knowable by measuring live distributions, so retuning must be an UPDATE and
 -- not a deploy. They are inert while STRIPE_ALLOCATED_FUNDS is off.
 --
+-- MEASURED 2026-07-30 — AND THE ANSWER WAS "NOT YET MEASURABLE". The baseline
+-- queries (scripts/segregation-baseline.sql) were run against production and
+-- every figure came back zero: no payouts in the window, no writers over
+-- threshold, no connected accounts. Migration 165 IS applied (16:35:05 on
+-- 2026-07-29) and the window is entirely post-165, so the plumbing is right —
+-- there is simply no money yet, the site being gated pre-launch. So BOTH dials
+-- below keep their placeholders, and the reason is now recorded rather than
+-- merely pending: this is blocked on the platform having payout volume, not on
+-- anyone doing a task. Re-run the queries once payouts flow. Read a zero here as
+-- NO MEASUREMENT, never as perfect coverage — the same distinction
+-- summariseResidual() makes by returning null on an empty denominator.
+--
+-- Corollary worth knowing before the first cycle: a residual share computed off
+-- a *tiny* denominator is arithmetically fine and statistically meaningless, so
+-- expect noise from this alert on the first few payout cycles. That is the
+-- sample, not the threshold.
+--
 -- `allocated_residual_alert_bps` IS A PLACEHOLDER AND MUST BE RE-SET BEFORE THE
 -- LIVE FLIP. The residual has a STRUCTURAL floor, not an exceptional one: every
 -- credit-funded penny lands there by construction, forever (a subscription

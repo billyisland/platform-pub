@@ -69,10 +69,27 @@ starts.
     alone is unactionable), `available + pending` for balance reads (available alone is
     always 0 in a sandbox, so probe 6's check was vacuous), and a documented fallback that
     harvests the payload when the 500 hits.
-  - **Not done, and still the flip blocker:** `scripts/segregation-baseline.sql` on
-    production — Query A sets `allocated_residual_alert_bps` (ships at 2000, a placeholder
-    that will fire spuriously) and Query B sets `payout_max_slices` (ships at 20, a guess).
-    Read-only, no Stripe key, runnable today. Read Query 0 first.
+  - **The production baseline ran too, and returned NOTHING TO MEASURE — which closes
+    step 0 rather than leaving it open.** Every figure zero: no payouts in the 30-day
+    window, no writers over threshold, no connected accounts. Migration 165 is applied
+    (16:35:05 on 07-29) and the window is entirely post-165, so the plumbing is right and
+    the platform is simply gated pre-launch. Both dials keep their placeholders, now as a
+    *recorded state blocked on payout volume* rather than an outstanding task; the reason
+    is written into `config-defaults.sql` beside them. The queries were built for this
+    outcome and say so in terms — "NO PAYOUTS IN WINDOW — no measurement. Widen the window;
+    do NOT read 0 as perfect coverage" — the same distinction `summariseResidual()` makes by
+    returning null on an empty denominator rather than 0%.
+  - **And it inverts the ADR's own ordering.** §5 says measure then flip; §6.3 warns that a
+    cycle spanning the flip mixes allocated and unallocated charges and spikes the residual
+    as pre-flip earnings drain. **With zero payouts and zero settlements there are no
+    pre-flip earnings**, so flipping before the first real payout removes the transition
+    entirely and segregates every pound from the first one. The measurement cannot precede
+    the money, so the sequence that actually applies is: flip when Stripe enables live, then
+    baseline from the first 30 days of real volume. §7.5 is moot until a connected account
+    exists.
+  - Noted for the first cycles: a residual share off a *tiny* denominator is arithmetically
+    fine and statistically meaningless, so expect noise from that alert early. That is the
+    sample, not the threshold.
 
 - **2026-07-30 (review batch 2: the flag-flip blockers, and the hygiene tail)** — the rest
   of the three-day review's queue, taken in the order it named. All verified before fixing.

@@ -779,10 +779,32 @@ own signing secrets, or `stripe listen --forward-to localhost:3001/webhooks/stri
 **Step 0 — do these before building anything.** They retire real uncertainty at near-zero
 cost and two of them produce numbers the design needs as inputs.
 
-> **RUN — the Stripe half is COMPLETE (2026-07-30).** All five probes (1, 4, 6, 7, 7b) are
-> **green** against the segregation sandbox. Still owed from step 0: the two production
-> baseline queries (Query A/B — read-only, no Stripe key, runnable today) and the §7.5
-> country enumeration. What the run bought:
+> **RUN — step 0 is DONE, and the measurement half returned NOTHING TO MEASURE
+> (2026-07-30).** All five probes (1, 4, 6, 7, 7b) **green** against the segregation
+> sandbox. The production baseline queries were also run, and every figure came back zero:
+> no payouts in the 30-day window, no writers over threshold, **no connected accounts at
+> all**. Migration 165 is applied (16:35:05, 2026-07-29) and the window is entirely
+> post-165, so the plumbing is right — the site is gated pre-launch and there is no money.
+> Three consequences, and they change this section's own instructions:
+>
+> - **`allocated_residual_alert_bps` and `payout_max_slices` keep their placeholders, and
+>   that is now a recorded state rather than an outstanding task.** They are blocked on the
+>   platform having payout volume, not on anyone doing work. Re-run
+>   `scripts/segregation-baseline.sql` once payouts flow. A zero here is NO MEASUREMENT, not
+>   perfect coverage — the same distinction `summariseResidual()` makes by returning null on
+>   an empty denominator.
+> - **§7.5 is moot for now**: zero connected accounts means no cross-border question. It
+>   must be re-checked if any non-GB writer onboards before the flip.
+> - **The §6.3 transition does not exist if the flip happens before launch.** That paragraph
+>   warns that a cycle spanning the flip mixes allocated and unallocated charges and spikes
+>   the residual as pre-flip earnings drain. With zero payouts and zero settlements there
+>   are no pre-flip earnings to drain, so flipping the flag *before the first real payout*
+>   removes the transition entirely and segregates every pound from the first one. **This
+>   inverts step 0's "measure, then flip" ordering** — the measurement cannot precede the
+>   money. The sequence that actually applies is: flip as soon as Stripe enables live, then
+>   take the baseline from the first 30 days of real volume.
+>
+> What the sandbox run bought:
 >
 > - **1** — allocation lands at the full charge amount, and `readAllocatedBalance()`'s
 >   expected shape is confirmed against the real object (a `transit_balance`, a type this
