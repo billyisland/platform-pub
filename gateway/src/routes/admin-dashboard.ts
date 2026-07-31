@@ -170,7 +170,11 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
                     COALESCE(SUM(amount_pence), 0) AS total_held_pence,
                     MIN(read_at) AS oldest_held_read_at
              FROM read_events
-             WHERE state = 'platform_settled' AND writer_payout_id IS NULL`
+             -- Unclaimed by EITHER cycle (migration 168). A publication read is
+             -- claimed on publication_payout_id, so checking only the writer's
+             -- column reports pooled money as still held.
+             WHERE state = 'platform_settled'
+               AND writer_payout_id IS NULL AND publication_payout_id IS NULL`
           ),
           pool.query(
             `SELECT
@@ -617,7 +621,9 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           `SELECT COALESCE(SUM(amount_pence), 0) AS total_held_pence,
                   MIN(read_at) AS oldest_held_read_at
            FROM read_events
-           WHERE state = 'platform_settled' AND writer_payout_id IS NULL`
+           -- Unclaimed by EITHER cycle (migration 168) — see the ops-overview twin.
+           WHERE state = 'platform_settled'
+             AND writer_payout_id IS NULL AND publication_payout_id IS NULL`
         ),
       ])
 

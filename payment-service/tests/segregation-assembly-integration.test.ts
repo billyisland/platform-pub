@@ -1113,6 +1113,13 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
       // Reversed: the transfer happened and was funded from somewhere, and the
       // reversal is a separate fact. Failed: nothing moved, so counting it would
       // report coverage for money that never left.
+      // Baseline first: RESIDUAL_SHARE_SQL is a GLOBAL 30-day aggregate, and the
+      // rolled-back transaction isolates our WRITES, not our READS — every
+      // committed child anyone else has ever created is still in the window. So
+      // assert the DELTA this test contributes, never the absolute total, which
+      // is only 1000 on a database where no payout has ever run.
+      const base = await residualWindow()
+
       const settlement = await insertSettlement(10000, 10000)
       const payoutId = await insertWriterPayout(1000)
       const allocated = await seedChild(payoutId, 'allocated', 600, settlement)
@@ -1125,9 +1132,14 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
       await setChildStatus(reversedResidual, 'reversed', '1 day')
       await setChildStatus(failedResidual, 'failed', '1 day')
 
-      const { total, residual: residualPence } = await residualWindow()
+      const after = await residualWindow()
+      const total = after.total - base.total
+      const residualPence = after.residual - base.residual
+
       expect(total).toBe(1000) // 600 + 200 + 200 — the failed 9000 is absent
       expect(residualPence).toBe(400)
+      // summariseResidual is pure, so feed it the deltas: the ratio this test
+      // poses is the property under test, not whatever the host DB's history is.
       expect(summariseResidual(total, residualPence, 2000)).toMatchObject({
         residualBps: 4000,
         breached: true,
@@ -1137,6 +1149,9 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
     it('is a ROLLING window — a child older than 30 days no longer counts', async () => {
       // The dial is a rolling-30-day share, so a historical spike must age out
       // rather than keeping the alert lit forever.
+      // Delta, not absolute — see the sibling test above for why.
+      const base = await residualWindow()
+
       const settlement = await insertSettlement(10000, 10000)
       const payoutId = await insertWriterPayout(1000)
       const recent = await seedChild(payoutId, 'allocated', 500, settlement)
@@ -1145,9 +1160,9 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
       await setChildStatus(recent, 'completed', '2 days')
       await setChildStatus(old, 'completed', '31 days')
 
-      const { total, residual } = await residualWindow()
-      expect(total).toBe(500)
-      expect(residual).toBe(0)
+      const after = await residualWindow()
+      expect(after.total - base.total).toBe(500)
+      expect(after.residual - base.residual).toBe(0)
     })
   })
 
@@ -1177,8 +1192,14 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
   }
 
   /**
-   * A child written directly, so its funding and status can be posed. The
-   * rolled-back transaction means the window queries above see only these rows.
+   * A child written directly, so its funding and status can be posed.
+   *
+   * The rolled-back transaction isolates these WRITES from other sessions — it
+   * does NOT narrow what the window queries READ. `RESIDUAL_SHARE_SQL` is a
+   * global 30-day aggregate and sees every committed child in the database, so
+   * its callers must compare a DELTA against a baseline taken before seeding.
+   * (The original comment here claimed the opposite; the assertions were absolute
+   * and went red the first time a real payout ran in a dev database, 2026-07-31.)
    */
   async function seedChild(
     parentId: string,

@@ -2395,21 +2395,52 @@ async function stepEleven(fx: Fixture): Promise<StepResult> {
     return { step: '11', title: 'Publication cycle', status: 'ok', observations, checks }
   }
 
-  // Same fabrication as step 3, one level down: inflate ONE split's child past
-  // its funding charge so Stripe deterministically rejects it. The draw row is
-  // again left at the original gross on purpose — Stripe must be the thing that
-  // refuses, not our own budget noticing first.
-  const doomedChild: any = children2[0]
+  // Same fabrication as step 3, one level down: inflate ONE split's child so
+  // Stripe deterministically rejects it. The draw row is left at the original
+  // gross on purpose — Stripe must be the thing that refuses, not our own budget
+  // noticing first.
+  //
+  // PREFER AN ALLOCATED CHILD, and mind the difference. An allocated child is
+  // bounded by its funding charge, so inflating past that amount is a true
+  // over-transfer (§3.3e) and is rejected deterministically. A RESIDUAL child has
+  // no charge behind it and is bounded only by the platform balance — inflating
+  // it by a fixed margin just makes a larger ordinary transfer, which SUCCEEDS.
+  // That is what happened on the first green run of this step: both children
+  // packed residual (arm 1 had drawn the pool's charges down), the fabrication
+  // used `settlement_id = NULL → 0 + 5000`, Stripe happily paid £50, and the arm
+  // reported a failure to fail. So: prefer allocated; fall back to residual only
+  // by exceeding the PLATFORM BALANCE, which is that funding's own terminal
+  // rejection; and record which mode was used, because the two prove different
+  // things about §3.3e even though both prove §3.3c.
+  const allocatedChild: any = children2.find((c: any) => c.settlement_id !== null)
+  const doomedChild: any = allocatedChild ?? children2[0]
   const doomedSplit = doomedChild.parent_id
-  const { rows: chargeRows } = await pool.query<{ amount_pence: number }>(
-    `SELECT amount_pence FROM tab_settlements WHERE id = $1`,
-    [doomedChild.settlement_id],
-  )
-  const inflated = (chargeRows[0]?.amount_pence ?? 0) + 5000
+
+  let inflated: number
+  let mode: string
+  if (allocatedChild) {
+    const { rows: chargeRows } = await pool.query<{ amount_pence: number }>(
+      `SELECT amount_pence FROM tab_settlements WHERE id = $1`,
+      [doomedChild.settlement_id],
+    )
+    inflated = (chargeRows[0]?.amount_pence ?? 0) + 5000
+    mode = 'over-transfer against the funding charge (§3.3e)'
+    observations.secondFabricationCharge = chargeRows[0]?.amount_pence ?? null
+  } else {
+    // Exceed the platform balance by a wide margin. Terminal, and honest about
+    // being a different rejection from the allocated one.
+    const balance = await platformBalancePence()
+    inflated = Math.max(balance, 0) + 100_000
+    mode = 'exceeds the platform balance — no allocated child was packed to over-draw'
+    observations.secondFabricationBalance = balance
+  }
+
   await pool.query(`UPDATE payout_transfers SET net_pence = $1 WHERE id = $2`, [inflated, doomedChild.id])
   observations.secondFabrication = {
     split: doomedSplit,
     child: doomedChild.id,
+    funding: doomedChild.settlement_id ? 'allocated' : 'platform_balance',
+    mode,
     originalNet: doomedChild.net_pence,
     inflatedNet: inflated,
   }

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict nYrJzLPzaYgm7xm5dPnVPuIoPhxoVQQzehGolbCJgw80E2QruBfyzNF646FfObp
+\restrict dPsPSMQsFDJykzrEVHU1GHVhbAyNC7ebpOIPgPzFREkoY8gvx9Bt4AEbj3hclI3
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2022,7 +2022,8 @@ CREATE TABLE public.read_events (
     publication_id uuid,
     allowance_consumed_pence integer DEFAULT 0 NOT NULL,
     chargeable_pence integer GENERATED ALWAYS AS ((amount_pence - allowance_consumed_pence)) STORED,
-    payout_transfer_id uuid
+    payout_transfer_id uuid,
+    publication_payout_id uuid
 );
 
 
@@ -2045,6 +2046,13 @@ COMMENT ON COLUMN public.read_events.chargeable_pence IS 'What the reader owes f
 --
 
 COMMENT ON COLUMN public.read_events.payout_transfer_id IS 'Which payout_transfers child slice funds this read''s earning unit. Parent claim stays writer_payout_id; this is the per-child grain that makes one Stripe rejection out of N an ordinary event (migration 165).';
+
+
+--
+-- Name: COLUMN read_events.publication_payout_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.read_events.publication_payout_id IS 'The publication payout that claimed this read. The publication twin of writer_payout_id: the two cycles are exact complements, and a read is claimed by exactly one of them. Never reuse writer_payout_id for a publication payout — its FK points at writer_payouts and the UPDATE raises 23503 (migration 168).';
 
 
 --
@@ -4981,6 +4989,13 @@ CREATE INDEX idx_read_events_payout_transfer ON public.read_events USING btree (
 
 
 --
+-- Name: idx_read_events_publication_payout; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_read_events_publication_payout ON public.read_events USING btree (publication_payout_id) WHERE (publication_payout_id IS NOT NULL);
+
+
+--
 -- Name: idx_read_events_reader_article; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6356,6 +6371,14 @@ ALTER TABLE ONLY public.feeds
 
 
 --
+-- Name: read_events fk_read_events_publication_payout; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.read_events
+    ADD CONSTRAINT fk_read_events_publication_payout FOREIGN KEY (publication_payout_id) REFERENCES public.publication_payouts(id) ON DELETE SET NULL;
+
+
+--
 -- Name: read_events fk_read_events_tab_settlement; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7447,7 +7470,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict nYrJzLPzaYgm7xm5dPnVPuIoPhxoVQQzehGolbCJgw80E2QruBfyzNF646FfObp
+\unrestrict dPsPSMQsFDJykzrEVHU1GHVhbAyNC7ebpOIPgPzFREkoY8gvx9Bt4AEbj3hclI3
 
 
 --
@@ -7619,4 +7642,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('164_read_chargeable_pence.sql'),
     ('165_funds_segregation.sql'),
     ('166_allocated_draws_comment_sign.sql'),
-    ('167_publication_split_repay.sql');
+    ('167_publication_split_repay.sql'),
+    ('168_read_events_publication_payout_id.sql');

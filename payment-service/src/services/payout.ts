@@ -109,6 +109,51 @@ interface SplitResult {
  * Exported so the integration test executes THIS statement rather than a copy
  * of it, which is what stops the test and production drifting apart.
  */
+/**
+ * The publication pool's claim over its reads — exported so the DB-backed test
+ * executes THIS TEXT rather than a copy of it.
+ *
+ * THE COLUMN IS `publication_payout_id`, and getting it wrong is what made this
+ * entire cycle a silent no-op from the day it was written until migration 168.
+ * `$1` is a `publication_payouts` id; `writer_payout_id`'s FK points at
+ * `writer_payouts`, so the old form raised `23503` on every claim and rolled the
+ * whole reserve transaction back. `runPublicationPayoutCycle` catches
+ * per-publication errors and logs, so the only symptom was that publications were
+ * never paid — no alert, no failure, nothing to notice.
+ *
+ * It survived because NOTHING in the repo drove this cycle against a real
+ * database: the unit tests exercise `computePublicationSplits` (pure) and the
+ * ordering constants (SQL, but SELECTs), and neither can see a constraint. The
+ * paired control in the DB test runs the pre-fix statement and asserts it still
+ * raises 23503 — the fix is only meaningful if the bug it fixes is real.
+ *
+ * `tab_settlement_id` rides along for §3.4: a split's net is a bps share of a
+ * pool spanning many charges, so it has no single natural funding charge — the
+ * pool's contributing settlements become the packer's PREFERENCE SET instead.
+ */
+export const PUBLICATION_CLAIM_READS_SQL = `
+  UPDATE read_events
+     SET publication_payout_id = $1
+   WHERE read_events.publication_id = $2
+     AND read_events.state = 'platform_settled'
+     AND read_events.publication_payout_id IS NULL
+  RETURNING chargeable_pence, tab_settlement_id`
+
+/**
+ * Advance the reads a completed publication payout has now paid for.
+ *
+ * Keyed on `publication_payout_id` for the same reason as the claim, and
+ * additionally state-filtered: a read the chargeback planner flipped to
+ * `charged_back` mid-flight has already been ledger-reversed as if paid, and must
+ * keep its terminal state.
+ */
+export const PUBLICATION_FINALISE_READS_SQL = `
+  UPDATE read_events
+     SET state = 'writer_paid', state_updated_at = now()
+   WHERE read_events.publication_id = $1
+     AND read_events.publication_payout_id = $2
+     AND read_events.state = 'platform_settled'`
+
 export const PUBLICATION_PAYOUT_COMPLETE_SQL = `
   UPDATE publication_payouts pp
      SET status = 'completed', completed_at = now()
@@ -1762,7 +1807,11 @@ class PayoutService {
          FROM read_events r
          WHERE r.publication_id IS NOT NULL
            AND r.state = 'platform_settled'
-           AND r.writer_payout_id IS NULL
+           -- publication_payout_id, NEVER writer_payout_id (migration 168): the
+           -- two cycles are exact complements and claim into two different
+           -- columns. Reusing the writer's raised 23503 on every claim, so this
+           -- cycle could never pay a read-funded pool at all.
+           AND r.publication_payout_id IS NULL
          GROUP BY r.publication_id
        ),
        subs AS (
@@ -1910,12 +1959,7 @@ class PayoutService {
         // of a pool spanning many charges, so it has no single natural funding
         // charge — the pool's contributing settlements become the packer's
         // PREFERENCE SET instead.
-        `UPDATE read_events
-         SET writer_payout_id = $1
-         WHERE read_events.publication_id = $2
-           AND read_events.state = 'platform_settled'
-           AND read_events.writer_payout_id IS NULL
-         RETURNING chargeable_pence, tab_settlement_id`,
+        PUBLICATION_CLAIM_READS_SQL,
         [payoutId, publicationId],
       )
       const lockedGross = claimedReads.reduce((s, r) => s + r.chargeable_pence, 0)
@@ -1973,16 +2017,16 @@ class PayoutService {
 
       if (articleIds.length > 0) {
         const { rows: artRows } = await client.query<{ article_id: string; net_pence: string }>(
-          // Keyed on the CLAIMED set (writer_payout_id = this payout) so the
-          // override base can't drift from what the pool is distributing. This
-          // subsumes the old publication_id filter: an article that joined the
-          // publication after accruing personal (publication_id NULL) reads
+          // Keyed on the CLAIMED set (publication_payout_id = this payout) so
+          // the override base can't drift from what the pool is distributing.
+          // This subsumes the old publication_id filter: an article that joined
+          // the publication after accruing personal (publication_id NULL) reads
           // never has those reads claimed here — the writer cycle pays them.
           `SELECT r.article_id,
                   COALESCE(SUM(${readNetSql('r.chargeable_pence', '$2')}), 0) AS net_pence
            FROM read_events r
            WHERE r.article_id = ANY($1)
-             AND r.writer_payout_id = $3
+             AND r.publication_payout_id = $3
            GROUP BY r.article_id`,
           [articleIds, feeBps, payoutId],
         )
@@ -2458,14 +2502,7 @@ class PayoutService {
     publicationId: string,
   ): Promise<void> {
     await withTransaction(async (client) => {
-      await client.query(
-        `UPDATE read_events
-         SET state = 'writer_paid', state_updated_at = now()
-         WHERE read_events.publication_id = $1
-           AND read_events.writer_payout_id = $2
-           AND read_events.state = 'platform_settled'`,
-        [publicationId, payoutId],
-      )
+      await client.query(PUBLICATION_FINALISE_READS_SQL, [publicationId, payoutId])
 
       // Complete the parent off the create response when no split is left
       // 'pending'. The rule, and the zombie it fixes, live on the constant.
@@ -2644,9 +2681,12 @@ class PayoutService {
               // original pack found them: the reads and subscription earnings
               // claimed under this payout. A split has no charge of its own, so
               // the preference is the whole set (see packPublicationSplits).
+              // Both arms key on publication_payout_id now (migration 168). The
+              // subscription arm always did — that asymmetry was the tell that
+              // the reads arm was borrowing the wrong column.
               `SELECT DISTINCT tab_settlement_id AS id
                  FROM read_events
-                WHERE writer_payout_id = $1 AND tab_settlement_id IS NOT NULL
+                WHERE publication_payout_id = $1 AND tab_settlement_id IS NOT NULL
                 UNION
                SELECT DISTINCT tab_settlement_id AS id
                  FROM subscription_events
@@ -4058,10 +4098,15 @@ class PayoutService {
          FROM accounts a
         WHERE a.stripe_connect_id IS NOT NULL
           AND (
-            -- (1) writer read earnings
+            -- (1) writer read earnings. The publication_id IS NULL filter is
+            -- there because the two cycles are exact complements: a publication
+            -- read is the POOL's to pay, never this writer's, and since
+            -- migration 168 it is claimed on publication_payout_id — so without
+            -- this filter a paid publication read matches here forever.
             EXISTS (SELECT 1 FROM read_events re
                      WHERE re.writer_id = a.id
                        AND re.state = 'platform_settled'
+                       AND re.publication_id IS NULL
                        AND re.writer_payout_id IS NULL)
             -- (2) publication standing-member / contributor splits
             OR EXISTS (SELECT 1 FROM publication_payout_splits ps

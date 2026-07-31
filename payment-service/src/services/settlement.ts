@@ -1065,8 +1065,10 @@ class SettlementService {
         writer_id: string;
         publication_id: string | null;
         writer_payout_id: string | null;
+        publication_payout_id: string | null;
       }>(
-        `SELECT id, chargeable_pence, state, writer_id, publication_id, writer_payout_id
+        `SELECT id, chargeable_pence, state, writer_id, publication_id,
+                writer_payout_id, publication_payout_id
          FROM read_events
          WHERE tab_settlement_id = $1
            AND state IN ('platform_settled', 'writer_paid')`,
@@ -1077,16 +1079,18 @@ class SettlementService {
       // publication payout's pool (gross reads + subscription leg, §1.3) + its
       // PAID splits (initiated|completed —
       // money that actually left the platform) so the planner can reverse each
-      // split recipient proportionally. A publication read's writer_payout_id is
-      // a publication_payouts.id (the column is overloaded across payout kinds;
-      // F2 keeps publication reads out of the individual writer cycle, so it is
-      // never a writer_payouts.id here). NULL ⇒ pool not yet paid out → no split
-      // reversal (charged back on the reader side only).
+      // split recipient proportionally. A publication read's paying payout is on
+      // `publication_payout_id` — its own column since migration 168. It used to
+      // be read off `writer_payout_id`, on the reasoning that the column was
+      // "overloaded across payout kinds"; it never was, because that column's FK
+      // points at `writer_payouts`, so the claim raised 23503 and the value this
+      // read was ALWAYS null. NULL ⇒ pool not yet paid out → no split reversal
+      // (charged back on the reader side only).
       const pubPayoutIds = [
         ...new Set(
           reads
-            .filter((r) => r.publication_id !== null && r.writer_payout_id !== null)
-            .map((r) => r.writer_payout_id as string),
+            .filter((r) => r.publication_id !== null && r.publication_payout_id !== null)
+            .map((r) => r.publication_payout_id as string),
         ),
       ];
       const poolByPayout = new Map<string, number>();
@@ -1160,12 +1164,12 @@ class SettlementService {
         writerId: r.writer_id,
         isPublication: r.publication_id !== null,
         publicationPoolPence:
-          r.writer_payout_id !== null
-            ? poolByPayout.get(r.writer_payout_id)
+          r.publication_payout_id !== null
+            ? poolByPayout.get(r.publication_payout_id)
             : undefined,
         publicationSplits:
-          r.writer_payout_id !== null
-            ? splitsByPayout.get(r.writer_payout_id)
+          r.publication_payout_id !== null
+            ? splitsByPayout.get(r.publication_payout_id)
             : undefined,
         // M3: an individual read claimed by a still-pending writer payout
         // (platform_settled + writer_payout_id set; completion would have flipped
