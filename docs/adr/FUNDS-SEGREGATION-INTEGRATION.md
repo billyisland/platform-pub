@@ -1440,7 +1440,12 @@ in this repo can reach.
   conformance batteries. Nor is the publication reserve driven end-to-end with the flag ON:
   `packPublicationSplits` is exercised through its parts, not through
   `runPublicationPayoutCycle`.
-- **§5 step 0 was not run, and the design consumed placeholders in its place.**
+- **§5 step 0 was not run *at build time*, and the design consumed placeholders in its
+  place.** *(Both halves have since RUN — probes green 2026-07-30, production baseline run
+  the same day and returning nothing to measure; the sequence itself reached steps 1 and 13
+  on 2026-07-31. See §5's banners, which supersede the "was not run" framing below. The two
+  dials still hold their placeholders, but now because prod has no payout volume to measure
+  rather than because nobody looked — a recorded state, not an outstanding task.)*
   `allocated_residual_alert_bps` ships at 2000 as an explicit placeholder and WILL fire
   spuriously; `payout_max_slices` ships at 20 as a guess. Both are dials, so both are an
   UPDATE — but §3.3d's warning stands: a threshold set without the baseline gets muted, and
