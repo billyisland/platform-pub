@@ -23,6 +23,81 @@ starts.
 
 ## Progress
 
+- **2026-07-31 (§5 steps 4–9: the refund/reversal/edge-funding family, written and unrun)** —
+  the last seven sequence steps are now code. **They have never touched Stripe** — the
+  sandbox key was cycled after the same day's run, and a step that has not run is a
+  hypothesis, not evidence. 113 checks; `tsc --strict` clean; the four cross-service dynamic
+  imports verified to resolve, including the gateway one step 8 needs. What remains is one
+  sandbox session.
+  - **The family differs in shape from 2/3/10/11, and the machinery follows from that.**
+    Those steps call a cycle in the harness's own process and read the result when it
+    returns. Every step here asks *Stripe* to refund or reverse something; Stripe emits an
+    event; `stripe listen` forwards it to the **container**; and the container's handler is
+    what writes the row being asserted. So nothing may read once (a single eager read
+    reports "the handler never ran" for a handler that runs a second later — trap (b), from
+    the other side), and anything that is not a database row has to be reached for
+    deliberately.
+    - `pollUntil` — one home for the waiting, returning what it actually reached rather
+      than throwing, because a timeout is itself the finding and a step that threw would
+      lose every other assertion it was about to make.
+    - `drawableRemaining` — **production's own `lockFundingSources`**, run inside a
+      transaction that is then rolled back. The claims "a refunded charge stops being
+      drawable" and "a reversal restores the remainder" are properties of that specific
+      statement — its `GREATEST(0, …)`, its `allocated_pence IS NOT NULL` guard, its `> 0`
+      filter — and a hand-written SELECT here would agree with itself forever.
+    - `paymentLogsSince` — `manual_review_required` is an alertable **log line with no
+      table behind it**, so this greps the container and reports UNKNOWN with the command
+      when docker is unreachable. A marker that cannot be read is not a marker that did not
+      fire.
+    - `runCycleForNewPayout` — the guard against the worst outcome available here. Each of
+      steps 5–8 runs a cycle then asserts about "the payout"; if the cycle skipped the
+      writer, "the writer's latest payout" is a **completed payout from an earlier step**
+      and every downstream assertion passes against it. Not a false alarm — a false
+      clearance. The prior id is taken first and the new one must differ.
+  - **Two findings without running anything**, both recorded in ADR §5 beside the steps
+    they belong to. (a) **§5.6's `manual_review_required` claim does not match the code**:
+    `webhook.ts` emits the marker from the PARTIAL arm of `charge.refunded` only, and step
+    6 is a full refund, so it takes `reverseSettlement` and emits nothing. Either the ADR
+    means a partial refund post-transfer (step 5 already covers that) or a full refund of a
+    paid-out charge deserves its own marker. The step states the claim as written and
+    expects to fail it; **settle the question before patching either side**. (b) **§5.8's
+    "drive a `subscription-convert` credit-back" is unbuildable as written**: that route is
+    503-gated *and* its charge leg is a documented phantom — a bare `subscription_events`
+    insert with no tab debit, no `subscription_earning`, no writer ledger entry — so it
+    mints nothing to pay out, flag on or off. Step 8 drives the live credit-funded branch
+    instead (`logSubscriptionCharge` with a pre-paid credit; post-charge balance ≤ 0 ⇒
+    `settled_at` stamped at charge time, `tab_settlement_id` NULL forever), which is what
+    the residual actually carries in production.
+  - **What each step's own header argues, in one line.** 4: pre-transfer is the whole
+    condition, and the redelivery arm drives the **out-of-order smaller cumulative figure**
+    — the only case a bare assignment fails, where the same-value replay would pass. 5: the
+    load-bearing half is not the refund but the cycle **after** it, packing around the
+    shortfall rather than building a slice Stripe rejects. 6: the PAID *and* EARNED sides
+    both reverse, which is what tells it from 4. 7: the remainder grows back by the **NET,
+    not net+fee** — the original draw was gross, the compensating one is net, so our budget
+    stays one fee short of what Stripe restored; safe (we under-draw) but real, and
+    asserted exactly rather than glossed. 7b: **the sibling is the test** — a handler that
+    reversed the parent, or resolved by `writer_payouts.stripe_transfer_id`, passes a
+    single-child version and is catastrophic in production; reversed in two stages, because
+    a single reversal cannot distinguish cumulative from per-reversal. 8: the only fixture
+    that is not a read. 9: the assertion is the **pair** (`allocation_synced_at IS NOT NULL
+    AND allocated_pence = 0`), since 0 and not-yet-stamped look alike, plus the card brand
+    itself as the control.
+  - **Three assertions are loose on purpose and say so in their own headers**, because
+    guessing tightly would have been guessing: step 6's platform-balance figure (a fact
+    about Stripe, and this harness's methodology is that facts about Stripe are *measured*
+    — the direction is asserted and every component recorded, so the first green run can
+    tighten it into an equality with evidence behind it), step 6's marker claim above, and
+    step 9's card token (two ineligible brands are tried, since a sandbox that declines JCB
+    outright says nothing about allocation).
+  - Two small refactors carry the family: `mintReaders` takes a payment-method token (step
+    9 needs an ineligible brand; every other caller still wants Visa, which is *why* steps
+    1–8 carry allocation at all), and `accrueReadsFor` splits out of `accrueReads` so step
+    9 can accrue for a reader deliberately outside the rotating set. Plus one real fix to
+    existing machinery: **`readPayout` was not selecting `reversed_pence`**, which steps 7
+    and 7b poll on — a column a caller reads and the query does not return fails silently in
+    exactly one direction, never as an error.
+
 - **2026-07-31 (the sequence runs: steps 2, 3 and 10 GREEN — and step 11 finds that the
   publication payout cycle has never worked)** — the four steps written earlier the same
   day were driven against the segregation sandbox. **Every defect the run surfaced in the

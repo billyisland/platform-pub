@@ -1093,6 +1093,15 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
    fires; the reads stay payable; the next payout packs around the shortfall rather than
    wedging.
 6. Refund post-transfer → partial platform-balance draw; `manual_review_required` fires.
+
+   **The marker half of this claim is questioned (2026-07-31, from writing the step).**
+   `webhook.ts` emits `manual_review_required` from exactly one arm of `charge.refunded`
+   — the PARTIAL one — and step 6 is a FULL refund, so it takes the `reverseSettlement`
+   path and emits nothing. Either this step means a *partial* refund post-transfer (in
+   which case step 5 already covers the marker and this line is wrong), or a full refund
+   of an already-paid-out charge deserves a marker of its own and the CODE is wrong. The
+   harness states the claim as written and lets the verdict decide; settle the question
+   before patching either side.
 7. Transfer reversal (with `refund_application_fee=true`) → funds return to allocated
    state; our `reversal` draw row restores the remainder; ledger reversing entries agree.
 7b. **Reversal of one child among several** → the handler resolves via
@@ -1104,6 +1113,16 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
 8. **Credit-funded earning** — drive a `subscription-convert` credit-back, then a payout
    → the earning packs to `funding = 'platform_balance'`, the transfer carries no
    `source_transaction`, and the residual metric moves.
+
+   **`subscription-convert` cannot drive this, and the harness uses the live branch
+   instead (2026-07-31).** That route is 503-gated behind `SUBSCRIPTION_CONVERT_ENABLED`
+   and — the part that matters here — its charge leg is a documented phantom: a bare
+   `subscription_events` insert with no tab debit, no `subscription_earning` and no writer
+   ledger entry. It therefore mints no earning to pay out, so it could not produce this
+   fixture even with the flag on. What the residual actually has to carry in production is
+   `logSubscriptionCharge`'s credit-funded branch (post-charge balance ≤ 0 ⇒ `settled_at`
+   stamped at charge time, `tab_settlement_id` NULL forever), and that is what step 8
+   drives — through production's own two functions, in the convert route's own order.
 9. **Ineligible brand** — settle with a JCB or Diners test card → `allocated_pence` syncs
    to 0, the charge is never drawn on, and the payout routes elsewhere with no error.
 10. Crash-resume: kill the worker mid-child-sequence; restart; assert idempotent
