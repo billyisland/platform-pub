@@ -23,6 +23,58 @@ starts.
 
 ## Progress
 
+- **2026-07-31 (four more §5 sequence steps, written and unrun — and one of them
+  documents what it refuses to fake)** — `scripts/segregation-sequence.ts` gains steps
+  **2** (multi-child writer payout), **3** (forced over-transfer), **10** (crash-resume)
+  and **11** (publication cycle). **No assertion in any of them has executed**: the
+  sandbox key was cycled after the 07-31 drive, so this is a build, not a result. What
+  *was* verified is narrow and worth stating precisely — it typechecks, and a runtime probe
+  confirmed every dynamic import and every private method the steps drive resolves
+  (`reserveWriterPayout`, `completeWriterPayout`, `resumePendingWriterPayouts`,
+  `reservePublicationPayout`, `processPublicationSplits`, `finalisePublicationPayout`,
+  `reconcileLedger`, `syncAllocations`, `allocatedTransferParams`). A typo in a private
+  method name is `undefined` at runtime and would crash mid-run against a live sandbox
+  three steps in, so that probe is the one check worth having before the key exists.
+  - **The assertions are three-sided on purpose.** Our DB says N children completed;
+    Stripe says N transfers exist with those amounts, sources and fees; the ledger says N
+    entries sum to the parent. A step that checked only the first would pass just as well
+    against a service that never called Stripe — which is exactly the gap the mock
+    batteries leave, since `executePendingChildren`'s Stripe half drives the module-level
+    `pool` and is unreachable from a rolled-back transaction.
+  - **Steps 3, 10 and 11 need a state no public entry point exposes** — a committed pack
+    with nothing yet transferred, which in production only a crash produces. They drive
+    production's own `reserve*` methods rather than hand-writing a payout row, so the
+    fabrication is one column of one already-committed child (`net_pence` inflated past its
+    funding charge). The `allocated_draws` row is left stale **deliberately**: §3.3e's claim
+    is about *Stripe's* enforcement, so our own budget must not be the thing that notices
+    first. The sibling is what makes it a test rather than a demonstration — a handler that
+    failed the whole parent, released every unit or deleted every draw would pass a
+    single-child version and be catastrophically wrong.
+  - **Step 10 refuses to reconstruct the mid-child-sequence crash, and the reason is the
+    durable part.** A faithful reconstruction must DELETE the completed child's ledger entry
+    (in a real crash it was never posted — it rides the flip's transaction), and the ledger
+    is append-only at the database level, so the DELETE is refused. Reconstructing it
+    *without* the delete is unfaithful in the one direction that matters: the resumed flip
+    posts a second entry and the step reports a double-credit no crash can produce. **A
+    fabricated state that misrepresents the system is worse than an unrun check.** So step
+    10 pins the mechanism instead — the `status = 'pending'` selection, and the
+    `xfer-<childId>` key put to Stripe directly both ways (same params → same transfer;
+    different params → `idempotency_error`, the 2026-07-15 publication-split lesson) — and
+    says in the header what it is not covering and why.
+  - **Two prerequisites, both failing loudly rather than silently.** The flag must be set in
+    the **shell**, not merely the container (these steps run the cycle in their own process;
+    with it off, `completeWriterPayout` takes the aggregate path and every child-level check
+    reports 0 against 2 — a step that looks broken when only the shell is wrong, so each
+    refuses up front). And step 11's failed-split arm needs a **second onboarded sandbox
+    account**: with one, the payout has a single split whose failure correctly fails the
+    parent outright, so the property has no sibling to hold of — arms 1–2 run, arm 3 reports
+    UNKNOWN naming the prerequisite rather than passing vacuously.
+  - Also: steps 2/3/10 each accrue their own claimable position (`ensureClaimable`) instead
+    of inheriting one, since step 2 pays out what steps 3 and 10 would need; and step 11 runs
+    last unconditionally, because it re-homes the sandbox connect ids onto the publication's
+    members and `accounts.stripe_connect_id` is UNIQUE. → CONSOLIDATED-TODO §11 /
+    `FUNDS-SEGREGATION-INTEGRATION.md` §5.
+
 - **2026-07-31 (the sandbox drive: two P0s in the settlement path, and neither was
   reachable from a mock)** — the §5 sequence was started against a real segregation
   Sandbox with `STRIPE_ALLOCATED_FUNDS=1` and the shipped payment-service. It found two

@@ -952,6 +952,53 @@ cost and two of them produce numbers the design needs as inputs.
 > repo can currently reach. Step 12 is additionally blocked on the Dial-A tribute rework
 > — driving it today would test a model already scheduled for replacement.
 
+> **STEPS 2, 3, 10 AND 11 ARE WRITTEN AND UNRUN (2026-07-31).** They are in
+> `scripts/segregation-sequence.ts`, they typecheck, and every dynamic import and private
+> method they drive was verified to resolve at runtime — **and not one of their assertions
+> has ever executed.** Nothing below is a result; it is a description of what will be
+> measured once a sandbox key exists. Read this paragraph as the *plan*, and the results
+> block above as the only evidence.
+>
+> - **2** — one child per drawn charge; Stripe's own copy of each transfer checked for
+>   `amount` / `destination` / `source_transaction` / `application_fee_amount`; the platform
+>   balance rising by exactly Σ fee; one `allocated_draws` row per allocated child at GROSS;
+>   one ledger entry per completed child at that child's net, reffed at the PARENT; the
+>   parent restated to Σ completed children; reconcile-ledger gaining no violation (the §3.6
+>   `ledger_orphans`-tolerates-N claim). The un-onboarded second writer is the negative
+>   control: skipped, never failing the batch.
+> - **3** — the child failed, its draw DELETEd, exactly its units released with both pointers
+>   nulled while the sibling's stay claimed and advance to `writer_paid`; the parent completing
+>   with the smaller restated amount and a `failed_reason`; ledger parity at the restated figure.
+> - **10** — the crash state is genuine (`reserveWriterPayout` committed, nothing sent, no
+>   ledger entry yet), then resume, then **resume again** as the double-delivery control, then
+>   the `xfer-<childId>` key put to Stripe directly both ways: same params → same transfer,
+>   different params → `idempotency_error`.
+> - **11** — pool spanning ≥2 charges; each split packing to exactly one child drawn from the
+>   pool's own charges; `Σ(child fee) ≤ platform_fee_pence` with the shortfall bounded at one
+>   penny per split; the ledger at the SPLIT grain (`ledger_publication_distribution` filters
+>   that ref_table, so an entry re-pointed at the payout or the child empties the view while
+>   every total still balances); and a deliberately failed split completing its parent.
+>
+> **Three things whoever runs them must know.** (1) The flag must be set **in the running
+> shell**, not just the container — these steps import `payoutService` and run the cycle in
+> their own process; each refuses up front rather than reporting a wall of zeroes. (2) Step
+> 11's failed-split arm needs a **second onboarded connected account** (`--destination
+> acct_A,acct_B`); with one, the payout has a single split and its failure correctly fails the
+> parent outright, so the property has no sibling to hold of. Arms 1–2 still run; arm 3 reports
+> UNKNOWN. (3) Step 11 runs **last or alone** — it re-homes the connect ids onto the
+> publication's members and the column is UNIQUE.
+>
+> **What step 10 deliberately does not do, because the database refuses it.** The other crash
+> position — one child completed, the next still pending — cannot be reconstructed by hand: a
+> faithful reconstruction must DELETE the completed child's ledger entry (in a real crash it
+> was never posted, riding the same transaction as the flip), and the ledger is append-only at
+> the DB level. Reconstructing it *without* the delete is unfaithful in the one direction that
+> matters — the resumed flip posts a second entry and the step reports a double-credit no crash
+> can produce. So step 10 pins the mechanism instead (`executePendingChildren` selects
+> `status = 'pending'` only; the row-stable key dedupes) and says so. **A fabricated state that
+> misrepresents the system is worse than an unrun check**, and a step 10b with a real
+> fault-injection seam is the only honest way to reach that interleaving.
+
 The list:
 
 - Run steps 1, 4, 6, 7 and **7b** below against the sandbox with no §3.3 code at all.
