@@ -44,6 +44,29 @@ import logger from "../lib/logger.js";
 
 const STRIPE_MIN_CHARGE_PENCE = 30;
 
+/**
+ * The reserve-time guard: is a settlement already IN FLIGHT on this tab?
+ *
+ * Exported so the DB-backed test runs THIS statement rather than a copy of it —
+ * a re-typed predicate in a test pins the copy and lets production drift.
+ *
+ * Two arms, and the second is the one that was missing. A settlement leaves
+ * `pending` when Stripe returns, but the tab's balance is not reduced until
+ * confirmSettlement runs on the payment_intent.succeeded webhook. In that gap
+ * the tab still reads full, so a `pending`-only guard admitted a second
+ * settlement and charged the reader twice (measured 2026-07-31 — see the note
+ * at the call site). `stripe_charge_id IS NULL` is the same marker
+ * reconcileSettlements uses for "charged but not yet applied", which is also
+ * what bounds this: that sweep releases anything stuck here.
+ */
+export const SETTLEMENT_IN_FLIGHT_SQL = `
+  SELECT id, status
+    FROM tab_settlements
+   WHERE tab_id = $1
+     AND (status = 'pending'
+          OR (status = 'completed' AND stripe_charge_id IS NULL))
+   LIMIT 1`;
+
 class SettlementService {
   private stripe: Stripe;
 
@@ -215,15 +238,42 @@ class SettlementService {
         );
       }
 
-      // Check for existing pending settlement on this tab
-      const existingPending = await client.query<{ id: string }>(
-        `SELECT id FROM tab_settlements WHERE tab_id = $1 AND status = 'pending'`,
+      // Check for a settlement already IN FLIGHT on this tab.
+      //
+      // "In flight" is wider than `pending`, and the difference double-charged a
+      // reader. The tab's balance is not reduced at reservation, nor when Stripe
+      // returns — it moves only at confirmSettlement, which runs on the
+      // payment_intent.succeeded WEBHOOK. But the row leaves `pending` the
+      // instant the charge returns (completeSettlement). So between those two
+      // moments a settlement has taken the reader's money while the tab still
+      // shows the full balance and the old `status = 'pending'` guard let a
+      // second one straight through.
+      //
+      // Measured 2026-07-31 against the segregation sandbox: settlement A
+      // reserved at 11:01:11.324 and correctly turned away three concurrent
+      // attempts; A completed at 11:01:12.787; B reserved at 11:01:12.845 —
+      // 58ms later — and A only confirmed at 11:01:13.163. The reader was
+      // charged twice for one £14 debt and the tab went to −1400 (legal, as
+      // pre-paid credit, which is why nothing alerted). A third settlement
+      // reserved 1.3s after that, so it cascades.
+      //
+      // `stripe_charge_id IS NULL` is the established marker for "charged but
+      // not yet applied to the tab" — reconcileSettlements selects on exactly
+      // that pair to recover a settlement whose webhook never arrived, so a tab
+      // blocked here is released by that sweep at the latest, never frozen. A
+      // delayed collection is the safe direction; a duplicate charge is not.
+      const inFlight = await client.query<{ id: string; status: string }>(
+        SETTLEMENT_IN_FLIGHT_SQL,
         [tabId],
       );
-      if (existingPending.rowCount! > 0) {
+      if (inFlight.rowCount! > 0) {
         logger.info(
-          { tabId, existingSettlementId: existingPending.rows[0].id },
-          "Pending settlement already exists — skipping",
+          {
+            tabId,
+            existingSettlementId: inFlight.rows[0].id,
+            existingStatus: inFlight.rows[0].status,
+          },
+          "Settlement already in flight on this tab — skipping",
         );
         return null;
       }
@@ -266,6 +316,37 @@ class SettlementService {
   // flip status to 'completed'. Safe to retry — same key deduplicates on Stripe.
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // resolveDefaultPaymentMethod — the card the reader attached, by id.
+  //
+  // A PaymentIntent does NOT inherit `invoice_settings.default_payment_method`.
+  // That field governs INVOICES and SUBSCRIPTIONS; a PI confirmed with only a
+  // `customer` set has no payment method at all, and Stripe rejects it with
+  // `payment_intent_unexpected_state` — a StripeInvalidRequestError, which
+  // isTerminalChargeError correctly classes as TERMINAL. So the settlement was
+  // marked failed and the reader's card flagged as needing action, on every
+  // attempt, for a card that was never anything but fine.
+  //
+  // Measured against the segregation sandbox 2026-07-31 with a paired control:
+  // the identical create WITHOUT `payment_method` returns that error and WITH it
+  // returns a succeeded PI. Nothing in the mocked suite could see it — the mock
+  // answers the call, and Stripe is the only thing that knows this rule.
+  //
+  // Reading it back per settlement (rather than storing the id on the account)
+  // keeps Stripe the single source of truth for which card is current: a reader
+  // who re-attaches or updates a card changes it there, and a stored copy would
+  // silently go stale and charge a dead card.
+  // ---------------------------------------------------------------------------
+
+  private async resolveDefaultPaymentMethod(
+    stripeCustomerId: string,
+  ): Promise<string | null> {
+    const customer = await this.stripe.customers.retrieve(stripeCustomerId);
+    if (customer.deleted) return null;
+    const pm = customer.invoice_settings?.default_payment_method ?? null;
+    return typeof pm === "string" ? pm : (pm?.id ?? null);
+  }
+
   private async completeSettlement(
     settlementId: string,
     amountPence: number,
@@ -274,6 +355,38 @@ class SettlementService {
     tabId: string,
     triggerType: "threshold" | "monthly_fallback",
   ): Promise<void> {
+    // Resolved OUTSIDE executeStripeIdempotent on purpose: a transient failure
+    // here must propagate so resumePendingSettlements retries the row under its
+    // stable key, exactly as an ambiguous create would. Only a customer that
+    // resolves to no usable card is terminal, and that is handled below.
+    const paymentMethodId =
+      await this.resolveDefaultPaymentMethod(stripeCustomerId);
+
+    if (!paymentMethodId) {
+      // Genuinely a card problem — the reader has a customer record but no
+      // default card on it. Same disposition as a decline: release the pending
+      // guard so the tab unfreezes, and flag for re-attach.
+      await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE tab_settlements
+             SET status = 'failed', failure_reason = $1
+             WHERE id = $2 AND status = 'pending'`,
+          ["no_default_payment_method", settlementId],
+        );
+        await client.query(
+          `UPDATE accounts
+             SET card_action_required_at = now(), updated_at = now()
+             WHERE id = $1`,
+          [readerId],
+        );
+      });
+      logger.warn(
+        { settlementId, readerId, stripeCustomerId },
+        "Settlement skipped — customer has no default payment method, card-action flagged",
+      );
+      return;
+    }
+
     const outcome = await executeStripeIdempotent(
       "settlement",
       `settlement-${settlementId}`,
@@ -292,6 +405,10 @@ class SettlementService {
             // packer routes around identically to a not-yet-settled one. NEVER
             // switch this to automatic_payment_methods.
             payment_method_types: ["card"],
+            // The reader's attached card, by id. A PI does not inherit the
+            // customer's invoice_settings default — see
+            // resolveDefaultPaymentMethod above for what omitting this cost.
+            payment_method: paymentMethodId,
             confirm: true,
             off_session: true,
             // Lock this charge's funds into the allocated state (flag on only).
@@ -593,6 +710,11 @@ class SettlementService {
       // balance at reservation (reserveSettlement: actualAmount = min(lockedBalance,
       // expected)), so an over-settlement only arises if the balance dropped
       // between reserve and confirm (e.g. an interleaved subscription credit-back).
+      // It USED to arise a second way, and that one was a duplicate charge rather
+      // than an accounting edge: a second settlement reserving in the window
+      // between the first one's Stripe response and its webhook confirmation,
+      // when the tab still read full. reserveSettlement's in-flight guard closes
+      // it — see the note there (measured 2026-07-31).
       // Flooring the column at 0 while the ledger credits the full amount would
       // break −SUM(ledger) == balance_pence permanently (the Phase-3 "agree to
       // the penny" guarantee); letting it go negative is correct (negative =

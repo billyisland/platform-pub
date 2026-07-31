@@ -36,7 +36,7 @@ import {
 // so the mock factory can reference it (a mock factory may only close over
 // hoisted values, never a normal import — TDZ). `distinctKeys` = the number of
 // real charges (== 1 ⇒ exactly once).
-const { paymentIntents } = vi.hoisted(() => {
+const { paymentIntents, customers } = vi.hoisted(() => {
   function makeResource(prefix: string) {
     const calls: Array<{ key?: string; threw: boolean }> = []
     const byKey = new Map<string, { id: string; [k: string]: unknown }>()
@@ -66,12 +66,41 @@ const { paymentIntents } = vi.hoisted(() => {
       _reset() { calls.length = 0; byKey.clear(); byId.clear(); script.length = 0; seq = 0 },
     }
   }
-  return { paymentIntents: makeResource('pi'), transfers: makeResource('tr') }
+  // The reader's saved card, which completeSettlement resolves before charging.
+  // A PaymentIntent does NOT inherit invoice_settings.default_payment_method —
+  // it must be passed by id — so this double is what the settlement path reads
+  // to find the card. `defaultPaymentMethod = null` models a customer with no
+  // usable card, which is a terminal skip rather than a charge.
+  const customers = {
+    defaultPaymentMethod: 'pm_test_default' as string | null,
+    deleted: false,
+    retrieves: 0,
+    async retrieve(id: string) {
+      customers.retrieves += 1
+      return {
+        id,
+        deleted: customers.deleted,
+        invoice_settings: { default_payment_method: customers.defaultPaymentMethod },
+      }
+    },
+    _reset() {
+      customers.defaultPaymentMethod = 'pm_test_default'
+      customers.deleted = false
+      customers.retrieves = 0
+    },
+  }
+  return { paymentIntents: makeResource('pi'), transfers: makeResource('tr'), customers }
 })
 vi.mock('stripe', () => ({
-  default: class { paymentIntents = paymentIntents },
+  default: class {
+    paymentIntents = paymentIntents
+    customers = customers
+  },
 }))
-const resetStripe = () => paymentIntents._reset()
+const resetStripe = () => {
+  paymentIntents._reset()
+  customers._reset()
+}
 
 // --- In-memory model of the settlement tables + ledger. One store answers BOTH
 // pool.query and the withTransaction client's query (a real DB has one state), so
@@ -257,12 +286,24 @@ function query(sql: string, params: unknown[] = []) {
     return Promise.resolve(ok(tab ? [{ balance_pence: tab.balance_pence }] : []))
   }
 
-  // --- reserve pending-guard ---
-  if (/SELECT id FROM tab_settlements WHERE tab_id = \$1 AND status = 'pending'/.test(sql)) {
-    const pending = [...db.settlements.values()].find(
-      (s) => s.tab_id === params[0] && s.status === 'pending',
+  // --- reserve in-flight guard ---
+  // "In flight" is `pending` OR `completed`-but-unconfirmed. The second arm is
+  // the one that matters: a settlement whose charge has gone through but whose
+  // webhook has not yet moved the tab balance. Modelled here as a real table
+  // would answer it; the BEHAVIOURAL pin for the predicate itself is the
+  // DB-backed settlement-in-flight-guard-integration.test.ts, which runs the
+  // exported SQL against real Postgres — a mock that derived its answer from
+  // the SQL it was handed would silently follow the predicate back out again.
+  if (/FROM tab_settlements\s+WHERE tab_id = \$1/.test(sql) && /status = 'pending'/.test(sql)) {
+    const inFlight = [...db.settlements.values()].find(
+      (s) =>
+        s.tab_id === params[0] &&
+        (s.status === 'pending' ||
+          (s.status === 'completed' && s.stripe_charge_id === null)),
     )
-    return Promise.resolve(ok(pending ? [{ id: pending.id }] : []))
+    return Promise.resolve(
+      ok(inFlight ? [{ id: inFlight.id, status: inFlight.status }] : []),
+    )
   }
   // --- resume pending list ---
   if (/SELECT id, reader_id, tab_id, amount_pence, trigger_type\s+FROM tab_settlements\s+WHERE status = 'pending'/.test(sql)) {

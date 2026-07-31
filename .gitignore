@@ -33,3 +33,7 @@ shared/src/**/*.d.ts.map
 # Segregation probe output — a run artifact, overwritten on every run.
 # The findings that matter live in FUNDS-SEGREGATION-INTEGRATION.md §5.
 segregation-probe-results.json
+segregation-sequence-results.json
+
+# Local dev compose override (session-scoped port publishing; never committed)
+docker-compose.override.yml

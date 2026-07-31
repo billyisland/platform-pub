@@ -913,6 +913,45 @@ cost and two of them produce numbers the design needs as inputs.
 > assumptions onto it. **Read Query 0 of the SQL before Query A** — see the caveat in
 > §10.3's step-0 bullet, which is the one thing about these queries that is not obvious.
 
+> **THE SEQUENCE IS STARTED — steps 1 and 13 are GREEN, and it immediately found two
+> P0s that had nothing to do with allocation (2026-07-31).** Harness:
+> `scripts/segregation-sequence.ts`, which drives OUR code with the flag on, where the
+> probes above drive Stripe raw. Both defects were in the **pre-existing** charge path,
+> both had been on prod for months, and neither was reachable from any test in this
+> repo — the only instrument that knows these rules is Stripe.
+>
+> - **The settlement PaymentIntent carried no `payment_method`, so no charge could ever
+>   succeed.** A PI does not inherit `invoice_settings.default_payment_method`; that
+>   field governs invoices and subscriptions. Stripe returns
+>   `payment_intent_unexpected_state`, which `isTerminalChargeError` correctly calls
+>   terminal — so every settlement failed and flagged the reader's (good) card. Proven
+>   with a paired control: same create without the param errors, with it succeeds.
+> - **A duplicate-charge window between `completed` and confirmed.** The tab balance
+>   moves only on the `payment_intent.succeeded` webhook, but the row leaves `pending`
+>   when Stripe returns; the reserve guard tested `pending` alone. Measured: a second
+>   settlement reserved **58ms** after the first completed, and a third 1.3s later. The
+>   resulting negative tab is legal (pre-paid credit), so nothing alerted.
+>
+> **What step 1 established** (6/6): allocation lands at the full charge amount and both
+> retrieval paths agree; the real `syncAllocations` sweep stamps
+> `allocated_pence == amount_pence`; the platform balance does not move. **Step 13**
+> (flag-off regression): 267/267, including all 28 DB-backed segregation tests.
+>
+> **A trap for whoever runs the rest.** `allocated_funds.balance` is NOT returned by a
+> bare `charges.retrieve` — it must be **expanded**, exactly as `syncAllocations` does.
+> Reading it without the expand returns a charge with no allocation and is
+> indistinguishable from the beta being off. That is the same false negative probe 1 hit
+> from the other direction (reading too early), so the failure mode has now bitten twice
+> in two different ways: **when this says "no allocation", suspect the read before the
+> feature.** Second trap, in the fixture rather than the code: a reader who has already
+> settled may carry a NEGATIVE tab, and pre-paid credit makes every subsequent read land
+> `platform_settled` on the spot, so no threshold is crossed and no settlement is ever
+> created. The harness mints fresh reader accounts per run for this reason.
+>
+> **Steps 2–12 remain**, and step 2 (the multi-child payout) is the one nothing in the
+> repo can currently reach. Step 12 is additionally blocked on the Dial-A tribute rework
+> — driving it today would test a model already scheduled for replacement.
+
 The list:
 
 - Run steps 1, 4, 6, 7 and **7b** below against the sandbox with no §3.3 code at all.

@@ -23,6 +23,69 @@ starts.
 
 ## Progress
 
+- **2026-07-31 (the sandbox drive: two P0s in the settlement path, and neither was
+  reachable from a mock)** — the §5 sequence was started against a real segregation
+  Sandbox with `STRIPE_ALLOCATED_FUNDS=1` and the shipped payment-service. It found two
+  live defects in the *pre-existing* charge path — both independent of the flag, both in
+  code that has been on prod for months, and both invisible to every test in the repo
+  because the only thing that knows these rules is Stripe. **Step 1 is green (6/6) and
+  step 13 is green (267/267 flag-off); steps 2–12 remain.**
+  - **P0 — the settlement PaymentIntent had no payment method, so no charge could ever
+    succeed.** `paymentIntents.create` passed `customer` but never `payment_method`, and a
+    PI does **not** inherit `invoice_settings.default_payment_method` — that field governs
+    invoices and subscriptions. `gateway/src/routes/auth.ts:588` sets it at card-attach
+    time with the comment "for future off-session settlement charges", which is precisely
+    the assumption that does not hold. Stripe returns `payment_intent_unexpected_state`, a
+    `StripeInvalidRequestError`, which `isTerminalChargeError` **correctly** treats as
+    terminal — so the S1 machinery did exactly its job on a false premise: settlement
+    `failed`, `card_action_required_at` set, and (since 2026-07-30) the `CardActionRequired`
+    prompt shown to a reader whose card was never anything but fine. Fixed by resolving the
+    customer's default PM before the create and passing it by id; a customer with no usable
+    card is now an explicit terminal skip (`no_default_payment_method`) rather than a
+    confusing Stripe rejection. **Paired control, one ingredient varied:** identical create
+    without `payment_method` → error, with it → `succeeded`.
+  - **P0 — a duplicate-charge window between "completed" and "confirmed".** The tab balance
+    is not reduced at reservation, nor when Stripe returns; it moves only in
+    `confirmSettlement`, on the `payment_intent.succeeded` **webhook**. But the row leaves
+    `pending` the instant the charge returns. The reserve guard tested `status = 'pending'`
+    alone, so a second `checkAndSettle` inside that gap saw a full balance and no pending
+    row, reserved the same debt again and charged the reader a second time. **Measured, not
+    reasoned:** A reserved 11:01:11.324 and correctly turned away three concurrent attempts
+    while pending; A completed 11:01:12.787; **B reserved 11:01:12.845 — 58ms later**; A
+    confirmed only 11:01:13.163. One £14 debt charged twice, tab left at −1400 — and
+    **nothing alerted, because a negative tab is legal** (pre-paid credit, PAYMENTS §1.8). A
+    third settlement reserved 1.3s after that, so it cascades. `checkAndSettle` fires on
+    every paid gate pass, so two articles read in quick succession reaches it.
+    - The guard now also blocks `completed AND stripe_charge_id IS NULL`, in the exported
+      `SETTLEMENT_IN_FLIGHT_SQL`. That is the **same pair `reconcileSettlements` already
+      selects on** for "charged but not yet applied", which is what bounds the fix: anything
+      stuck behind the guard is released by that sweep, so a tab can be delayed but never
+      frozen. Delayed collection is the safe direction; a duplicate charge is not.
+    - The stale comment at the `applyLedgerDelta` call site enumerated the causes of
+      over-settlement and did not contain this one. Corrected in place.
+  - **Evidence, and one distinction worth keeping.** 6 DB-backed tests
+    (`settlement-in-flight-guard-integration.test.ts`) running the **exported** statement
+    rather than a re-typed copy, over all three lifecycle states, with the confirmed row as
+    the paired control proving the guard *releases*. **Mutation-verified**: restore the
+    `pending`-only predicate and 3 of 6 go red. Suite 267 → 273. The live re-run then showed
+    **one settlement per reader** where before there were three — but both guard skips in
+    that run hit the `pending` arm, so the live run proves the OUTCOME while the new arm is
+    proved by the test. An un-controlled pass can be the harness passing rather than the
+    feature working, so the two claims are kept apart.
+  - **The conformance battery needed a `customers.retrieve` double**, and its dispatcher
+    widened for the new predicate. Deliberately **not** derived from the SQL handed to it:
+    for a guard predicate a deriving mock follows production back out again when an arm is
+    dropped, which is the "pinning the mock" trap. The behavioural pin is the DB test.
+  - **Why none of this was caught before.** Dev's key has always been the placeholder
+    `sk_test_...`, prod is pre-launch with zero settlements, and the mocked suite answers
+    the call rather than enforcing Stripe's rules. This is the §11 verification-debt thesis
+    landing on the money path: *component ≠ feature*, and the only instrument that could
+    see either bug was a real key.
+  - Also landed: `scripts/segregation-sequence.ts` (re-runnable §5 sequence harness, driving
+    OUR code where the probes drive Stripe raw), and the `DEPLOYMENT.md` manual-reversal
+    runbook entry owed since the 2026-07-30 500 incident (*pass the flag; a 500 is not an
+    answer, retry it*). → CONSOLIDATED-TODO §1.13 / §11.
+
 - **2026-07-31 (the CDN was rewriting the front page, and no gate could have known)** —
   found while verifying the previous day's deploy had landed. Operator-config, no code
   change. Full mechanism + the fix + the check: `DEPLOYMENT.md` › *Known limitations*.
