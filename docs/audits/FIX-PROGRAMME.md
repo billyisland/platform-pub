@@ -49,10 +49,48 @@ starts.
       SQL and the pure `computePublicationSplits` instead. Prod is pre-launch with zero
       publication payouts. So every unit test passes and the feature has never once run.
       This is the §11 verification-debt thesis in its purest form: **component ≠ feature**.
-    - **Not fixed here** — the fix is a fork (a dedicated `read_events.publication_payout_id`
-      mirroring `subscription_events`, versus dropping the FK to make the column
-      polymorphic) that touches claim, release, recompute and chargeback attribution. Queued
-      at CONSOLIDATED-TODO.
+    - **FIXED the same day — migration 168**, taking the dedicated-column fork rather than
+      dropping the FK: the latter is one line, but it abandons referential integrity on a
+      money path and leaves a column whose name actively misleads. The two cycles are exact
+      complements; their claims should be two columns that cannot be confused.
+      `read_events.publication_payout_id`, FK → `publication_payouts`, `ON DELETE SET NULL`
+      mirroring the writer twin, partial index. **No backfill possible or needed** — the FK
+      made it impossible for any row to carry a publication payout id, so every existing row
+      correctly starts NULL.
+      - **Six sites moved**: the eligibility CTE, the claim, the article-earnings base,
+        finalise, the re-pay sweep's settlement recovery (whose *subscription* arm already
+        keyed on the right column), and the chargeback reversal's publication arm in
+        `settlement.ts` — whose comment had reasoned the column was "overloaded across payout
+        kinds". It never was: that FK meant the value it read was **always null**, so the
+        F5 split-reversal path has never once fired either.
+      - **Two precision fixes that only bite once the claim works.** The KYC-reconcile
+        candidate query's "writer read earnings" arm now excludes publication reads (else a
+        *paid* publication read matches forever), and the admin dashboard's two held-reads
+        figures now require BOTH claim columns null.
+      - **The test that would have caught it**:
+        `payment-service/tests/publication-claim-integration.test.ts`, which drives the
+        **exported** statements (`PUBLICATION_CLAIM_READS_SQL`,
+        `PUBLICATION_FINALISE_READS_SQL` — extracted so the test cannot run a copy that
+        drifts) against a real database with real FKs. **Its paired control runs the pre-fix
+        statement and asserts it still raises 23503** — without that, the file would pass
+        just as well against a schema where the FK had been quietly dropped, and would be
+        pinning nothing. Mutation-verified: revert the constant and 4 of 5 go red.
+      - **Verified end to end: §5 step 11 is 18/18**, including a true §3.3e over-transfer —
+        an allocated child inflated 1104 → 6500, rejected `StripeInvalidRequestError`, its
+        split failed, the sibling completed, and the parent COMPLETED rather than zombifying.
+        Steps 2/3/10 re-run green (128 checks). Payment suite 278/278, drift guard 7/7,
+        ledger-adjacency and read-chargeable guards green.
+      - **A harness trap found on the way, worth carrying forward.** Step 11's fabrication
+        first inflated a child blindly. An ALLOCATED child is bounded by its funding charge,
+        so inflating past it is a true over-transfer and is rejected; a RESIDUAL child has no
+        charge behind it and is bounded only by the platform balance, so the same inflation
+        just makes a larger ordinary transfer — which SUCCEEDS. Both children packed residual
+        that run, Stripe paid £50, and the step reported a failure to fail.
+      - **And one test-fragility of the same family.** `segregation-assembly`'s two
+        residual-window assertions read a **global** 30-day aggregate while their helper's
+        comment claimed "the rolled-back transaction means the window queries see only these
+        rows". Rollback isolates WRITES, not READS, so both went red the first time a real
+        payout existed in a dev database. Now delta-based against a baseline.
   - **Step 2 — 41/41.** Four children, one per drawn charge, nets 1288+1288+1932+2576 =
     7084 = parent `amount_pence` = ledger sum; every `source_transaction` and
     `application_fee_amount` checked against **Stripe's own copy** of the transfer; one

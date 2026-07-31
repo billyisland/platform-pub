@@ -977,7 +977,18 @@ cost and two of them produce numbers the design needs as inputs.
 >   `Σ allocated fees − Σ residual nets`, which is routinely **negative**: measured −840
 >   against a predicted −840. Any future check that sums every child's fee is wrong.
 >
-> **STEP 11 FOUND THAT `runPublicationPayoutCycle` HAS NEVER WORKED.**
+> **STEP 11 IS NOW 18/18 (2026-07-31, after migration 168).** Per-split children drawing
+> from the preference set; each split packing to exactly one child (a split is indivisible);
+> `Σ(child fee) ≤ platform_fee_pence` with the shortfall bounded at a penny per split; the
+> ledger at the SPLIT grain; and a deliberately failed split completing its parent rather
+> than zombifying it — proven with a real §3.3e over-transfer (an allocated child inflated
+> 1104 → 6500, rejected `StripeInvalidRequestError`, its split failed, the sibling completed,
+> the parent completed). **A trap for anyone extending this step:** inflating a RESIDUAL
+> child does not over-transfer anything — it has no charge behind it and is bounded only by
+> the platform balance, so the same fabrication just makes a larger ordinary transfer, which
+> succeeds. Prefer an allocated child; the harness now does, and records which mode it used.
+>
+> **STEP 11 FOUND THAT `runPublicationPayoutCycle` HAD NEVER WORKED (fixed, migration 168).**
 > `reservePublicationPayout` claims the pool's reads with
 > `UPDATE read_events SET writer_payout_id = $1` where `$1` is a **`publication_payouts`**
 > id, while that column carries `fk_read_events_writer_payout → writer_payouts(id)`. Every
