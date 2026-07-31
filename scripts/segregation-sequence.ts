@@ -10,11 +10,72 @@
  *   npx tsx scripts/segregation-sequence.ts --step 2,3,10
  *   npx tsx scripts/segregation-sequence.ts --step 11 --destination acct_A,acct_B
  *
- * IMPLEMENTED: 1 (settlement + allocation), 2 (multi-child writer payout),
- * 3 (forced over-transfer + failure handling), 10 (crash-resume), 11 (publication
- * cycle). Step 13 is the flag-off suite, run separately. 4-9 and 12 are not here;
- * 12 is additionally blocked on the Dial-A tribute rework, so driving it today
- * would book a pass against a model already scheduled for replacement.
+ * IMPLEMENTED AND GREEN (2026-07-31): 1 (settlement + allocation), 2 (multi-child
+ * writer payout, 41/41), 3 (forced over-transfer, 15 + 1 honest UNKNOWN),
+ * 10 (crash-resume, 15/15), 11 (publication cycle, 18/18 — the step that found
+ * and then proved the fix for the P0 in migration 168). Step 13 is the flag-off
+ * suite, run separately.
+ *
+ * ---------------------------------------------------------------------------
+ * NEXT: STEPS 4-9. What each needs, from having built the others.
+ * ---------------------------------------------------------------------------
+ * Read ADR §5's list for the claims; this is the implementation shape. All six
+ * are REFUND/REVERSAL/EDGE-FUNDING steps, so unlike 2/3/10/11 they are driven
+ * mostly by WEBHOOKS — `stripe listen` is not optional for any of them, and the
+ * assertions should poll for the handler's effect rather than reading once.
+ *
+ *   4  Full refund pre-transfer. Settle (reuse `ensureClaimable`), then
+ *      `refunds.create` on the charge, then await `charge.refunded`. Assert: reads
+ *      → `charged_back`; a `kind='refund'` `allocated_draws` row lands carrying
+ *      Stripe's CUMULATIVE `amount_refunded`, upserted with GREATEST (webhook
+ *      delivery is unordered — that upsert is the wedge, so a redelivery must be
+ *      a no-op); `lockFundingSources` then reports the charge as no longer
+ *      drawable. Probe 4 already confirmed Stripe's side raw; this drives OURS.
+ *
+ *   5  PARTIAL refund pre-transfer — the harder twin, and the one with a claim
+ *      nothing else makes: the reads stay PAYABLE and the next payout must pack
+ *      AROUND the shortfall rather than wedging. So it needs a second cycle run
+ *      after the refund, asserting the writer still gets paid from what remains.
+ *      `manual_review_required` should fire.
+ *
+ *   6  Refund POST-transfer → a partial platform-balance draw (the allocation is
+ *      already spent, so Stripe takes the rest from the ordinary balance — which
+ *      is why the balance must be positive). `manual_review_required` fires.
+ *
+ *   7  Transfer reversal with `refund_application_fee=true` → funds return to
+ *      allocated state; our `kind='reversal'` draw restores the remainder; the
+ *      ledger reversing entries agree. NOTE the 2026-07-30 incident: this exact
+ *      call 500'd four times in one window then succeeded 15 times running. It is
+ *      transient and Stripe closed it — if it recurs, capture the RAW body and
+ *      RETRY; do not spend the afternoon isolating it (a matrix run inside a
+ *      failure window shows correlation and cannot show cause).
+ *
+ *   7b Reversal of ONE child among several — needs step 2's multi-child payout as
+ *      its fixture, then reverse a single child. Assert the handler resolves via
+ *      `payout_transfers.stripe_transfer_id` (the CHILD's own id — confirmed
+ *      against the real payload by probe 7b), reverses only that child's net,
+ *      leaves siblings and the parent amount untouched, and treats a redelivery
+ *      as a no-op (the `completed → reversed` flip is the idempotency guard).
+ *      `amount_reversed` is CUMULATIVE and `reversed` stays FALSE on a partial —
+ *      never key on that boolean.
+ *
+ *   8  Credit-funded earning. The only step whose fixture is not a read: drive a
+ *      subscription-convert credit-back so the earning has NO funding charge,
+ *      then pay out. Assert the unit packs `funding='platform_balance'`, its
+ *      transfer carries NO `source_transaction` and NO `application_fee_amount`
+ *      (with no allocation the fee is implicit — step 2 pins this contract), and
+ *      the §3.3d residual metric moves. THIS STEP IS ALL RESIDUAL, so it is the
+ *      one that will fail outright on a thin platform balance.
+ *
+ *   9  Ineligible brand. Settle with a JCB or Diners test card instead of
+ *      `pm_card_visa` (see `mintReaders`, which hard-codes Visa precisely so the
+ *      other steps DO carry allocation). Assert `allocated_pence` syncs to 0 —
+ *      not null, not an error — the charge is never drawn on, and the payout
+ *      routes elsewhere silently. The trap: 0 and "not yet stamped" look alike,
+ *      so assert `allocation_synced_at IS NOT NULL AND allocated_pence = 0`.
+ *
+ * 12 stays BLOCKED on the Dial-A tribute rework — driving it today would book a
+ * pass against a model already scheduled for replacement.
  *
  * STEP ORDER MATTERS AND `main` ENFORCES IT. Steps 2, 3 and 10 each consume the
  * writer's claimable earnings, so each one accrues its own (`ensureClaimable`)
@@ -38,6 +99,29 @@
  * shell's `STRIPE_ALLOCATED_FUNDS`. Each refuses rather than reporting a wall of
  * zeroes against a service that took the aggregate path.
  *
+ * THE FIVE TRAPS THIS HARNESS HAS ALREADY PAID FOR. Every one produced a
+ * CONVINCING FALSE NEGATIVE — a green environment reporting a broken payout —
+ * so check them before believing any failure here:
+ *   (a) A repeat (reader, article) pair mints NO read event: a reader who has
+ *       already paid is not charged again. The accrual space is
+ *       `readers × articles` and nothing else widens it, which is why
+ *       `mintReaders` is called per step (`rotateReaders`).
+ *   (b) ONE `syncAllocations` is not enough. A settlement landing after it stays
+ *       unstamped, is correctly skipped as un-drawable, and its earnings fall to
+ *       the residual — hence `syncUntilStamped`, which needed 2 attempts on the
+ *       first green run.
+ *   (c) `amount_pence` is `bigint`, so node-postgres returns a STRING: sums
+ *       concatenate and comparisons test 644 against "644". Coerce (`ledgerFor`).
+ *   (d) ALLOCATED and RESIDUAL children have OPPOSITE contracts. A residual
+ *       carries neither `source_transaction` nor `application_fee_amount` (the
+ *       fee is implicit), and it moves the platform balance the other way by its
+ *       whole net — so the expected delta is `Σ allocated fees − Σ residual nets`
+ *       and is routinely NEGATIVE. Inflating a residual child also over-transfers
+ *       NOTHING, so a fabrication that targets one reports a failure to fail.
+ *   (e) A DB-backed assertion on a GLOBAL aggregate is not isolated by a
+ *       rolled-back transaction — rollback isolates writes, not reads. Compare a
+ *       delta against a baseline taken before seeding.
+ *
  * WHERE A STEP DRIVES A PRIVATE METHOD, THAT IS DELIBERATE. Steps 3, 10 and 11
  * need the state BETWEEN Txn 1 and the Stripe call — a committed pack with
  * nothing yet transferred — which no public entry point exposes because in
@@ -57,11 +141,67 @@
  * So the assertions here are three-sided on purpose. A step that only checked
  * our DB would pass just as well against a service that never called Stripe.
  *
- * WHAT IT NEEDS. A running dev stack whose payment-service holds the SANDBOX
- * key and STRIPE_ALLOCATED_FUNDS=1, `stripe listen --forward-to
- * localhost:3001/webhooks/stripe` for the webhook-driven steps, and a connected
- * account in that sandbox with charges+payouts enabled (--destination, or the
- * first eligible one found).
+ * ---------------------------------------------------------------------------
+ * THE RUNBOOK — wiring this up from cold (2026-07-31, done twice)
+ * ---------------------------------------------------------------------------
+ * Nothing here persists between sessions: the harness rebuilds its own fixture,
+ * and the sandbox key is cycled after each run. Six things, and the last three
+ * are the ones nobody guesses.
+ *
+ *   1. Sandbox secret key into `payment-service/.env` (`STRIPE_SECRET_KEY`).
+ *      Use `read -rs` so it never reaches shell history. `gateway/.env` is NOT
+ *      needed — the harness posts straight to payment-service.
+ *
+ *   2. CONFIRM IT IS THE SEGREGATION SANDBOX. Sandbox and classic-test keys
+ *      share the `sk_test_` prefix, so the key does not say. Read-only, creates
+ *      nothing, and authoritative — an un-enrolled account ERRORS on the beta
+ *      header rather than ignoring it:
+ *        curl -s https://api.stripe.com/v1/balance -u "$STRIPE_SECRET_KEY:" \
+ *          -H "Stripe-Version: 2026-06-24.preview; allocated_funds_preview=v1"
+ *
+ *   3. `STRIPE_ALLOCATED_FUNDS=1` in the ROOT `.env` (compose substitutes it in)
+ *      — and, separately, in the SHELL that runs this script. See below.
+ *
+ *   4. `docker-compose.override.yml` publishing payment on `127.0.0.1:3001`.
+ *      It is compose-internal by default, so neither the Stripe CLI nor this
+ *      harness can reach it. Bind to loopback, never `3001:3001`: Docker's port
+ *      publishing bypasses the host firewall and these routes authenticate on a
+ *      shared token. Delete the file when the session ends.
+ *
+ *   5. `stripe listen --forward-to localhost:3001/webhooks/stripe`, its printed
+ *      `whsec_` into `payment-service/.env`, then `docker compose up -d payment`.
+ *      REQUIRED, not optional: reads only reach `platform_settled` in
+ *      `confirmSettlement`, on the `payment_intent.succeeded` WEBHOOK. Without
+ *      the forwarder the charge succeeds, the settlement completes, and the reads
+ *      never advance — every step then stalls at its precondition and reports
+ *      "the writer isn't payable", which reads exactly like a broken payout.
+ *      Pass the key via the `STRIPE_API_KEY` env var rather than `--api-key`, so
+ *      it does not sit in the process arguments where `ps` can read it. Do NOT
+ *      run `stripe login` (it pairs the CLI to an account interactively).
+ *      Prove the secret is right with a paired control — a forged signature must
+ *      NOT return 200, or the 200s you do get mean nothing.
+ *
+ *   6. THE PLATFORM BALANCE MUST BE POSITIVE. Residual children draw on the
+ *      ordinary balance rather than on segregated funds, so an overdrawn sandbox
+ *      fails them `balance_insufficient` — an environment fact that presents as a
+ *      payout defect. Top up with a `pm_card_bypassPending` PaymentIntent (test
+ *      mode: instantly available).
+ *
+ * Then, for every run:
+ *
+ *   set -a; . payment-service/.env; set +a       # key, DATABASE_URL, internal token
+ *   STRIPE_ALLOCATED_FUNDS=1 npx tsx scripts/segregation-sequence.ts --step 2,3,10
+ *
+ * THE FLAG ON THE COMMAND LINE IS NOT A DUPLICATE OF STEP 3. This script imports
+ * `payoutService` and runs the cycle IN ITS OWN PROCESS, so it reads this shell's
+ * environment, not the container's. With it unset, `completeWriterPayout` takes
+ * the aggregate path, mints no children, and every child-level assertion reports
+ * 0 against an expected 2. Each step refuses up front rather than reporting that.
+ *
+ * Step 11 additionally needs a SECOND onboarded connected account, which the
+ * Stripe dashboard cannot create under the controller-properties model —
+ * `scripts/create-sandbox-connect-account.ts` is the API recipe.
+ * ---------------------------------------------------------------------------
  *
  * THE FIXTURE IS BUILT THROUGH THE REAL PATHS, NOT INSERTED. Reads are accrued
  * by POSTing real gate passes to the internal /gate-pass route, so the free
