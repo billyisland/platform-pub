@@ -3,8 +3,27 @@ import HomeRedirect from '../components/layout/HomeRedirect'
 import { LandingVessel, type Figure } from '../components/landing/LandingVessel'
 
 const TITLE = 'all.haus — No one should own the public square.'
+
+// This is what a shared link and a search result show — edit it when you edit
+// the page copy below, the way about/page.tsx says to.
+//
+// Readers-first, 2026-07-31. The previous text opened "A writing platform on
+// Nostr", which was the writer-first positioning the BODY of this page had
+// already left and `/about` was corrected off on 2026-07-25 — about/page.tsx's
+// own comment claimed `/` had made that move, and it had not. It also led on
+// Nostr, which this page deliberately puts LAST (third proposition, final
+// paragraph): the protocol is the mechanism, not the pitch.
+//
+// Named networks rather than the abstract claim, because the concrete thing is
+// what a stranger can act on, and "rules you set, not rules set on you" is
+// lifted from PROSE[0] so the snippet and the page say the same words.
+//
+// KEEP IT UNDER ~160 CHARACTERS (this is 159). Search results truncate around
+// there, and the tail is where "pay the writer per piece" sits — the whole point
+// of the sentence — so an overrun deletes exactly the part worth keeping. That
+// is what cost the phrase "from across the open web" its middle two words.
 const DESCRIPTION =
-  'A writing platform on Nostr: omnivorous feeds sorted by rules you set, and a few pence to whoever wrote the thing.'
+  'Build feeds from the open web — Bluesky, Mastodon, RSS — sorted by rules you set, not rules set on you. Read what’s worth reading and pay the writer per piece.'
 
 export const metadata: Metadata = {
   title: TITLE,
