@@ -23,6 +23,40 @@ starts.
 
 ## Progress
 
+- **2026-07-31 (the CDN was rewriting the front page, and no gate could have known)** —
+  found while verifying the previous day's deploy had landed. Operator-config, no code
+  change. Full mechanism + the fix + the check: `DEPLOYMENT.md` › *Known limitations*.
+  - **What was wrong.** Cloudflare's Scrape Shield rewrites anything email-shaped in served
+    HTML into `[email&#160;protected]` plus an injected decoder script. **NIP-05 is
+    deliberately email-shaped**, so the landing page's Nostr demo — the card whose whole job
+    is to say *this is a Nostr identity* — was served as `via Nostr · [email protected] →`.
+    The decoder is same-origin so `script-src 'self'` runs it and a JS visitor recovers the
+    text, but the SSR'd HTML that crawlers, link previews and no-JS visitors receive was
+    wrong, and everyone else got a flash of it. Turned off zone-wide; verified byte-exact.
+  - **The class, which is the durable part.** This passed `tsc`, `next build`, the hairline
+    tripwire and the full suite; it was correct in git and correct in the container. **The
+    bytes a visitor receives are not the bytes the container served**, and nothing in the
+    repo can see the difference. A public-facing change is verified against the SERVED
+    BYTES or it is not verified. `DEPLOYMENT.md` had never mentioned that a CDN sits in
+    front of production at all; it does now.
+  - **Two wrong checks first, which is why the verification is written down as commands.**
+    I first grepped for `bergqvist` to test whether the landing fix had deployed — but that
+    fix kept the *name* and changed the *namespace* (`.bsky.social` → `.all.haus`), so the
+    string was present either way and the check could not discriminate. Then I read
+    `aurelio: 0` as a stale deploy when it was the CDN. **A check that cannot fail and a
+    check that cannot pass are the same error**, and the fix for both is to assert the
+    thing that actually differs — here `bergqvist.all.haus` present AND
+    `bergqvist.bsky.social` absent, which is the paired form the repo already uses for
+    mutation testing.
+  - **Scope, measured not assumed — and my first draft of this entry overstated it.** I
+    wrote that public writer profiles were exposed too, then checked: **no profile surface
+    renders a NIP-05 at all**, and the landing demo's `aurelio@all.haus` is the only
+    email-shaped identifier in the entire web app (`/.well-known/nostr.json` serves NIP-05
+    as JSON, which the HTML rewriter ignores). One card, one page. The risk is **latent**
+    rather than closed: the platform mints NIP-05 identities, and the first public profile
+    to print one inherits the heuristic. Invisible in dev (no CDN) and invisible behind auth
+    (client-rendered), which is why it reached production.
+
 - **2026-07-30 (audit F4 closed: the webhooks that were never coming)** — CONSOLIDATED-TODO
   §1.1 item 1. Since 2026-07-06 `webhook.ts` had carried `transfer.paid` and
   `transfer.failed` as guarded no-ops with a comment saying they do not fire for

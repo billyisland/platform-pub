@@ -988,6 +988,33 @@ and is rewritten; a "public register" section documents the new chassis.
 
 ### Still open
 
+0. **A CDN sits between this page and its reader, and it edits the markup.**
+   Recorded here because §IX 7septies' demo-content rule — "protocol labels must
+   stay literally true, being the claim" — turns out to have a second failure
+   mode nobody had considered: the claim can be true in the repo and false on
+   the wire. Cloudflare's Email Address Obfuscation rewrites anything
+   email-shaped in served HTML, **NIP-05 is deliberately email-shaped**, and so
+   `OmnivoreDemo`'s `via Nostr · aurelio@all.haus →` — the one card whose entire
+   job is to say *this is a Nostr identity* — was served to every visitor as
+   `via Nostr · [email protected] →` from the 07-30 deploy until it was turned
+   off zone-wide on 2026-07-31. A JS visitor recovered it via the injected
+   same-origin decoder; crawlers, link previews and no-JS visitors did not.
+   Mechanism, fix and the two `curl` checks: `DEPLOYMENT.md` › *Known
+   limitations*.
+
+   Three things follow for this page specifically. **The demo-identifier rule
+   now has a third clause**: invented, in a namespace we control, *and verified
+   in the served bytes* — the first two were satisfied and the page was still
+   wrong. **Today it is confined to `/`**, checked rather than assumed: this demo
+   carries the only email-shaped identifier rendered anywhere in the web app, and
+   no profile surface prints a NIP-05 (the gateway serves those as JSON at
+   `/.well-known/nostr.json`, which the rewriter ignores). That is a fact about
+   today, not a guarantee — the first public profile to show `username@all.haus`
+   inherits the heuristic. And it is one
+   more entry in this section's standing theme — a browser (or here, a `curl`)
+   found what compiling, linting and reading did not, and the CDN layer is
+   invisible to every one of them because dev runs no CDN at all.
+
 1. **Almost nothing has been in a browser, in either mode.** The one exception
    is `/`, rendered 2026-07-26 at 390×844 and 1440×900 in LIGHT mode only (the
    mobile-chassis change, 7bis) — which immediately turned up the row bug in
