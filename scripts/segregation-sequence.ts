@@ -97,7 +97,38 @@ const READERS = 2
 // threshold, and enough that two readers put one writer over any sane payout
 // threshold without needing dozens of gate passes.
 const READ_PENCE = 700
-const READS_PER_PAIR = 2
+/**
+ * Reads per (reader, article) pair — ONE, and it cannot usefully be more.
+ *
+ * A reader who has already paid for an article is not charged again, so a second
+ * gate pass on the same pair returns the existing access and mints no
+ * `read_events` row. That is correct product behaviour and it silently bounds
+ * this whole harness: the accrual space is `readers × articles`, full stop.
+ * Setting this to 2 (as it was until 2026-07-31) posted twice the gate passes for
+ * exactly the same earnings, and made `ensureClaimable`'s retry loop inert — 24
+ * gate passes across three rounds produced 4 read events and the writer stalled
+ * at 1288p against a 2000p threshold, looking for all the world like a broken
+ * payout. Grow the ARTICLE count, never this.
+ */
+const READS_PER_PAIR = 1
+/**
+ * Articles per writer to read. The threshold is the constraint: at £7 a read and
+ * an 8% fee, one writer needs `ceil(2000 / 644) = 4` reads to clear £20, and
+ * `readers × articles` must therefore be at least that. Five gives headroom and
+ * still leaves the seeded writers' article sets intact.
+ */
+const ARTICLES_PER_WRITER = 5
+/**
+ * Per-read price for PUBLICATION reads, higher than `READ_PENCE` on purpose.
+ *
+ * The writer cycle can reach its threshold by breadth — five articles per writer
+ * — but the seeded publication has exactly ONE article, so the pool's accrual
+ * space is `readers × 1` and no number of rounds can widen it. Depth is the only
+ * dial left: two reads at £15 net £27.60 against the £20 threshold, across the
+ * two charges step 11 needs. If a publication with more articles ever exists,
+ * prefer widening over this.
+ */
+const PUB_READ_PENCE = 1500
 
 // -----------------------------------------------------------------------------
 // Result recording — same contract as the probes: a failed check is a finding,
@@ -382,16 +413,20 @@ async function buildFixture(): Promise<Fixture> {
   }
 
   // --- Articles to read ------------------------------------------------------
+  // Several per writer, not one. A repeat read of the same article mints no new
+  // read_event (see READS_PER_PAIR), so the article count is the ONLY dial that
+  // moves a writer's earnings — one article per writer caps this fixture at two
+  // reads per writer, permanently under the payout threshold.
   const articles: Fixture['articles'] = []
   for (const w of [w1, w2]) {
     const a = await pool.query<{ id: string }>(
       `SELECT id FROM articles
         WHERE writer_id = $1 AND deleted_at IS NULL AND publication_id IS NULL
-        ORDER BY created_at LIMIT 1`,
-      [w.id],
+        ORDER BY created_at LIMIT $2`,
+      [w.id, ARTICLES_PER_WRITER],
     )
     if (a.rowCount === 0) throw new Error(`writer ${w.username} has no personal article`)
-    articles.push({ id: a.rows[0].id, writerId: w.id })
+    for (const row of a.rows) articles.push({ id: row.id, writerId: w.id })
   }
 
   return {
@@ -667,7 +702,13 @@ async function ensureClaimable(
   fx: Fixture,
   writerId: string,
   rounds = 3,
-): Promise<{ before: Claimable; after: Claimable; roundsRun: number; accrued: unknown[] }> {
+): Promise<{
+  before: Claimable
+  after: Claimable
+  roundsRun: number
+  accrued: unknown[]
+  stamping: { attempts: number; unstamped: number }
+}> {
   const before = await claimableFor(writerId)
   const accrued: unknown[] = []
   let current = before
@@ -676,6 +717,7 @@ async function ensureClaimable(
   const enough = (c: Claimable) => c.netPence >= c.thresholdPence && c.settlements >= 2
 
   while (!enough(current) && roundsRun < rounds) {
+    const before = current.reads
     accrued.push(await accrueReads(fx))
     roundsRun++
 
@@ -689,16 +731,63 @@ async function ensureClaimable(
       await sleep(2000)
     }
     current = await claimableFor(writerId)
+
+    // A round that adds no reads will never add any: the accrual space is
+    // `readers × articles` and a repeat pair mints nothing (READS_PER_PAIR).
+    // Spinning here burns 8 Stripe-backed gate passes a round to no effect and
+    // then reports a threshold shortfall that looks like a payout defect. Stop,
+    // and let the step's own precondition check report the honest number.
+    if (current.reads === before) break
   }
 
-  // The charges must be STAMPED before they are drawable: `lockFundingSources`
-  // requires `allocated_pence IS NOT NULL`, and an unstamped charge is skipped in
-  // silence — which would route the payout to the residual and quietly prove the
-  // opposite of what these steps are for.
-  const { settlementService } = await import('../payment-service/src/services/settlement.js')
-  await settlementService.syncAllocations()
+  const stamping = await syncUntilStamped(fx.readers.map((r) => r.accountId))
 
-  return { before, after: await claimableFor(writerId), roundsRun, accrued }
+  return { before, after: await claimableFor(writerId), roundsRun, accrued, stamping }
+}
+
+/**
+ * Sync allocations until every completed charge is stamped, or say it isn't.
+ *
+ * ONE SYNC IS NOT ENOUGH, and the failure it produces is thoroughly convincing.
+ * `lockFundingSources` requires `allocated_pence IS NOT NULL` — an unstamped
+ * charge is "not known to be drawable" and is skipped in silence, which is the
+ * correct conservative behaviour. But a settlement that lands *after* the sync
+ * stays unstamped, its earnings fall through to the RESIDUAL slice, and that
+ * child draws on the platform's ordinary balance instead of segregated funds. In
+ * a sandbox whose platform balance is overdrawn it is then rejected
+ * `balance_insufficient`, and step 2 reports "every child completed: false"
+ * against a payout in which nothing was wrong at all.
+ *
+ * Compounded by the ~1-3s materialisation lag (probe 1): allocation is not
+ * visible the instant the PI returns, so even a well-timed sync can miss the
+ * newest charge. Hence loop, with room for the lag, and report the residue
+ * rather than assuming success.
+ */
+async function syncUntilStamped(
+  readerIds: string[],
+  attempts = 6,
+): Promise<{ attempts: number; unstamped: number }> {
+  const { settlementService } = await import('../payment-service/src/services/settlement.js')
+  for (let i = 1; i <= attempts; i++) {
+    await settlementService.syncAllocations()
+    const { rows } = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM tab_settlements
+        WHERE reader_id = ANY($1::uuid[])
+          AND status = 'completed'
+          AND stripe_charge_id IS NOT NULL
+          AND allocated_pence IS NULL`,
+      [readerIds],
+    )
+    if (rows[0].n === 0) return { attempts: i, unstamped: 0 }
+    await sleep(2500)
+  }
+  const { rows } = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM tab_settlements
+      WHERE reader_id = ANY($1::uuid[]) AND status = 'completed'
+        AND stripe_charge_id IS NOT NULL AND allocated_pence IS NULL`,
+    [readerIds],
+  )
+  return { attempts, unstamped: rows[0].n }
 }
 
 /** The writer's most recent payout parent, with its children. */
@@ -719,7 +808,18 @@ async function readPayout(payoutId: string): Promise<{ parent: any; children: an
   return { parent: parents[0] ?? null, children }
 }
 
-/** Ledger entries posted against a payout parent, in order. */
+/**
+ * Ledger entries posted against a payout parent, in order.
+ *
+ * `amount_pence` is COERCED, and that is not tidying. It is a `bigint`, which
+ * node-postgres returns as a STRING to avoid silently truncating past 2^53 — so
+ * `sum + e.amount_pence` concatenates ("0" + "1288" + "644" …) and a multiset
+ * comparison tests 644 against "644". Both failed on the first green run of step
+ * 2 while every underlying figure was correct. The dangerous direction is the
+ * other one: a string sum never equals a number, so such a check can only ever
+ * fail — but a check that cannot pass is as useless as one that cannot fail, and
+ * the next person would have read the noise as a real ledger divergence.
+ */
 async function ledgerFor(payoutId: string): Promise<any[]> {
   const { rows } = await pool.query(
     `SELECT id, account_id, counterparty_id, amount_pence, trigger_type, ref_table, ref_id
@@ -728,7 +828,7 @@ async function ledgerFor(payoutId: string): Promise<any[]> {
       ORDER BY created_at`,
     [payoutId],
   )
-  return rows
+  return rows.map((r: any) => ({ ...r, amount_pence: Number(r.amount_pence) }))
 }
 
 /**
@@ -836,7 +936,21 @@ async function stepTwo(fx: Fixture): Promise<StepResult> {
   // stamps the allocations. Standing alone matters: step 2 may follow step 1 in
   // one invocation, or run cold against a database whose earlier reads are all
   // `writer_paid` already.
-  observations.ensureClaimable = await ensureClaimable(fx, payable.accountId)
+  const prep = await ensureClaimable(fx, payable.accountId)
+  observations.ensureClaimable = prep
+
+  // Surfaced as its own check because an unstamped charge does not fail loudly:
+  // it is skipped as un-drawable, its earnings fall to the residual slice, and
+  // the resulting platform-balance transfer is what fails — three steps away
+  // from the cause. Naming it here turns a puzzling child failure into a
+  // one-line diagnosis.
+  check(
+    checks,
+    'every completed charge is allocation-stamped before the cycle — an unstamped one is skipped as ' +
+      'un-drawable and routes its earnings to the residual',
+    0,
+    prep.stamping.unstamped,
+  )
 
   const { rows: settlements } = await pool.query(
     `SELECT ts.id, ts.reader_id, ts.status, ts.amount_pence, ts.allocated_pence,
@@ -1100,13 +1214,7 @@ async function stepTwo(fx: Fixture): Promise<StepResult> {
   }
 
   // --- The ledger: one entry per child, at the child's own net, ref = PARENT --
-  const { rows: entries } = await pool.query(
-    `SELECT id, account_id, counterparty_id, amount_pence, trigger_type, ref_table, ref_id
-       FROM ledger_entries
-      WHERE ref_table = 'writer_payouts' AND ref_id = $1
-      ORDER BY created_at`,
-    [parent.id],
-  )
+  const entries = await ledgerFor(parent.id)
   observations.ledgerEntries = entries
   check(
     checks,
@@ -1873,6 +1981,7 @@ async function ensurePubClaimable(fx: Fixture, pub: PubFixture, rounds = 3) {
   let roundsRun = 0
 
   while (!enough(current) && roundsRun < rounds) {
+    const before = current.reads
     for (const reader of fx.readers) {
       const acct = await pool.query<{ nostr_pubkey: string }>(
         `SELECT nostr_pubkey FROM accounts WHERE id = $1`,
@@ -1889,7 +1998,7 @@ async function ensurePubClaimable(fx: Fixture, pub: PubFixture, rounds = 3) {
           articleId: pub.articleId,
           writerId: pub.writerId,
           publicationId: pub.publicationId,
-          amountPence: READ_PENCE,
+          amountPence: PUB_READ_PENCE,
           readerPubkey: pubkey,
           readerPubkeyHash: createHash('sha256').update(pubkey).digest('hex'),
           tabId: reader.tabId,
@@ -1906,11 +2015,15 @@ async function ensurePubClaimable(fx: Fixture, pub: PubFixture, rounds = 3) {
       await sleep(2000)
     }
     current = await pubClaimable(pub.publicationId)
+
+    // Same inertness guard as ensureClaimable: the publication has ONE article
+    // here, so the pool's accrual space is `readers × 1` and a second round adds
+    // nothing. Stop rather than spinning.
+    if (current.reads === before) break
   }
 
-  const { settlementService } = await import('../payment-service/src/services/settlement.js')
-  await settlementService.syncAllocations()
-  return { roundsRun, claimable: await pubClaimable(pub.publicationId) }
+  const stamping = await syncUntilStamped(fx.readers.map((r) => r.accountId))
+  return { roundsRun, stamping, claimable: await pubClaimable(pub.publicationId) }
 }
 
 async function stepEleven(fx: Fixture): Promise<StepResult> {
@@ -2071,6 +2184,9 @@ async function stepEleven(fx: Fixture): Promise<StepResult> {
       ORDER BY created_at`,
     [splits.map((s: any) => s.id)],
   )
+  // bigint -> string from node-postgres; coerce before any sum or comparison
+  // (same trap as ledgerFor).
+  for (const e of pubEntries as any[]) e.amount_pence = Number(e.amount_pence)
   observations.ledgerEntries = pubEntries
   check(
     checks,

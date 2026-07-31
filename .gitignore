@@ -34,6 +34,8 @@ shared/src/**/*.d.ts.map
 # The findings that matter live in FUNDS-SEGREGATION-INTEGRATION.md §5.
 segregation-probe-results.json
 segregation-sequence-results.json
+# --out <file> renames the run's output, so the default name alone is not enough.
+seq-step*.json
 
 # Local dev compose override (session-scoped port publishing; never committed)
 docker-compose.override.yml
