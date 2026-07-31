@@ -23,6 +23,16 @@
  * publication's members and `accounts.stripe_connect_id` is UNIQUE, so a writer
  * step after it would find its writer un-onboarded.
  *
+ * ACCRUING "ITS OWN" MEANS ROTATING THE READERS, and that took a second attempt
+ * to get right (2026-07-31). The accrual space is `readers × articles` and a
+ * repeat (reader, article) pair mints no read event, so once step 2 has paid out
+ * everything the current readers can earn, no number of extra gate passes gives
+ * step 3 anything to reserve — and more articles would not help either, since
+ * step 2 read them all. `ensureClaimable` therefore mints a FRESH reader set when
+ * a round adds nothing (`rotateReaders`). Before that, a multi-step invocation
+ * ran step 2 correctly and then reported a threshold shortfall on every step
+ * after it, which looks precisely like a broken payout cycle.
+ *
  * THE FLAG MUST BE SET IN THIS PROCESS, not merely in the container. Steps 2, 3,
  * 10 and 11 import payoutService and run the cycle here, so they read this
  * shell's `STRIPE_ALLOCATED_FUNDS`. Each refuses rather than reporting a wall of
@@ -273,7 +283,13 @@ async function pollAllocation(
 const FIXTURE_TAG = 'segregation-sequence'
 
 interface Fixture {
+  /** The CURRENT reader set. Rotated per step by `rotateReaders`. */
   readers: { accountId: string; username: string; tabId: string; customerId: string }[]
+  /**
+   * Every reader this run has minted, current and retired. Funding sources and
+   * allocation stamping must span all of them — see `rotateReaders`.
+   */
+  allReaderIds: string[]
   writers: { accountId: string; username: string; connectId: string }[]
   articles: { id: string; writerId: string }[]
   /** The writer cycle's destination — always `destinations[0]`. */
@@ -303,6 +319,97 @@ async function pickDestinations(): Promise<string[]> {
     process.exit(1)
   }
   return usable.map((a) => a.id)
+}
+
+/**
+ * Mint N fresh reader accounts, each with a real Stripe customer and card.
+ *
+ * FRESH, NEVER BORROWED FROM THE SEED SET. A reader who has already settled
+ * carries state that silently disables everything downstream: a negative tab
+ * (pre-paid credit, entirely legal) makes every subsequent read land
+ * `platform_settled` on the spot, so no threshold is crossed and no settlement is
+ * ever created. Re-using seeded readers made step 1 report "0 settlements" twice
+ * while nothing was wrong with the code under test.
+ *
+ * CALLED PER STEP, NOT ONCE PER RUN — that is what makes `--step 2,3,10` work.
+ * The accrual space is `readers × articles` and a repeat pair mints nothing
+ * (READS_PER_PAIR), so once step 2 has paid out everything this reader set can
+ * generate, step 3 has no earnings left to reserve. Minting a new set is the only
+ * way to refill it; more articles would not help, since step 2 already reads them
+ * all. Until 2026-07-31 the fixture minted once per run, and a multi-step
+ * invocation reported a threshold shortfall on every step after the first.
+ */
+async function mintReaders(count: number): Promise<Fixture['readers']> {
+  const readers: Fixture['readers'] = []
+
+  for (let i = 0; i < count; i++) {
+    const tag = `${FIXTURE_TAG}-${randomUUID().slice(0, 8)}`
+    const created = await pool.query<{ id: string; username: string }>(
+      `INSERT INTO accounts (nostr_pubkey, username, display_name)
+            VALUES ($1, $2, $3)
+         RETURNING id, username`,
+      [createHash('sha256').update(tag).digest('hex'), tag, `Sequence reader ${i + 1}`],
+    )
+    const r = created.rows[0]
+
+    const customer = await stripe.customers.create({
+      email: `${r.username}@sequence.test`,
+      metadata: { platform: 'all.haus', fixture: FIXTURE_TAG, account_id: r.id },
+    })
+    // pm_card_visa is Visa — inside the allocated-funds eligible brand set, so
+    // this charge WILL carry allocation. Step 9 deliberately uses an ineligible
+    // brand to prove the other arm.
+    const pm = await stripe.paymentMethods.attach('pm_card_visa' as string, {
+      customer: customer.id,
+    })
+    // The settlement PI passes `payment_method` explicitly (2026-07-31 P0: a PI
+    // does NOT inherit invoice_settings.default_payment_method), but this field
+    // is what `resolveDefaultPaymentMethod` reads, so it must still be set.
+    await stripe.customers.update(customer.id, {
+      invoice_settings: { default_payment_method: pm.id },
+    })
+
+    const tab = await pool.query<{ id: string }>(
+      `INSERT INTO reading_tabs (reader_id, balance_pence)
+            VALUES ($1, 0)
+       ON CONFLICT (reader_id) DO UPDATE SET updated_at = now()
+         RETURNING id`,
+      [r.id],
+    )
+    await pool.query(
+      `UPDATE accounts
+          SET stripe_customer_id = $2, card_action_required_at = NULL
+        WHERE id = $1`,
+      [r.id, customer.id],
+    )
+
+    readers.push({
+      accountId: r.id,
+      username: r.username,
+      tabId: tab.rows[0].id,
+      customerId: customer.id,
+    })
+  }
+
+  return readers
+}
+
+/**
+ * Swap in a fresh reader set, remembering the old ones.
+ *
+ * `allReaderIds` accumulates rather than replaces, because the OLD readers'
+ * charges are still funding sources — a payout reserved after the swap draws on
+ * whichever charges have allocation left, including theirs. Stamping and the
+ * settlement census must therefore span every reader the run has ever minted,
+ * not just the current set; scoping them to `fx.readers` would leave earlier
+ * charges unstamped, un-drawable, and silently routed to the residual.
+ */
+async function rotateReaders(fx: Fixture): Promise<string[]> {
+  const fresh = await mintReaders(READERS)
+  fx.readers = fresh
+  const ids = fresh.map((r) => r.accountId)
+  fx.allReaderIds.push(...ids)
+  return ids
 }
 
 async function buildFixture(): Promise<Fixture> {
@@ -356,61 +463,7 @@ async function buildFixture(): Promise<Fixture> {
     [w2.id],
   )
 
-  // --- Readers: FRESH accounts, each with a real Stripe customer and card -----
-  // Minted per run rather than borrowed from the seed set. A reader who has
-  // already settled carries state that silently disables this whole step: a
-  // negative tab (pre-paid credit, entirely legal) makes every subsequent read
-  // land `platform_settled` on the spot, so no threshold is ever crossed and no
-  // settlement is ever created. Re-using seeded readers made step 1 report
-  // "0 settlements" twice while nothing was wrong with the code under test.
-  const readers: Fixture['readers'] = []
-  const readerRows: { id: string; username: string }[] = []
-  for (let i = 0; i < READERS; i++) {
-    const tag = `${FIXTURE_TAG}-${randomUUID().slice(0, 8)}`
-    const created = await pool.query<{ id: string; username: string }>(
-      `INSERT INTO accounts (nostr_pubkey, username, display_name)
-            VALUES ($1, $2, $3)
-         RETURNING id, username`,
-      [createHash('sha256').update(tag).digest('hex'), tag, `Sequence reader ${i + 1}`],
-    )
-    readerRows.push(created.rows[0])
-  }
-
-  for (const r of readerRows) {
-    const customer = await stripe.customers.create({
-      email: `${r.username}@sequence.test`,
-      metadata: { platform: 'all.haus', fixture: FIXTURE_TAG, account_id: r.id },
-    })
-    // pm_card_visa is Visa — inside the allocated-funds eligible brand set, so
-    // this charge WILL carry allocation. Step 9 deliberately uses an ineligible
-    // brand to prove the other arm.
-    const pm = await stripe.paymentMethods.attach('pm_card_visa' as string, {
-      customer: customer.id,
-    })
-    await stripe.customers.update(customer.id, {
-      invoice_settings: { default_payment_method: pm.id },
-    })
-
-    const tab = await pool.query<{ id: string }>(
-      `INSERT INTO reading_tabs (reader_id, balance_pence)
-            VALUES ($1, 0)
-       ON CONFLICT (reader_id) DO UPDATE SET updated_at = now()
-         RETURNING id`,
-      [r.id],
-    )
-    await pool.query(
-      `UPDATE accounts
-          SET stripe_customer_id = $2, card_action_required_at = NULL
-        WHERE id = $1`,
-      [r.id, customer.id],
-    )
-    readers.push({
-      accountId: r.id,
-      username: r.username,
-      tabId: tab.rows[0].id,
-      customerId: customer.id,
-    })
-  }
+  const readers = await mintReaders(READERS)
 
   // --- Articles to read ------------------------------------------------------
   // Several per writer, not one. A repeat read of the same article mints no new
@@ -431,6 +484,7 @@ async function buildFixture(): Promise<Fixture> {
 
   return {
     readers,
+    allReaderIds: readers.map((r) => r.accountId),
     writers: [
       { accountId: w1.id, username: w1.username, connectId: destination },
       { accountId: w2.id, username: w2.username, connectId: '' },
@@ -706,11 +760,13 @@ async function ensureClaimable(
   before: Claimable
   after: Claimable
   roundsRun: number
+  rotations: string[][]
   accrued: unknown[]
   stamping: { attempts: number; unstamped: number }
 }> {
   const before = await claimableFor(writerId)
   const accrued: unknown[] = []
+  const rotations: string[][] = []
   let current = before
   let roundsRun = 0
 
@@ -732,17 +788,20 @@ async function ensureClaimable(
     }
     current = await claimableFor(writerId)
 
-    // A round that adds no reads will never add any: the accrual space is
-    // `readers × articles` and a repeat pair mints nothing (READS_PER_PAIR).
-    // Spinning here burns 8 Stripe-backed gate passes a round to no effect and
-    // then reports a threshold shortfall that looks like a payout defect. Stop,
-    // and let the step's own precondition check report the honest number.
-    if (current.reads === before) break
+    // A round that added no reads will never add any with THIS reader set: the
+    // accrual space is `readers × articles` and a repeat pair mints nothing
+    // (READS_PER_PAIR). Rotate rather than spin — spinning burns Stripe-backed
+    // gate passes to no effect and then reports a threshold shortfall that reads
+    // exactly like a payout defect. This is what lets step 3 follow step 2 in one
+    // invocation, after step 2 has paid out everything the first set could earn.
+    if (current.reads === before) {
+      rotations.push(await rotateReaders(fx))
+    }
   }
 
-  const stamping = await syncUntilStamped(fx.readers.map((r) => r.accountId))
+  const stamping = await syncUntilStamped(fx.allReaderIds)
 
-  return { before, after: await claimableFor(writerId), roundsRun, accrued, stamping }
+  return { before, after: await claimableFor(writerId), roundsRun, rotations, accrued, stamping }
 }
 
 /**
@@ -961,7 +1020,9 @@ async function stepTwo(fx: Fixture): Promise<StepResult> {
        FROM tab_settlements ts
       WHERE ts.reader_id = ANY($1::uuid[])
       ORDER BY ts.created_at`,
-    [fx.readers.map((r) => r.accountId)],
+    // ALL readers, not just the current set: a retired reader's charge still has
+    // allocation on it and is still a legitimate funding source for this payout.
+    [fx.allReaderIds],
   )
   observations.settlements = settlements
 
@@ -1080,12 +1141,34 @@ async function stepTwo(fx: Fixture): Promise<StepResult> {
   )
 
   const completedChildren = children.filter((c: any) => c.status === 'completed')
-  check(
-    checks,
-    'every child completed',
-    children.length,
-    completedChildren.length,
+  const failedChildren = children.filter((c: any) => c.status !== 'completed')
+
+  // ALLOCATED children completing is the claim this step exists to test, and it
+  // is unconditional. A RESIDUAL child is a different animal: it draws on the
+  // platform's ordinary balance rather than segregated funds (§3.3d), so in a
+  // sandbox whose balance is thin it fails `balance_insufficient` — an
+  // environment fact that says nothing about the payout code, and which
+  // otherwise reads as "the payout is broken". Separate the two rather than
+  // weakening either: an allocated failure still FAILS, a residual funding
+  // failure reports UNKNOWN and names the top-up.
+  const allocatedFailures = failedChildren.filter((c: any) => c.funding === 'allocated')
+  const residualFunding = failedChildren.filter(
+    (c: any) => c.funding === 'platform_balance' && c.failure_reason === 'balance_insufficient',
   )
+  check(checks, 'every ALLOCATED child completed', 0, allocatedFailures.length)
+  if (residualFunding.length > 0) {
+    check(
+      checks,
+      `${residualFunding.length} residual child/children failed balance_insufficient — the SANDBOX platform ` +
+        'balance is too thin to fund a non-allocated transfer, not a payout defect. Top it up with a ' +
+        'pm_card_bypassPending PaymentIntent and re-run.',
+      null,
+      null,
+      'UNKNOWN',
+    )
+  } else {
+    check(checks, 'every child completed, residual included', children.length, completedChildren.length)
+  }
 
   // At most one child per funding charge, plus at most one residual. `packUnits`
   // keys its slices by settlement id, so two children on one charge would mean
@@ -1148,38 +1231,78 @@ async function stepTwo(fx: Fixture): Promise<StepResult> {
 
     check(checks, `transfer amount == child net (${child.id.slice(0, 8)})`, child.net_pence, t.amount)
     check(checks, `transfer destination == the writer's connect account (${child.id.slice(0, 8)})`, fx.destination, destination)
-    check(
-      checks,
-      `source_transaction == the child's funding charge (${child.id.slice(0, 8)})`,
-      child.stripe_charge_id,
-      sourceTransaction,
-    )
-    check(
-      checks,
-      `application_fee_amount == child fee (${child.id.slice(0, 8)})`,
-      child.fee_pence,
-      feeField ?? null,
-      feeField === undefined ? 'UNKNOWN' : undefined,
-    )
+
+    // The two fundings have OPPOSITE contracts and asserting the allocated one on
+    // a residual child is a false failure. `allocatedTransferParams` returns {}
+    // for a residual: no `source_transaction` (there is no charge behind it) and
+    // no `application_fee_amount`, because with no allocation the fee is IMPLICIT
+    // — the platform keeps it by simply not transferring it. Passing a fee of 0
+    // would be a request for no fee, which is why the param is omitted rather
+    // than zeroed. Stripe also rejects `application_fee_amount` outright on a
+    // transfer whose source is not an allocated charge (probe 6), so the two are
+    // inseparable in both directions.
+    if (child.funding === 'allocated') {
+      check(
+        checks,
+        `source_transaction == the child's funding charge (${child.id.slice(0, 8)})`,
+        child.stripe_charge_id,
+        sourceTransaction,
+      )
+      check(
+        checks,
+        `application_fee_amount == child fee (${child.id.slice(0, 8)})`,
+        child.fee_pence,
+        feeField ?? null,
+        feeField === undefined ? 'UNKNOWN' : undefined,
+      )
+    } else {
+      check(
+        checks,
+        `residual child carries NO source_transaction (${child.id.slice(0, 8)})`,
+        null,
+        sourceTransaction,
+      )
+      check(
+        checks,
+        `residual child carries NO application_fee_amount — the fee is implicit (${child.id.slice(0, 8)})`,
+        null,
+        feeField ?? null,
+      )
+    }
   }
   observations.transfers = transfers
 
-  // --- The fees land in the platform balance --------------------------------
-  // Step 1 established that allocated funds never enter it, so this delta is
-  // exactly the fees leaving allocated state — the one place they become ours.
-  const expectedFees = completedChildren.reduce((s: number, c: any) => s + c.fee_pence, 0)
-  const balanceAfter = await pollPlatformBalance(balanceBefore + expectedFees)
+  // --- What the platform balance does, in BOTH directions --------------------
+  // Step 1 established that allocated funds never enter the platform balance, so
+  // an allocated child moves it only by its application fee — the one point at
+  // which the fee becomes ours. A RESIDUAL child moves it the other way and by
+  // far more: its whole net is PAID OUT of the ordinary balance, and it claims no
+  // fee at all. So the expected delta is a difference, not a sum, and it is
+  // routinely NEGATIVE. Summing every child's fee (as this did until 2026-07-31)
+  // is only right for an all-allocated payout, and reports a false failure the
+  // moment one unit falls to the residual.
+  const allocatedFeePence = completedChildren
+    .filter((c: any) => c.funding === 'allocated')
+    .reduce((s: number, c: any) => s + c.fee_pence, 0)
+  const residualNetPence = completedChildren
+    .filter((c: any) => c.funding === 'platform_balance')
+    .reduce((s: number, c: any) => s + c.net_pence, 0)
+  const expectedDelta = allocatedFeePence - residualNetPence
+
+  const balanceAfter = await pollPlatformBalance(balanceBefore + expectedDelta)
   observations.platformBalance = {
     before: balanceBefore,
     after: balanceAfter.pence,
     delta: balanceAfter.pence - balanceBefore,
-    expectedFees,
+    allocatedFeePence,
+    residualNetPence,
+    expectedDelta,
     waitedMs: balanceAfter.waitedMs,
   }
   check(
     checks,
-    'platform balance rose by exactly the application fees',
-    expectedFees,
+    'platform balance moved by exactly (Σ allocated fees − Σ residual nets)',
+    expectedDelta,
     balanceAfter.pence - balanceBefore,
   )
 
@@ -2016,13 +2139,17 @@ async function ensurePubClaimable(fx: Fixture, pub: PubFixture, rounds = 3) {
     }
     current = await pubClaimable(pub.publicationId)
 
-    // Same inertness guard as ensureClaimable: the publication has ONE article
-    // here, so the pool's accrual space is `readers × 1` and a second round adds
-    // nothing. Stop rather than spinning.
-    if (current.reads === before) break
+    // Same rotation as ensureClaimable, and it matters MORE here: the publication
+    // has ONE article, so the pool's accrual space is `readers × 1` and a second
+    // round with the same readers adds literally nothing. Step 11's second arm
+    // needs a whole second payable pool after the first has been paid out, which
+    // is only reachable by rotating.
+    if (current.reads === before) {
+      await rotateReaders(fx)
+    }
   }
 
-  const stamping = await syncUntilStamped(fx.readers.map((r) => r.accountId))
+  const stamping = await syncUntilStamped(fx.allReaderIds)
   return { roundsRun, stamping, claimable: await pubClaimable(pub.publicationId) }
 }
 
