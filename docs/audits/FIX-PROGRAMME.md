@@ -23,6 +23,84 @@ starts.
 
 ## Progress
 
+- **2026-07-31 (the sequence runs: steps 2, 3 and 10 GREEN — and step 11 finds that the
+  publication payout cycle has never worked)** — the four steps written earlier the same
+  day were driven against the segregation sandbox. **Every defect the run surfaced in the
+  first three steps was in the harness or in dev's seed data; none was in the code under
+  test**, which repeatedly did the right thing at branches it was not being asked about.
+  Step 11 is the exception, and what it found is a live P0.
+  - **P0 — `runPublicationPayoutCycle` cannot claim a single read, and has never been able
+    to.** `reservePublicationPayout` claims the pool's reads with
+    `UPDATE read_events SET writer_payout_id = $1` where `$1` is a **`publication_payouts`**
+    id — but that column carries `fk_read_events_writer_payout → writer_payouts(id)`. Every
+    such UPDATE raises `23503` and rolls back the entire reserve transaction. The FK is in
+    `schema.sql` **genesis** and no migration has ever altered it, so this has been true
+    since the first day the publication cycle existed.
+    - **It fails SILENTLY.** The cycle catches per-publication errors (`catch (err) { logger.error(…) }`)
+      so the worker survives and the other publications are attempted — the observable
+      behaviour is simply that publications are never paid, with an error log nobody reads.
+    - **Scope, measured not assumed:** a pool containing ≥1 settled unclaimed read dies. A
+      **subscription-only** pool survives, because the reads UPDATE matches zero rows and
+      the subs claim uses `subscription_events.publication_payout_id` — a column that
+      exists. That asymmetry is itself the tell: the subscription side got a dedicated
+      column and the reads side was left reusing the writer one.
+    - **Why nothing caught it.** No test calls `runPublicationPayoutCycle` — the single
+      DB-backed publication test states so in its own comment and exercises the ordering
+      SQL and the pure `computePublicationSplits` instead. Prod is pre-launch with zero
+      publication payouts. So every unit test passes and the feature has never once run.
+      This is the §11 verification-debt thesis in its purest form: **component ≠ feature**.
+    - **Not fixed here** — the fix is a fork (a dedicated `read_events.publication_payout_id`
+      mirroring `subscription_events`, versus dropping the FK to make the column
+      polymorphic) that touches claim, release, recompute and chargeback attribution. Queued
+      at CONSOLIDATED-TODO.
+  - **Step 2 — 41/41.** Four children, one per drawn charge, nets 1288+1288+1932+2576 =
+    7084 = parent `amount_pence` = ledger sum; every `source_transaction` and
+    `application_fee_amount` checked against **Stripe's own copy** of the transfer; one
+    `allocated_draws` row per allocated child at GROSS; reconcile-ledger gained no violation
+    from N entries per parent (§3.6's `ledger_orphans`-tolerates-N claim, confirmed).
+  - **Step 3 — 15 pass, 1 honest UNKNOWN.** A child inflated 1932 → 7800 against a 2800p
+    charge was rejected by Stripe as a **`StripeInvalidRequestError`**, i.e. classified
+    TERMINAL rather than re-thrown as ambiguous (`executeThrew: false` — the distinction the
+    whole S1 discipline rests on). Child failed, its draw DELETEd, its 3 reads released with
+    both pointers nulled, 7 sibling reads untouched and advanced, parent restated 4508 with
+    `failed_reason`. The UNKNOWN is deliberate: the released net was under the payout
+    threshold, so no next cycle claims it, and re-packability is asserted by the release
+    check rather than faked by lowering a dial.
+  - **Step 10 — 15/15.** The crash state is genuine (Txn 1 committed, nothing sent, books
+    silent); resume completes without re-packing; a **second** resume adds no entry, child,
+    transfer or restatement; and Stripe returns the SAME transfer for a replayed
+    `xfer-<childId>` while rejecting that key with different params as an
+    `idempotency_error`.
+  - **Six harness bugs, every one of which produced a convincing false negative.** Worth
+    listing because each looked exactly like a payout defect: (1) `READS_PER_PAIR = 2` posted
+    the same (reader, article) pair twice and a reader who already paid is not charged again,
+    so 24 gate passes produced 4 read events; (2) the retry loop could not widen the accrual
+    space at all, since it is `readers × articles` — fixed by minting fresh readers per step,
+    which is also what makes `--step 2,3,10` work in one invocation; (3) one `syncAllocations`
+    is not enough, and an unstamped charge is correctly skipped as un-drawable, routing
+    earnings to the residual; (4) `amount_pence` is `bigint`, so node-postgres returns a
+    string and the ledger sum concatenated; (5) the per-child assertions applied the
+    ALLOCATED contract to a residual child, which correctly carries neither
+    `source_transaction` nor `application_fee_amount` (with no allocation the fee is
+    implicit); (6) the platform-balance expectation summed every child's fee, when a residual
+    child moves the balance the *other* way by its whole net — correct expectation is
+    `Σ allocated fees − Σ residual nets`, measured −840 against a predicted −840.
+  - **Dev had been silently halted for a fortnight.** `scripts/seed.ts` writes
+    `reading_tabs.balance_pence` directly and posts **zero** ledger entries, so every seeded
+    reader violated `reader_balance_parity` and the scheduled reconcile worker did exactly
+    its job on 2026-07-17 09:45: **halted all payouts**. Every payout cycle since has been a
+    no-op. All 25 discrepancies fell inside the seeder's own `0..800` range and no account
+    that transacted through production code was among them — seed data, not a defect. Fixed
+    with the mechanism designed for it (`scripts/backfill-seed-opening-balances.ts`, 25
+    `opening_balance` entries, dry-run by default since the ledger is append-only) rather
+    than by zeroing the tabs, which would break the same invariant from the other end.
+  - Also landed: `scripts/create-sandbox-connect-account.ts`, because the Stripe **dashboard
+    cannot create an onboarded connected account** under the controller-properties model —
+    the API is the only route, and step 11's failed-split arm needs a second payable
+    destination (with one member the payout has one split, and a single failure correctly
+    fails its parent outright, so the property has no sibling to be true of).
+    → CONSOLIDATED-TODO §11 / `FUNDS-SEGREGATION-INTEGRATION.md` §5.
+
 - **2026-07-31 (four more §5 sequence steps, written and unrun — and one of them
   documents what it refuses to fake)** — `scripts/segregation-sequence.ts` gains steps
   **2** (multi-child writer payout), **3** (forced over-transfer), **10** (crash-resume)

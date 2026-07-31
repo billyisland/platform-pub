@@ -952,7 +952,50 @@ cost and two of them produce numbers the design needs as inputs.
 > repo can currently reach. Step 12 is additionally blocked on the Dial-A tribute rework
 > — driving it today would test a model already scheduled for replacement.
 
-> **STEPS 2, 3, 10 AND 11 ARE WRITTEN AND UNRUN (2026-07-31).** They are in
+> **RUN (2026-07-31): STEPS 2, 3 AND 10 ARE GREEN. STEP 11 FOUND A P0 AND IS BLOCKED.**
+> This supersedes the "written and unrun" block below, which is kept for the shape of its
+> claims. 72 checks in one `--step 2,3,10` invocation: **step 2 41/41**, **step 3 15 + 1
+> deliberate UNKNOWN**, **step 10 15/15**.
+>
+> - **Step 2** — four children, one per drawn charge; nets 1288+1288+1932+2576 = 7084 =
+>   parent `amount_pence` = ledger sum; every `source_transaction` and
+>   `application_fee_amount` verified against **Stripe's own copy** of each transfer; one
+>   `allocated_draws` row per allocated child at GROSS; **§3.6's `ledger_orphans`-tolerates-N
+>   claim confirmed** — reconcile gained no violation from N entries per parent.
+> - **Step 3** — a child inflated 1932 → 7800 against a 2800p charge was rejected by Stripe
+>   as a **`StripeInvalidRequestError`**, i.e. TERMINAL, not ambiguous (`executeThrew: false`).
+>   Draw DELETEd, its 3 reads released with both pointers nulled, 7 sibling reads untouched,
+>   parent restated to 4508 with a `failed_reason`. So §3.3e's failure *handling* is now
+>   confirmed against real Stripe enforcement rather than a mock.
+> - **Step 10** — resume from a genuine crash state, then a second resume as the
+>   double-delivery control, then the row-stable key put to Stripe directly: same params →
+>   same transfer, different params → `idempotency_error`.
+> - **The residual path was exercised by accident and is now pinned.** A residual child
+>   correctly carries **neither** `source_transaction` nor `application_fee_amount` — with no
+>   allocation the fee is IMPLICIT (the platform keeps it by not transferring it), and
+>   passing 0 would be a request for no fee. Consequently the platform balance moves by
+>   `Σ allocated fees − Σ residual nets`, which is routinely **negative**: measured −840
+>   against a predicted −840. Any future check that sums every child's fee is wrong.
+>
+> **STEP 11 FOUND THAT `runPublicationPayoutCycle` HAS NEVER WORKED.**
+> `reservePublicationPayout` claims the pool's reads with
+> `UPDATE read_events SET writer_payout_id = $1` where `$1` is a **`publication_payouts`**
+> id, while that column carries `fk_read_events_writer_payout → writer_payouts(id)`. Every
+> such UPDATE raises `23503` and rolls back the reserve — and the cycle catches
+> per-publication errors, so it fails **silently**: publications are simply never paid. The
+> FK is in `schema.sql` **genesis** and no migration ever touched it. A **subscription-only**
+> pool survives (that claim uses `subscription_events.publication_payout_id`, a column which
+> exists — the asymmetry being the tell). Nothing caught it because **no test calls
+> `runPublicationPayoutCycle`**. Fix fork + recommendation: CONSOLIDATED-TODO.
+>
+> **Two environment prerequisites that produce convincing false negatives.** The flag must be
+> set in the **shell**, not just the container. And the **platform balance must be positive** —
+> residual children draw on it rather than on segregated funds, so an overdrawn sandbox fails
+> them `balance_insufficient`, which reads as a payout defect and is not one.
+>
+> ---
+>
+> **(Superseded by the above.) STEPS 2, 3, 10 AND 11 ARE WRITTEN AND UNRUN (2026-07-31).** They are in
 > `scripts/segregation-sequence.ts`, they typecheck, and every dynamic import and private
 > method they drive was verified to resolve at runtime — **and not one of their assertions
 > has ever executed.** Nothing below is a result; it is a description of what will be
