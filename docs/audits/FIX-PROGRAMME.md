@@ -23,6 +23,92 @@ starts.
 
 ## Progress
 
+- **2026-08-01 (§5 steps 4–9 RUN — seven of seven green, and step 9 found a flip blocker
+  that would have wedged every Mastercard reader)** — the family written the previous day
+  was driven against the segregation sandbox. **Six steps passed as written; the seventh
+  could not run at all, and why not is the most valuable thing this exercise has
+  produced.** Final tallies: step 4 **19/19**, steps 5+6 **25/25**, steps 7+7b **36/36**,
+  step 8 **15/15**, step 9 **11/11** (after the fix below). No defect was found in the
+  code under test by any of 4–8.
+  - **P1 (flip blocker) — asking for allocation on an ineligible card brand 500s, and the
+    reader's tab wedges permanently.** §3.3a and `settlement.ts` both held that an
+    ineligible brand "simply yields a charge whose allocated balance syncs to 0". It does
+    not. With `allocated_funds[enabled]=true` the create fails `StripeAPIError` 500 (no
+    code, `stripe-should-retry: false`). That 500 is **correctly** classified AMBIGUOUS —
+    it may mean the PaymentIntent was created, and rolling back would risk a double
+    charge — so `completeSettlement` re-throws, and then:
+    - the settlement stays `pending` with **no PI id**;
+    - `resumePendingSettlements` retries it every reconcile cycle and 500s again;
+    - `sweepDueSettlements` skips that tab **forever** on its `NOT EXISTS pending` guard;
+    - `card_action_required_at` is **never set**, because ambiguous is deliberately not
+      the terminal path — so the reader is never prompted to change card;
+    - their reads stay `accrued`, never settle, and the writer never earns.
+
+    Silent, permanent, per-reader, with an ERROR log nobody reads. **Not live** — the flag
+    is off in production — so this is a flip blocker rather than an incident.
+  - **The eligible brand set was measured, and both prior lists in the repo were wrong.**
+    `scripts/segregation-probes.ts --brands --repeat 5` (new mode): ten tokens × three
+    modes (classic version / preview version alone / preview version **plus** the param),
+    beta+param repeated five times, **Visa positive control in the same window**. Fifty
+    samples, no mixed results. **Eligible:** `visa`, `visa_debit`, `amex`, `discover`,
+    **`diners`**. **Ineligible:** **`mastercard`, `mastercard_debit`,
+    `mastercard_prepaid`**, `jcb`, `unionpay`. Two overturns: **Mastercard is not
+    eligible** (all three variants 0/5, so it is the network, not one test card), and
+    **Diners is** (it routes over Discover — eligibility follows the NETWORK, not the
+    `brand` string Stripe reports, which is why no documentation list can be trusted here).
+    The matrix also isolated the cause: it is the `allocated_funds` **param**, not the
+    preview API version, which passed for all ten.
+  - **FIXED by pre-flighting the brand.** `ALLOCATION_ELIGIBLE_CARD_BRANDS` +
+    `allocatedFundsParam(brand)` in `payment-service/src/lib/stripe-client.ts`, with
+    **default-deny** on an unknown, unmeasured or unreadable brand (omitting allocation is
+    the safe direction — money right, coverage poorer; wrongly *including* a brand is what
+    wedges readers). The card is never refused: `payment_method_types: ['card']` stays
+    broad, so no revenue is lost — we simply stop asking for what the brand cannot give,
+    which restores exactly what `settlement.ts`'s own comment always intended. The brand
+    is read via `expand` on the `customers.retrieve` that `resolveDefaultPaymentMethod`
+    **already makes**, so it costs **no extra API call**.
+  - **Pinned and mutation-verified.** `payment-service/tests/allocation-brand-eligibility.test.ts`
+    — 19 tests (flag off, eligible, ineligible, default-deny, normalisation, and the set
+    itself). Mutation: remove the brand guard → **8 fail, 11 pass**, and the 8 are the
+    ineligible/default-deny/set-membership ones. Suite 214 → 233. **The mocked tests
+    cannot prove the charge now succeeds** — only Stripe knows that — which is why step 9
+    is the real gate: it now settles a Mastercard, syncs `allocated_pence = 0` with
+    `allocation_synced_at` stamped (the pair), never draws on it, and routes the payout
+    around it. 11/11.
+  - **STILL OPEN — ask Stripe about Mastercard, and treat it as a flip gate.** The
+    pre-flight stops the wedge; it does not answer what the guarantee is worth. With
+    Mastercard out, flipping segregates perhaps two-thirds of reader money and the
+    structural residual floor becomes roughly the Mastercard share — not the small
+    credit-funded rump `allocated_residual_alert_bps` (§3.3d) was designed around. Whether
+    the exclusion is permanent or merely not-yet-enabled on the sandbox is a question only
+    Stripe can answer, and live enablement was expected imminently. Re-run
+    `--brands --repeat 5` against live once enabled.
+  - **Four harness defects found by running it, all mine, and three shared one shape —
+    a check that could not fail.** (a) step 9's fallback list was consulted at card
+    *attach* time when the failure is at *charge* time, so it never fired; (b) it then
+    accepted "the settlement completed" when the requirement was "completed **and
+    unallocated**", and asserted six ineligible-brand claims against an *eligible* charge
+    — six red marks that were one mistake; (c) it proceeded on `status = 'completed'`,
+    which is stamped at PI-create, when the assertions needed `stripe_charge_id`, stamped
+    later by the **webhook**; (d) **`syncUntilStamped` returned `{attempts: 1, unstamped:
+    0}` having stamped nothing at all** — its filter requires `stripe_charge_id IS NOT
+    NULL`, so an unconfirmed row is invisible and reads as "zero unstamped". Three
+    allocation assertions rode on that number. It now reports `considered` alongside
+    `unstamped` and step 9 asserts `considered > 0`; the trap was latent for every step
+    using that helper, and 2–8 were safe only because `ensureClaimable` already waits for
+    the webhook.
+  - **The brand probe's own control earned its keep.** The first cut passed `{}` as
+    stripe-node's options argument, which that client rejects as `Unknown arguments` —
+    and the symptom (*every* non-classic cell failing) was **identical to the finding it
+    was looking for**. The Visa control failing is what said "the instrument is broken,
+    not the beta". Generalises the 2026-07-30 lesson: it is not only that a matrix run
+    inside a failure window cannot show cause — **a matrix with no positive control cannot
+    distinguish a finding from a broken instrument.**
+  - **One prediction withdrawn.** The 07-31 note doubting §5.6's `manual_review_required`
+    claim (reasoned from `webhook.ts` emitting it only on the partial arm) was **wrong —
+    the check passed**. The note is withdrawn in the ADR rather than left standing beside
+    a claim it wrongly doubted.
+
 - **2026-07-31 (§5 steps 4–9: the refund/reversal/edge-funding family, written and unrun)** —
   the last seven sequence steps are now code. **They have never touched Stripe** — the
   sandbox key was cycled after the same day's run, and a step that has not run is a

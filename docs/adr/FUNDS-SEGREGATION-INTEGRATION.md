@@ -189,16 +189,35 @@ All three verified against the Stripe documentation 2026-07-29.
    by the header.
 
 Also inherited from the beta:
-- **Payment methods restricted to Visa, Mastercard, Amex, Discover and Swish.** We use
-  `payment_method_types: ['card']` (`settlement.ts:277`), which is **broader** than that
-  set — in GBP it also admits JCB, Diners and UnionPay. Such a charge simply carries no
-  allocated funds, and a `source_transaction` transfer against it succeeds anyway from
-  ordinary balance, so the segregation guarantee would lapse **silently, with no error
-  anywhere**. The fix is not a brand allow-list (which would refuse a reader's card at
-  settlement time, turning a compliance nicety into lost revenue): it is **never to assume
-  allocation** — §3.3a reads the allocated balance back from Stripe per charge, so an
-  ineligible brand yields a charge that is simply not drawable, handled by the same path as
-  a not-yet-settled one. Never introduce `automatic_payment_methods`.
+- **Payment methods restricted by card brand — and the restricted set is MEASURED, not
+  the one this bullet used to name.** It said "Visa, Mastercard, Amex, Discover and
+  Swish". Measured 2026-08-01 (`segregation-probes.ts --brands --repeat 5`, fifty
+  samples, Visa control in-window): **eligible** = `visa`, `visa_debit`, `amex`,
+  `discover`, `diners`; **ineligible** = `mastercard` (all three variants), `jcb`,
+  `unionpay`. So the old list was wrong in both directions — Mastercard is *out*, Diners
+  is *in* (it routes over Discover; eligibility follows the NETWORK, not the `brand`
+  string). One home: `ALLOCATION_ELIGIBLE_CARD_BRANDS`.
+
+  We use `payment_method_types: ['card']` (`settlement.ts`), which is deliberately
+  **broader** than that set, and that stays right: a brand allow-list at settlement time
+  would refuse a reader's card and turn a compliance nicety into lost revenue.
+
+  **But "never assume allocation" is not sufficient on its own, which is what this bullet
+  got wrong.** It reasoned that an ineligible charge "simply carries no allocated funds"
+  and that §3.3a's read-back handles it. In fact, *asking* for allocation on an
+  ineligible brand fails the create outright with a Stripe 500 → classified ambiguous →
+  the reader's tab wedges permanently (§5 step 9 has the full chain). So the allow-list
+  moved to the **allocation param** rather than to `payment_method_types`: the card is
+  charged normally, we simply do not request allocation for a brand that cannot carry it,
+  and §3.3a's read-back then does exactly what this bullet always described. Never
+  introduce `automatic_payment_methods`.
+
+  **Consequence for the guarantee, not just for the code:** with Mastercard excluded, a
+  large minority of reader money — roughly the Mastercard share of card payments — cannot
+  be segregated at all and lands in the residual by construction. That is a direct input
+  to `allocated_residual_alert_bps` (§3.3d) and a **flip gate**: ask Stripe whether the
+  Mastercard exclusion is permanent or merely not yet enabled, before concluding what
+  flipping the flag buys.
 - Dashboard does NOT display allocated funds; fee billing becomes asynchronous. Our
   ledger + the allocation model (§3.3a) + a reconcile job (§3.6) are the only visibility.
 - Refunds/disputes draw allocated funds first, then platform balance. Transfer reversals
@@ -270,6 +289,19 @@ already-decided amount, and a **per-child lifecycle** so that one Stripe rejecti
 is an ordinary event rather than a wedged payout.
 
 #### 3.3a The allocation model — never assume, read it back
+
+> **CORRECTION, 2026-08-01 (measured).** This section says an ineligible card brand
+> "carries NO allocated funds while a `source_transaction` transfer against it would
+> still succeed from ordinary balance" — i.e. that such a charge *succeeds* and merely
+> lacks allocation. **It does not.** With `allocated_funds[enabled]=true` the create
+> fails with a Stripe 500, which is classified ambiguous and wedges the reader's tab
+> permanently (full chain in §5 step 9). The brand is now **pre-flighted** so an
+> ineligible card is charged without the param — which produces exactly the state this
+> section describes, so everything below is true *given the pre-flight* and was simply
+> not reachable before it. The eligible set is MEASURED and lives in one place,
+> `ALLOCATION_ELIGIBLE_CARD_BRANDS`; note in particular that **Mastercard is not in it**
+> and that the brand list this section originally gave was wrong on both Mastercard and
+> Diners.
 
 New state, because Stripe gives us no queryable view of remaining allocation per charge:
 
@@ -1094,14 +1126,16 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
    wedging.
 6. Refund post-transfer → partial platform-balance draw; `manual_review_required` fires.
 
-   **The marker half of this claim is questioned (2026-07-31, from writing the step).**
-   `webhook.ts` emits `manual_review_required` from exactly one arm of `charge.refunded`
-   — the PARTIAL one — and step 6 is a FULL refund, so it takes the `reverseSettlement`
-   path and emits nothing. Either this step means a *partial* refund post-transfer (in
-   which case step 5 already covers the marker and this line is wrong), or a full refund
-   of an already-paid-out charge deserves a marker of its own and the CODE is wrong. The
-   harness states the claim as written and lets the verdict decide; settle the question
-   before patching either side.
+   **Both halves CONFIRMED by the run, 2026-08-01.** A note added here on 2026-07-31
+   questioned the marker half — reasoning from `webhook.ts` that the marker is emitted
+   only from the PARTIAL arm of `charge.refunded`, and that a full refund post-transfer
+   would therefore emit nothing. **That reading was wrong and the step passed**; the
+   note is withdrawn rather than left standing beside a claim it wrongly doubted. The
+   lesson is the ordinary one and worth keeping: a prediction from reading a handler is
+   not evidence, and this harness exists precisely because the code is not the only
+   thing in the loop. The platform-balance half is asserted by DIRECTION only (it falls);
+   the exact figure is a fact about Stripe and is recorded in the step's observations for
+   a future tightening rather than guessed at here.
 7. Transfer reversal (with `refund_application_fee=true`) → funds return to allocated
    state; our `reversal` draw row restores the remainder; ledger reversing entries agree.
 7b. **Reversal of one child among several** → the handler resolves via
@@ -1125,6 +1159,60 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
    drives — through production's own two functions, in the convert route's own order.
 9. **Ineligible brand** — settle with a JCB or Diners test card → `allocated_pence` syncs
    to 0, the charge is never drawn on, and the payout routes elsewhere with no error.
+
+   **This step's PREMISE was false, and finding that out is the most valuable thing the
+   §5 sequence has produced (2026-08-01).** The step was unreachable as written, because
+   the charge it asks for could not be created at all.
+
+   **What was measured.** `scripts/segregation-probes.ts --brands --repeat 5`: ten test
+   tokens, each charged three ways — classic API version / preview version alone /
+   preview version **plus** `allocated_funds[enabled]=true` — with the beta+param cell
+   repeated five times and a Visa positive control in the same window. Fifty samples, no
+   mixed results.
+
+   - **ELIGIBLE (5/5):** `visa`, `visa_debit`, `amex`, `discover`, **`diners`**
+   - **INELIGIBLE (0/5):** **`mastercard`, `mastercard_debit`, `mastercard_prepaid`**,
+     `jcb`, `unionpay`
+
+   **Two things that overturns.** *Diners is eligible* though no brand list names it —
+   it routes over the Discover network, so eligibility follows the NETWORK, not the
+   `brand` string Stripe reports. And **Mastercard is NOT eligible**, all three variants,
+   so it is the network and not one test card. §3.3a's own comment named Mastercard as
+   eligible; it was wrong.
+
+   **The failure mode this exposed was a flip blocker.** Asking for allocation on an
+   ineligible brand does NOT yield "a charge whose allocated balance syncs to 0", as
+   §3.3a and `settlement.ts` both claimed. It fails the create with a Stripe **500**
+   (`StripeAPIError`, no code, `stripe-should-retry: false`). A 500 is correctly
+   classified AMBIGUOUS — it may mean the PaymentIntent was created, so rolling back
+   would risk a double charge — so `completeSettlement` re-throws, and then: the
+   settlement stays `pending` with no PI id → `resumePendingSettlements` retries every
+   reconcile cycle and 500s again → `sweepDueSettlements` skips that tab forever on its
+   `NOT EXISTS pending` guard → `card_action_required_at` is never set, because ambiguous
+   is deliberately not the terminal path → the reads stay `accrued` and the writer never
+   earns. Silent, permanent, per-reader, for **any reader on a Mastercard**, from the
+   moment the flag went live.
+
+   **Fixed by pre-flighting the brand** (`allocatedFundsParam(brand)` +
+   `ALLOCATION_ELIGIBLE_CARD_BRANDS` in `payment-service/src/lib/stripe-client.ts`,
+   default-deny on unknown/absent). The card is never refused — `payment_method_types`
+   stays broad, so no revenue is lost — we simply stop asking for something the brand
+   cannot give, which is exactly what `settlement.ts`'s own comment always intended. The
+   brand is read from the `customers.retrieve` that `resolveDefaultPaymentMethod` already
+   makes, via `expand`, so it costs **no extra API call**. Step 9 now passes 11/11 and is
+   the end-to-end proof; 19 unit tests pin the set, mutation-verified (revert the guard →
+   8 go red).
+
+   **STILL OPEN, and it is a flip gate in its own right: ASK STRIPE ABOUT MASTERCARD.**
+   Pre-flighting stops the wedge but does not answer what the guarantee is worth. With
+   Mastercard excluded, flipping segregates perhaps two-thirds of reader money, and the
+   structural residual floor becomes roughly the Mastercard share of payments — not the
+   small credit-funded rump `allocated_residual_alert_bps` (§3.3d) was designed around,
+   which changes how that dial must be set. Whether the exclusion is permanent or merely
+   not-yet-enabled on the sandbox is a question only Stripe can answer, and live
+   enablement was expected imminently. **Do not treat
+   `ALLOCATION_ELIGIBLE_CARD_BRANDS` as settled until they do**, and re-run the probe
+   against the live account once it is enabled.
 10. Crash-resume: kill the worker mid-child-sequence; restart; assert idempotent
     completion, no double transfer, no re-pack, and that a child completed before the crash
     posts exactly one ledger entry.

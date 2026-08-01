@@ -16,19 +16,30 @@
  * and then proved the fix for the P0 in migration 168). Step 13 is the flag-off
  * suite, run separately.
  *
- * WRITTEN AND UNRUN: 4, 5, 6, 7, 7b, 8, 9 (2026-07-31). They compile and they
- * have never touched Stripe — the sandbox key from the 07-31 session was cycled,
- * and a step that has not run is a hypothesis. Read every result from the first
- * green run against THE FIVE TRAPS below before believing any failure: the whole
- * point of that list is that each one presents as a broken payout in a system
- * where nothing is broken. Three of the seven carry a deliberately loose
- * assertion, each marked in its own header, because guessing tightly would have
- * been guessing: step 6's platform-balance figure (a fact about Stripe, and this
- * harness measures those rather than deriving them), step 6's
- * `manual_review_required` claim (stated as the ADR words it, expected to fail,
- * and the failure is a question about the ADR rather than a bug to patch), and
- * step 9's brand token (two are tried, because a sandbox that declines JCB
- * outright says nothing about allocation).
+ * ALSO GREEN (2026-08-01): 4 (19/19), 5+6 (25/25), 7+7b (36/36), 8 (15/15), and
+ * 9 (11/11). Every step of §5 except 12 has now run; 12 stays blocked on the
+ * Dial-A tribute rework.
+ *
+ * WHAT THAT RUN COST AND BOUGHT, because it is the argument for the whole
+ * harness. Steps 4-8 found NO defect in the code under test. Step 9 could not
+ * run at all — and why not was a flip blocker: asking for allocation on an
+ * ineligible card brand fails the create with a Stripe 500, which is correctly
+ * classified AMBIGUOUS, so the settlement stays `pending` forever, the tab is
+ * blocked by the in-flight guard, `card_action_required_at` is never set, and
+ * the reader is wedged silently and permanently. MASTERCARD IS SUCH A BRAND
+ * (measured; all three variants), so that was every Mastercard reader from the
+ * moment the flag went live. Fixed by pre-flighting the brand
+ * (`allocatedFundsParam`); step 9 is now the end-to-end proof of the fix.
+ *
+ * FOUR HARNESS DEFECTS CAME OUT OF THAT RUN, ALL IN THIS FILE, and three shared
+ * one shape — a check that could not fail. They are worth knowing because the
+ * next person will write the same kind: a fallback list consulted at the wrong
+ * moment (attach, not charge); a success condition weaker than the requirement
+ * ("settled" for "settled AND unallocated"), which asserted six claims against
+ * the wrong charge; a wait on `status = 'completed'` when the assertions needed
+ * `stripe_charge_id`, stamped later by the WEBHOOK; and `syncUntilStamped`
+ * returning `unstamped: 0` having stamped nothing, because its own filter made
+ * the row invisible. That last one is why it now reports `considered` too.
  *
  * 12 stays BLOCKED on the Dial-A tribute rework — driving it today would book a
  * pass against a model already scheduled for replacement.
@@ -948,28 +959,38 @@ async function ensureClaimable(
 async function syncUntilStamped(
   readerIds: string[],
   attempts = 6,
-): Promise<{ attempts: number; unstamped: number }> {
+): Promise<{ attempts: number; unstamped: number; considered: number }> {
   const { settlementService } = await import('../payment-service/src/services/settlement.js')
-  for (let i = 1; i <= attempts; i++) {
-    await settlementService.syncAllocations()
-    const { rows } = await pool.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM tab_settlements
+  // `considered` is reported alongside `unstamped` because ZERO UNSTAMPED AND
+  // ZERO CONSIDERED ARE NOT THE SAME ANSWER, and conflating them is a vacuous
+  // pass. This filter mirrors syncAllocations' own candidate query, including
+  // its `stripe_charge_id IS NOT NULL` — and that column is stamped by
+  // `confirmSettlement` on the WEBHOOK, not at PI-create time. So a settlement
+  // whose webhook has not landed yet is invisible here, and the loop returns
+  // `{attempts: 1, unstamped: 0}` on its first pass having stamped nothing at
+  // all. Step 9 believed that number on 2026-08-01 and asserted three
+  // allocation claims against a row the sweep had never seen. A caller that
+  // needs stamping to have HAPPENED must check `considered > 0`.
+  const census = async () => {
+    const { rows } = await pool.query<{ considered: number; unstamped: number }>(
+      `SELECT count(*)::int AS considered,
+              count(*) FILTER (WHERE allocated_pence IS NULL)::int AS unstamped
+         FROM tab_settlements
         WHERE reader_id = ANY($1::uuid[])
           AND status = 'completed'
-          AND stripe_charge_id IS NOT NULL
-          AND allocated_pence IS NULL`,
+          AND stripe_charge_id IS NOT NULL`,
       [readerIds],
     )
-    if (rows[0].n === 0) return { attempts: i, unstamped: 0 }
+    return rows[0]
+  }
+  let seen = await census()
+  for (let i = 1; i <= attempts; i++) {
+    await settlementService.syncAllocations()
+    seen = await census()
+    if (seen.unstamped === 0) return { attempts: i, unstamped: 0, considered: seen.considered }
     await sleep(2500)
   }
-  const { rows } = await pool.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM tab_settlements
-      WHERE reader_id = ANY($1::uuid[]) AND status = 'completed'
-        AND stripe_charge_id IS NOT NULL AND allocated_pence IS NULL`,
-    [readerIds],
-  )
-  return { attempts, unstamped: rows[0].n }
+  return { attempts, unstamped: seen.unstamped, considered: seen.considered }
 }
 
 /** The writer's most recent payout parent, with its children. */
@@ -3851,12 +3872,39 @@ async function stepEight(fx: Fixture): Promise<StepResult> {
 // -----------------------------------------------------------------------------
 
 /**
- * Test tokens for brands OUTSIDE the beta's eligible set (Visa / Mastercard /
- * Amex / Discover / Swish). Tried in order: a sandbox that declines one outright
- * says nothing about allocation, so falling through to the second is the
- * difference between a finding and a shrug.
+ * MEASURED-ineligible brands, most realistic first.
+ *
+ * `pm_card_mastercard` leads deliberately: it is the case that actually matters,
+ * being roughly a third of UK card volume, and it is the one whose eligibility
+ * every prior comment in this repo got wrong. The set comes from
+ * `scripts/segregation-probes.ts --brands --repeat 5` (2026-08-01) — fifty
+ * samples with a Visa control in the same window, no mixed results; all three
+ * Mastercard variants 0/5, so it is the network and not one test card.
+ *
+ * WHAT THIS STEP NOW PROVES IS THE FIX, and its history is the argument for the
+ * step existing. As written against the ADR it was unreachable: the ADR (and
+ * `settlement.ts`) held that an ineligible brand "simply yields a charge whose
+ * allocated balance syncs to 0". It does not. With `allocated_funds` set, the
+ * create fails with a Stripe 500 — correctly classified AMBIGUOUS, so
+ * `completeSettlement` re-throws rather than rolling back (the PI may exist;
+ * rolling back risks a double charge), the settlement stays `pending` with no PI
+ * id, the resume sweep retries and 500s forever, `sweepDueSettlements` skips
+ * that tab on its `NOT EXISTS pending` guard, `card_action_required_at` is never
+ * set, and the reader is wedged silently and permanently.
+ *
+ * `allocatedFundsParam` now pre-flights the brand, so an ineligible card is
+ * charged normally and simply carries no segregated balance — which is what the
+ * ADR always intended. This step is the end-to-end proof of that, and the DB
+ * assertions below are the ones the ADR asked for all along; they were merely
+ * unreachable until the charge could succeed.
+ *
+ * THE PRE-FIX BEHAVIOUR IS THE PAIRED CONTROL. Revert the brand guard in
+ * `allocatedFundsParam`, rebuild the payment container, and this step's very
+ * first check goes red with a `pending` settlement carrying no PI id. Without
+ * that, a green run here is equally consistent with a Stripe that quietly
+ * started accepting Mastercard.
  */
-const INELIGIBLE_PM_TOKENS = ['pm_card_jcb', 'pm_card_diners']
+const INELIGIBLE_PM_TOKENS = ['pm_card_mastercard', 'pm_card_jcb', 'pm_card_unionpay']
 
 async function stepNine(fx: Fixture): Promise<StepResult> {
   const checks: Check[] = []
@@ -3874,67 +3922,117 @@ async function stepNine(fx: Fixture): Promise<StepResult> {
   // carries no allocation must never enter the rotating set, or a later step
   // would find one of its funding charges silently un-drawable and report a
   // residual it never asked for.
+  // Each attempt is a WHOLE fixture — mint, accrue, wait for a completed
+  // settlement — because the failure this list exists to route around happens at
+  // CHARGE time, not at attach time. A reader whose settlement never completed is
+  // abandoned in place: its stuck `pending` row is retried by the reconcile cron
+  // under its stable key, which is production's own answer and not ours to
+  // second-guess from a test harness.
   const attempts: unknown[] = []
   let reader: Fixture['readers'][number] | null = null
+  let settlement: any = null
   let usedToken = ''
+
   for (const token of INELIGIBLE_PM_TOKENS) {
+    let candidate: Fixture['readers'][number]
     try {
-      const [r] = await mintReaders(1, token)
-      reader = r
+      ;[candidate] = await mintReaders(1, token)
+    } catch (err: any) {
+      attempts.push({ token, stage: 'attach', error: err?.message ?? String(err) })
+      continue
+    }
+    fx.allReaderIds.push(candidate.accountId)
+
+    const accrued = await accrueReadsFor([candidate], fx.articles, READ_PENCE)
+    const settledWait = await pollUntil(
+      async () => {
+        const { rows } = await pool.query(
+          `SELECT id, status, amount_pence, stripe_charge_id, stripe_payment_intent_id,
+                  allocated_pence, allocation_synced_at, failure_reason
+             FROM tab_settlements WHERE reader_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [candidate.accountId],
+        )
+        return rows[0] ?? null
+      },
+      // `completed` ALONE IS NOT ENOUGH, and settling for it cost this step a
+      // run (2026-08-01). `status` flips to `completed` the moment
+      // paymentIntents.create returns; `stripe_charge_id` is stamped later, by
+      // `confirmSettlement`, on the payment_intent.succeeded WEBHOOK. Proceeding
+      // on `completed` therefore raced the webhook: charges.retrieve(null) threw
+      // so the brand control had nothing to read, and syncAllocations' candidate
+      // query — which requires `stripe_charge_id IS NOT NULL` — could not see the
+      // row at all. Waiting for the charge id is waiting for the settlement to be
+      // genuinely confirmed, which is what every assertion below assumes.
+      (row: any) =>
+        row !== null && row.status === 'completed' && row.stripe_charge_id !== null,
+    )
+    // SETTLING IS NOT ENOUGH — the charge must also carry NO allocation, and
+    // that second condition is the entire point of the step. `pm_card_diners`
+    // settled perfectly and came back with allocation for the FULL amount
+    // (2026-07-31), because Diners Club is processed on the DISCOVER network and
+    // Discover is inside the eligible set. Eligibility is by network, not by the
+    // `brand` string Stripe reports, so no list of brand names can be trusted
+    // ahead of asking. Accepting the first settlement that completed made the
+    // step assert its ineligible-brand claims against an ELIGIBLE charge and
+    // report six failures that were all the same mistake.
+    const alloc = settledWait.value?.stripe_payment_intent_id
+      ? await pollAllocation(settledWait.value.stripe_payment_intent_id, 8000)
+      : null
+    attempts.push({
+      token,
+      stage: 'settle',
+      accrued,
+      waitedMs: settledWait.waitedMs,
+      status: settledWait.value?.status ?? null,
+      // Recorded separately from `status` so "settled but the webhook never
+      // landed" cannot be mistaken for "settled": they differ only here.
+      chargeIdArrived: settledWait.value?.stripe_charge_id != null,
+      failure_reason: settledWait.value?.failure_reason ?? null,
+      // A pending row with no PI id is the Stripe-500 signature: the create threw
+      // an AMBIGUOUS error, so nothing was rolled back and no id was ever stored.
+      pi_null: settledWait.value ? settledWait.value.stripe_payment_intent_id === null : null,
+      allocation: alloc,
+      verdict:
+        settledWait.value?.status !== 'completed'
+          ? 'did not settle'
+          : alloc
+            ? 'settled but ALLOCATION-ELIGIBLE — unusable for this step'
+            : 'settled with NO allocation — usable',
+    })
+    if (settledWait.value?.status === 'completed' && settledWait.value?.stripe_charge_id && !alloc) {
+      reader = candidate
+      settlement = settledWait.value
       usedToken = token
       break
-    } catch (err: any) {
-      attempts.push({ token, error: err?.message ?? String(err) })
     }
   }
-  observations.mintAttempts = attempts
+
+  observations.attempts = attempts
   observations.paymentMethodToken = usedToken
-  if (!reader) {
-    check(
-      checks,
-      `an ineligible-brand test card could be attached (tried ${INELIGIBLE_PM_TOKENS.join(', ')})`,
-      true,
-      false,
-    )
-    return { step: '9', title, status: 'ok', observations, checks }
-  }
-  fx.allReaderIds.push(reader.accountId)
-  observations.reader = reader
-
-  // --- Accrue and settle on that card ---------------------------------------
-  const accrued = await accrueReadsFor([reader], fx.articles, READ_PENCE)
-  observations.accrued = accrued
-
-  const settledWait = await pollUntil(
-    async () => {
-      const { rows } = await pool.query(
-        `SELECT id, status, amount_pence, stripe_charge_id, stripe_payment_intent_id,
-                allocated_pence, allocation_synced_at, failure_reason
-           FROM tab_settlements WHERE reader_id = $1 ORDER BY created_at DESC LIMIT 1`,
-        [reader.accountId],
-      )
-      return rows[0] ?? null
-    },
-    (row: any) => row !== null && row.status !== 'pending',
-  )
-  const settlement: any = settledWait.value
   observations.settlement = settlement
-  observations.settledWait = { waitedMs: settledWait.waitedMs, reached: settledWait.reached }
+  observations.reader = reader
 
   check(
     checks,
-    'the charge SUCCEEDED — an ineligible brand is a perfectly ordinary payment; what it lacks is allocation, ' +
-      'not the ability to pay',
-    'completed',
-    settlement?.status ?? null,
+    `a charge SETTLED on a brand carrying NO allocation — an ineligible brand is a perfectly ordinary payment; ` +
+      `what it lacks is allocation, not the ability to pay (tried ${INELIGIBLE_PM_TOKENS.join(', ')})`,
+    true,
+    !!reader && settlement?.status === 'completed',
   )
-  if (settlement?.status !== 'completed') {
+  if (!reader || settlement?.status !== 'completed') {
     check(
       checks,
-      `the ${usedToken} card was declined rather than settling, so this step could not reach its own claim. ` +
-        'Try the other token in INELIGIBLE_PM_TOKENS, or a brand the sandbox will accept in GBP.',
+      'no allocation-INELIGIBLE brand could be charged in this sandbox, so the step could not reach its own ' +
+        'claim. Read `attempts` — its `verdict` field says which of the two ways each token failed, and the ' +
+        'distinction matters: "settled but ALLOCATION-ELIGIBLE" is a fact about the beta (Diners routes over ' +
+        'Discover, so the eligible set is by NETWORK, not by brand name), while a `pending` row with ' +
+        '`pi_null: true` is a Stripe 500 on paymentIntents.create (observed with pm_card_jcb) — NOT a decline ' +
+        'and NOT a defect on our side: the create threw an ambiguous error, nothing was rolled back, and the ' +
+        'reconcile cron retries the row under its stable key. If every token is eligible, the ' +
+        '`allocated_pence = 0` path simply cannot be reached from a card in this sandbox, and that is the ' +
+        'finding — say so rather than widening the list forever.',
       null,
-      settlement?.failure_reason ?? null,
+      null,
       'UNKNOWN',
     )
     return { step: '9', title, status: 'ok', observations, checks }
@@ -3953,12 +4051,21 @@ async function stepNine(fx: Fixture): Promise<StepResult> {
   } catch (err: any) {
     observations.chargeError = err?.message ?? String(err)
   }
+  // The eligible set is IMPORTED, never restated. This check carried a
+  // hand-written `['visa','mastercard','amex','discover']` copied from the old
+  // (wrong) comment, so once Mastercard became the ineligible brand under test
+  // the control declared the correct card ineligible-for-being-eligible and
+  // failed. One home for the set means the control cannot disagree with the
+  // production decision it is controlling for.
+  const { ALLOCATION_ELIGIBLE_CARD_BRANDS } = await import(
+    '../payment-service/src/lib/stripe-client.js'
+  )
   check(
     checks,
     'the charge really was made on a brand outside the eligible set — without this control, a zero allocation ' +
       'could just mean the sandbox substituted a Visa',
     true,
-    brand !== null && !['visa', 'mastercard', 'amex', 'discover'].includes(brand.toLowerCase()),
+    brand !== null && !ALLOCATION_ELIGIBLE_CARD_BRANDS.has(brand.trim().toLowerCase()),
   )
 
   // --- Stripe's own account: no allocation on the charge --------------------
@@ -3975,6 +4082,13 @@ async function stepNine(fx: Fixture): Promise<StepResult> {
   // --- The sweep stamps 0, and stamps that it looked ------------------------
   const stamping = await syncUntilStamped([reader.accountId])
   observations.stamping = stamping
+  check(
+    checks,
+    'the allocation sweep actually SAW this settlement — `unstamped: 0` with nothing considered is a vacuous ' +
+      'pass, and is what the three checks below were asserting against last run',
+    true,
+    stamping.considered > 0,
+  )
   const synced = await settlementRow(settlement.id)
   observations.afterSync = synced
   check(

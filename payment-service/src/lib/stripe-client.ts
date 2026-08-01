@@ -48,14 +48,85 @@ export function createAllocationAwareStripe(): Stripe {
 }
 
 /**
+ * Card brands whose charges the allocated-funds beta will accept — MEASURED,
+ * never taken from a documentation list.
+ *
+ * Established 2026-08-01 against the segregation sandbox by
+ * `scripts/segregation-probes.ts --brands --repeat 5`: ten test tokens, each
+ * charged three ways (classic API version / preview version alone / preview
+ * version plus `allocated_funds[enabled]=true`), with the beta+param cell
+ * repeated five times and a Visa positive control in the same window. Fifty
+ * samples, no mixed results.
+ *
+ *   ELIGIBLE 5/5   visa, visa_debit, amex, discover, diners
+ *   INELIGIBLE 0/5 mastercard, mastercard_debit, mastercard_prepaid, jcb, unionpay
+ *
+ * TWO THINGS THAT LIST OVERTURNS, both of which had been asserted in comments
+ * here and in `settlement.ts`:
+ *
+ *   • MASTERCARD IS NOT ELIGIBLE. All three Mastercard variants returned 0/5, so
+ *     it is the network and not a quirk of one test card. Roughly a third of UK
+ *     card volume therefore cannot be segregated, which is a fact about what
+ *     flipping the flag actually buys and a direct input to
+ *     `allocated_residual_alert_bps` (§3.3d) — the structural residual floor is
+ *     not a small credit-funded rump. Whether this is permanent or merely
+ *     not-yet-enabled on the sandbox is a QUESTION FOR STRIPE and a flip gate;
+ *     do not treat this constant as settled until they answer.
+ *   • DINERS IS eligible, though no brand list names it — because Diners Club
+ *     routes over the Discover network. Eligibility follows the NETWORK, not the
+ *     `brand` string Stripe reports, which is exactly why this must be measured.
+ *
+ * DEFAULT-DENY. A brand absent from this set — unknown, unmeasured, or simply
+ * null because the payment method could not be read — gets NO allocation. That
+ * is the safe direction: the charge succeeds unallocated, `syncAllocations`
+ * stamps 0, and its earnings route to the residual (money right, segregation
+ * coverage poorer). Wrongly INCLUDING a brand is the unsafe direction, and it is
+ * the bug this constant exists to prevent — see `allocatedFundsParam`.
+ */
+export const ALLOCATION_ELIGIBLE_CARD_BRANDS: ReadonlySet<string> = new Set([
+  'visa',
+  'amex',
+  'discover',
+  'diners',
+])
+
+/**
  * The `allocated_funds` param on paymentIntents.create. Preview-only, so absent
  * from the pinned types. Returns an empty object when the flag is off, which is
  * what makes the spread at the call site a no-op rather than a branch.
  *
  * Wire form is `allocated_funds[enabled]=true`.
+ *
+ * IT ALSO RETURNS {} FOR AN INELIGIBLE CARD BRAND, and that is not an
+ * optimisation — it is what stops a permanent, silent, per-reader wedge.
+ * Measured 2026-08-01: asking for allocation on an ineligible brand does not
+ * yield "a charge with no allocated funds", as this file and `settlement.ts`
+ * both used to claim. It fails the create outright with a Stripe **500**
+ * (`StripeAPIError`, no code, `stripe-should-retry: false`, "An unknown error
+ * occurred"). And a 500 is correctly classified AMBIGUOUS by
+ * `isTerminalChargeError` — a 500 may mean the PaymentIntent was created, so
+ * rolling back would risk a double charge — which means:
+ *
+ *   the settlement row stays `pending` with no PI id
+ *     → `resumePendingSettlements` retries it every reconcile cycle, and 500s again
+ *     → `sweepDueSettlements` skips that tab forever (its `NOT EXISTS pending` guard)
+ *     → `card_action_required_at` is NEVER set, because ambiguous is deliberately
+ *       not the terminal path, so the reader is never prompted to change card
+ *     → their reads stay `accrued`, never settle, and the writer never earns.
+ *
+ * Silent and permanent, from the moment the flag goes live, for any reader on a
+ * Mastercard. The ambiguous classification is RIGHT and must not be weakened to
+ * paper over this; the fix is to stop asking for something the brand cannot
+ * give. Which restores exactly what `settlement.ts`'s own comment always
+ * intended: never refuse the reader's card, simply never ASSUME allocation.
+ *
+ * `brand` is `payment_method_details.card.brand` / `card.brand` — lower-case in
+ * Stripe's own responses, but normalised here so a caller reading it from a
+ * differently-cased source cannot silently fall through to default-deny.
  */
-export function allocatedFundsParam(): Record<string, unknown> {
+export function allocatedFundsParam(brand: string | null): Record<string, unknown> {
   if (!allocatedFundsEnabled()) return {}
+  if (!brand || !ALLOCATION_ELIGIBLE_CARD_BRANDS.has(brand.trim().toLowerCase())) return {}
   return { allocated_funds: { enabled: true } }
 }
 

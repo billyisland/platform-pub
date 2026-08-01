@@ -73,6 +73,7 @@ const arg = (name: string): string | null => {
 }
 const COUNTRIES_ONLY = argv.includes('--countries')
 const F4_ONLY = argv.includes('--f4')
+const BRANDS_ONLY = argv.includes('--brands')
 const PROBES = (arg('--probe') ?? '1,4,6,7,7b').split(',').map((s) => s.trim())
 const DESTINATION = arg('--destination')
 const OUT = arg('--out') ?? `segregation-probe-results.json`
@@ -937,8 +938,253 @@ async function f4Events(stripe: Stripe): Promise<ProbeResult> {
 // Runner
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// --brands — WHICH CARD BRANDS CAN BE CHARGED AT ALL, AND WHICH CARRY ALLOCATION
+//
+// Added 2026-07-31, from §5 step 9 failing to find a single ineligible brand it
+// could charge. What the sequence harness saw, across three attempts: Diners
+// settles and carries allocation for the FULL amount; JCB and UnionPay never
+// settle at all, because `paymentIntents.create` returns a Stripe **500**
+// (`StripeAPIError`, "An unknown error occurred", `stripe-should-retry: false`)
+// and the settlement row is left `pending` with no PaymentIntent id.
+//
+// THAT 500 HAS TWO VERY DIFFERENT EXPLANATIONS and they matter enormously:
+//
+//   (A) The allocated-funds beta rejects an ineligible brand at create time, and
+//       does it with a 500 rather than a clean 400 `invalid_request_error`. If
+//       that is live behaviour, a real reader paying with JCB gets a settlement
+//       stuck `pending` forever (the reconcile cron retries and 500s each time),
+//       their tab blocked by the in-flight guard, reads never settling, the
+//       writer never paid — and NO `card_action_required_at` flag, because an
+//       ambiguous error is deliberately not the terminal path, so nothing ever
+//       prompts them to change card. Silent, permanent, per-reader.
+//
+//   (B) This sandbox account simply has not enabled JCB/UnionPay as payment
+//       methods, and the 500 has nothing to do with segregation whatsoever.
+//
+// SO THE MATRIX ISOLATES THE TWO VARIABLES our settlement conflates — the
+// preview API VERSION and the `allocated_funds[enabled]` PARAM — by running each
+// brand three ways. Read the columns, not the cells:
+//
+//   classic  succeeds, beta+param 500s          ⇒ (A). The beta is implicated.
+//   classic  500s too                           ⇒ (B). Nothing to do with us.
+//   version-only 500s but classic succeeds      ⇒ the VERSION, not the param.
+//
+// THE VISA ROW IS THE CONTROL AND IS NOT OPTIONAL. This is the 2026-07-30 lesson
+// written into the design: an isolation matrix run entirely inside a failure
+// window shows correlation with whatever it varies and CANNOT show cause. A Visa
+// charge succeeding at beta+param, in the same window, is what makes a JCB
+// failure at beta+param mean something. Without it, a Stripe-wide wobble reads
+// as brand ineligibility.
+// -----------------------------------------------------------------------------
+
+// Every brand stripe-node ships a test token for. The list is exhaustive on
+// purpose: this matrix decides `ALLOCATION_ELIGIBLE_CARD_BRANDS`, and a brand
+// wrongly included there wedges every reader who holds one (the settlement 500s
+// deterministically, is classified ambiguous, and retries forever). Measure the
+// set; never infer it from a documentation list — the first such list in this
+// repo said Visa/MC/Amex/Discover and Diners turned out eligible too, because
+// Diners routes over the Discover network and eligibility is by NETWORK rather
+// than by the `brand` string Stripe reports.
+const BRAND_TOKENS = [
+  'pm_card_visa',
+  'pm_card_visa_debit',
+  'pm_card_mastercard',
+  'pm_card_mastercard_debit',
+  'pm_card_mastercard_prepaid',
+  'pm_card_amex',
+  'pm_card_discover',
+  'pm_card_diners',
+  'pm_card_jcb',
+  'pm_card_unionpay',
+]
+
+/**
+ * How many times to repeat the beta+param cell per brand (`--repeat N`).
+ *
+ * ONE OBSERVATION OF A 500 IS NOT A FINDING, and this list is deciding which
+ * brands we will hand to `allocated_funds`. The 2026-07-30 incident is the
+ * standing warning: `refund_application_fee=true` returned `StripeAPIError` 500
+ * four times inside one ~40-minute window and then succeeded fifteen consecutive
+ * times, at shorter elapsed times than the failures — so a brand that fails once
+ * and a brand that is genuinely ineligible are indistinguishable from a single
+ * sample. Repeating only the beta+param cell keeps the cost linear in the thing
+ * actually under test.
+ */
+const BRAND_REPEAT = Math.max(1, parseInt(arg('--repeat') ?? '1', 10) || 1)
+
+/** The classic version our code falls back to with the flag off. */
+const CLASSIC_API_VERSION = '2023-10-16'
+
+type BrandCell = {
+  mode: string
+  ok: boolean
+  status?: string | null
+  brand?: string | null
+  allocated?: unknown
+  errorType?: string | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  shouldRetry?: string | null
+}
+
+async function brandCell(
+  stripe: Stripe,
+  token: string,
+  mode: 'classic' | 'version-only' | 'beta+param',
+): Promise<BrandCell> {
+  const params: Record<string, unknown> = {
+    amount: 500,
+    currency: 'gbp',
+    payment_method_types: ['card'],
+    payment_method: token,
+    confirm: true,
+    metadata: { platform: 'all.haus', probe: 'brands', mode },
+  }
+  if (mode === 'beta+param') params.allocated_funds = { enabled: true }
+
+  try {
+    // NO EMPTY OPTIONS OBJECT. stripe-node rejects `create(params, {})` with
+    // "Unknown arguments ([object Object])" — an options object with no
+    // recognised keys is not treated as absent. The first cut of this probe
+    // passed `{}` for the two non-classic modes and every one of them failed
+    // identically, which is exactly what "the beta rejects this brand" would
+    // also look like. The Visa CONTROL is what caught it: Visa demonstrably
+    // works at beta+param (the sequence harness had just done dozens), so a
+    // control failure meant the probe was broken, not the beta. Omit the
+    // argument entirely and the client's own default version applies.
+    const pi: any =
+      mode === 'classic'
+        ? await stripe.paymentIntents.create(
+            params as unknown as Stripe.PaymentIntentCreateParams,
+            { apiVersion: CLASSIC_API_VERSION } as Stripe.RequestOptions,
+          )
+        : await stripe.paymentIntents.create(
+            params as unknown as Stripe.PaymentIntentCreateParams,
+          )
+    // Expand separately: the allocation takes ~1-3s to materialise (probe 1), so
+    // reading it off the create response would report a false absence.
+    await new Promise((r) => setTimeout(r, 3000))
+    let brand: string | null = null
+    let allocated: unknown = null
+    try {
+      const full: any = await stripe.paymentIntents.retrieve(pi.id, {
+        expand: ['latest_charge.allocated_funds.balance'],
+      })
+      brand = full.latest_charge?.payment_method_details?.card?.brand ?? null
+      allocated = full.latest_charge?.allocated_funds?.balance ?? null
+    } catch {
+      /* the create is the finding; a failed read-back is not */
+    }
+    return { mode, ok: true, status: pi.status, brand, allocated }
+  } catch (err: any) {
+    return {
+      mode,
+      ok: false,
+      errorType: err?.type ?? null,
+      errorCode: err?.code ?? null,
+      errorMessage: err?.message ?? String(err),
+      shouldRetry: err?.headers?.['stripe-should-retry'] ?? null,
+    }
+  }
+}
+
+async function brandMatrix(stripe: Stripe): Promise<ProbeResult> {
+  const checks: Check[] = []
+  const observations: Record<string, unknown> = {}
+  const grid: Record<string, BrandCell[]> = {}
+
+  const betaTally: Record<string, { ok: number; fail: number }> = {}
+
+  for (const token of BRAND_TOKENS) {
+    process.stdout.write(`  ${token.padEnd(28)}`)
+    const cells: BrandCell[] = []
+    for (const mode of ['classic', 'version-only'] as const) {
+      const cell = await brandCell(stripe, token, mode)
+      cells.push(cell)
+      process.stdout.write(cell.ok ? '✓' : '✗')
+    }
+    process.stdout.write(' | ')
+    // beta+param, repeated: this is the cell the eligible set is derived from,
+    // and the only one where a single sample cannot tell ineligible from flaky.
+    const tally = { ok: 0, fail: 0 }
+    for (let i = 0; i < BRAND_REPEAT; i++) {
+      const cell = await brandCell(stripe, token, 'beta+param')
+      cells.push(cell)
+      cell.ok ? tally.ok++ : tally.fail++
+      process.stdout.write(cell.ok ? '✓' : '✗')
+    }
+    betaTally[token] = tally
+    grid[token] = cells
+    process.stdout.write(`  (${tally.ok}/${BRAND_REPEAT} allocated)\n`)
+  }
+  observations.grid = grid
+  observations.betaTally = betaTally
+  observations.repeat = BRAND_REPEAT
+
+  const cellFor = (t: string, m: string) => grid[t]?.find((c) => c.mode === m)
+
+  // The control, first: without it nothing below is interpretable.
+  const visaBeta = cellFor('pm_card_visa', 'beta+param')
+  check(
+    checks,
+    'CONTROL — Visa succeeds at beta+param IN THIS WINDOW. Without this, a brand failing at beta+param is ' +
+      'indistinguishable from a Stripe-wide wobble (the 2026-07-30 lesson).',
+    true,
+    visaBeta?.ok === true,
+  )
+  check(
+    checks,
+    'CONTROL — and that Visa charge carries allocation, so the beta is genuinely active on this key',
+    true,
+    visaBeta?.allocated != null,
+  )
+
+  for (const token of BRAND_TOKENS) {
+    const classic = cellFor(token, 'classic')
+    const beta = grid[token]?.find((c) => c.mode === 'beta+param' && c.ok) ?? cellFor(token, 'beta+param')
+    const t = betaTally[token] ?? { ok: 0, fail: 0 }
+    // Not an assertion about what SHOULD happen — a verdict-free record of which
+    // hypothesis this brand supports. Stated as UNKNOWN because the ADR makes no
+    // claim here at all; the finding is the shape, not a pass or a fail.
+    //
+    // A MIXED tally is the important third answer, and it is the one that must
+    // NOT be rounded to either pole: it means the failure is transient (the
+    // 2026-07-30 shape) and the brand's eligibility is simply unresolved — so it
+    // belongs in neither the eligible set nor the ineligible one until it has
+    // been sampled again.
+    const verdict =
+      !classic?.ok
+        ? '(B) not chargeable on this account at all — nothing to do with segregation'
+        : t.ok > 0 && t.fail > 0
+          ? `MIXED ${t.ok}/${BRAND_REPEAT} — TRANSIENT, not a verdict. Do not put this brand in either set; sample it again.`
+          : t.fail === BRAND_REPEAT
+            ? `(A) INELIGIBLE — 0/${BRAND_REPEAT} at beta+param, charges fine without it`
+            : `ELIGIBLE — ${t.ok}/${BRAND_REPEAT}; allocation ${JSON.stringify(beta?.allocated ?? null)}`
+    check(checks, `${token}: ${verdict}`, null, null, 'UNKNOWN')
+  }
+
+  return { probe: 'brands', title: 'Card-brand eligibility matrix', status: 'ok', observations, checks }
+}
+
 async function main() {
   const stripe = makeStripe(COUNTRIES_ONLY || F4_ONLY)
+
+  if (BRANDS_ONLY) {
+    console.log('Card-brand eligibility matrix — classic / version-only / beta+param')
+    console.log(`preview version: ${ALLOCATED_FUNDS_API_VERSION}`)
+    console.log(`classic version: ${CLASSIC_API_VERSION}\n`)
+    const result = await brandMatrix(stripe)
+    results.push(result)
+    console.log()
+    for (const chk of result.checks) {
+      const mark = chk.verdict === 'PASS' ? '✓' : chk.verdict === 'FAIL' ? '✗' : '?'
+      console.log(`  ${mark} ${chk.claim}`)
+    }
+    writeFileSync(OUT, JSON.stringify({ apiVersion: ALLOCATED_FUNDS_API_VERSION, results }, null, 2))
+    console.log(`\nRaw grid → ${OUT}`)
+    return
+  }
 
   if (COUNTRIES_ONLY) {
     await countries(stripe)

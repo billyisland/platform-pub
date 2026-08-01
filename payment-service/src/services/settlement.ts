@@ -338,13 +338,28 @@ class SettlementService {
   // silently go stale and charge a dead card.
   // ---------------------------------------------------------------------------
 
+  // Returns the card's BRAND alongside its id, because the allocated-funds param
+  // must not be sent for a brand the beta will not accept (see
+  // `allocatedFundsParam` — asking anyway 500s the create and wedges the tab
+  // permanently). Expanding the default payment method here costs NO extra API
+  // call: this retrieve was already being made, and `expand` rides along with
+  // it. A brand we cannot read comes back null and default-denies, which is the
+  // safe direction.
   private async resolveDefaultPaymentMethod(
     stripeCustomerId: string,
-  ): Promise<string | null> {
-    const customer = await this.stripe.customers.retrieve(stripeCustomerId);
+  ): Promise<{ id: string; brand: string | null } | null> {
+    const customer = await this.stripe.customers.retrieve(stripeCustomerId, {
+      expand: ["invoice_settings.default_payment_method"],
+    });
     if (customer.deleted) return null;
     const pm = customer.invoice_settings?.default_payment_method ?? null;
-    return typeof pm === "string" ? pm : (pm?.id ?? null);
+    if (!pm) return null;
+    if (typeof pm === "string") {
+      // Expansion declined (a deleted/inaccessible PM): we still have the id, so
+      // charge with it — but with no brand, allocation is default-denied.
+      return { id: pm, brand: null };
+    }
+    return { id: pm.id, brand: pm.card?.brand ?? null };
   }
 
   private async completeSettlement(
@@ -359,8 +374,9 @@ class SettlementService {
     // here must propagate so resumePendingSettlements retries the row under its
     // stable key, exactly as an ambiguous create would. Only a customer that
     // resolves to no usable card is terminal, and that is handled below.
-    const paymentMethodId =
+    const defaultCard =
       await this.resolveDefaultPaymentMethod(stripeCustomerId);
+    const paymentMethodId = defaultCard?.id ?? null;
 
     if (!paymentMethodId) {
       // Genuinely a card problem — the reader has a customer record but no
@@ -397,13 +413,19 @@ class SettlementService {
             currency: "gbp",
             customer: stripeCustomerId,
             // Deliberately BROADER than the allocated-funds beta's eligible brand
-            // set (Visa/Mastercard/Amex/Discover/Swish) — in GBP this also admits
-            // JCB, Diners and UnionPay. A brand allow-list would refuse a reader's
-            // card at settlement time, turning a compliance nicety into lost
-            // revenue; instead we never ASSUME allocation. An ineligible brand
-            // simply yields a charge whose allocated balance syncs to 0, which the
-            // packer routes around identically to a not-yet-settled one. NEVER
-            // switch this to automatic_payment_methods.
+            // set. A brand allow-list HERE would refuse a reader's card at
+            // settlement time, turning a compliance nicety into lost revenue; the
+            // allow-list belongs on the allocation param instead (below), so an
+            // ineligible card is charged normally and simply carries no
+            // segregated balance. NEVER switch this to
+            // automatic_payment_methods.
+            //
+            // The older form of this comment claimed an ineligible brand "simply
+            // yields a charge whose allocated balance syncs to 0". Measured
+            // 2026-08-01: it does not — with `allocated_funds` set, the create
+            // 500s and no charge exists at all. That is why the brand is now
+            // pre-flighted rather than assumed; the INTENT of this comment is
+            // unchanged and is what the pre-flight restores.
             payment_method_types: ["card"],
             // The reader's attached card, by id. A PI does not inherit the
             // customer's invoice_settings default — see
@@ -411,9 +433,12 @@ class SettlementService {
             payment_method: paymentMethodId,
             confirm: true,
             off_session: true,
-            // Lock this charge's funds into the allocated state (flag on only).
-            // Wire form: allocated_funds[enabled]=true.
-            ...allocatedFundsParam(),
+            // Lock this charge's funds into the allocated state — flag on AND
+            // the card's brand accepted by the beta. An ineligible brand gets {}
+            // here and charges perfectly normally, unallocated; asking anyway
+            // 500s the create and wedges this tab forever (see
+            // allocatedFundsParam for the full failure chain).
+            ...allocatedFundsParam(defaultCard?.brand ?? null),
             // Grouping only — it buys legibility in the dashboard and nothing
             // else; source_transaction on the transfer is what does the work.
             ...(allocatedFundsEnabled()
