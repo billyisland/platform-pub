@@ -61,20 +61,34 @@ export function createAllocationAwareStripe(): Stripe {
  *   ELIGIBLE 5/5   visa, visa_debit, amex, discover, diners
  *   INELIGIBLE 0/5 mastercard, mastercard_debit, mastercard_prepaid, jcb, unionpay
  *
- * TWO THINGS THAT LIST OVERTURNS, both of which had been asserted in comments
- * here and in `settlement.ts`:
+ * THIS SET IS A WORKAROUND WITH AN EXPIRY DATE, NOT A STATEMENT OF SCOPE. Read
+ * the next two paragraphs before editing it, and before assuming its absences
+ * mean anything permanent.
  *
- *   • MASTERCARD IS NOT ELIGIBLE. All three Mastercard variants returned 0/5, so
- *     it is the network and not a quirk of one test card. Roughly a third of UK
- *     card volume therefore cannot be segregated, which is a fact about what
- *     flipping the flag actually buys and a direct input to
- *     `allocated_residual_alert_bps` (§3.3d) — the structural residual floor is
- *     not a small credit-funded rump. Whether this is permanent or merely
- *     not-yet-enabled on the sandbox is a QUESTION FOR STRIPE and a flip gate;
- *     do not treat this constant as settled until they answer.
- *   • DINERS IS eligible, though no brand list names it — because Diners Club
- *     routes over the Discover network. Eligibility follows the NETWORK, not the
- *     `brand` string Stripe reports, which is exactly why this must be measured.
+ *   • MASTERCARD IS DOCUMENTED AS SUPPORTED AND FAILS ANYWAY. Stripe's own docs
+ *     list allocated funds as derivable from "Visa, Mastercard, Discover,
+ *     American Express and Swish", and Stripe support confirmed (2026-08-01)
+ *     that Mastercard is in scope and that these 500s are a bug in the preview
+ *     implementation — escalated to their engineering, answer outstanding. So
+ *     its exclusion here is TEMPORARY and defensive: we cannot send a param that
+ *     deterministically 500s, but the moment Stripe fixes it Mastercard belongs
+ *     back in this set.
+ *     **RE-MEASURE TRIGGER — when Stripe reports the fix, re-run
+ *     `npx tsx scripts/segregation-probes.ts --brands --repeat 5` and restore
+ *     any brand that comes back 5/5.** Leaving Mastercard out after it is fixed
+ *     is not safe-by-default in any useful sense: it silently routes roughly a
+ *     third of UK card volume to the unsegregated residual forever, which is the
+ *     guarantee quietly covering less and less — exactly what §3.3d's metric
+ *     exists to notice, and what nobody will connect back to this constant.
+ *   • DINERS IS eligible in measurement though no documented list names it —
+ *     presumably because Diners Club routes over the Discover network, i.e.
+ *     eligibility follows the NETWORK rather than the `brand` string Stripe
+ *     reports. That is OUR INFERENCE, put to Stripe and not yet confirmed, and
+ *     it cuts both ways: if their check is brand-based rather than
+ *     network-based and they tighten it while fixing Mastercard, Diners would
+ *     start 500ing and — because it is in this set — would wedge Diners readers
+ *     precisely the way Mastercard ones would have. Until they confirm, treat
+ *     its presence here as the measured-but-unexplained entry it is.
  *
  * DEFAULT-DENY. A brand absent from this set — unknown, unmeasured, or simply
  * null because the payment method could not be read — gets NO allocation. That

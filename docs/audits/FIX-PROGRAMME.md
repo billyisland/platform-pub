@@ -75,14 +75,35 @@ starts.
     is the real gate: it now settles a Mastercard, syncs `allocated_pence = 0` with
     `allocation_synced_at` stamped (the pair), never draws on it, and routes the payout
     around it. 11/11.
-  - **STILL OPEN — ask Stripe about Mastercard, and treat it as a flip gate.** The
-    pre-flight stops the wedge; it does not answer what the guarantee is worth. With
-    Mastercard out, flipping segregates perhaps two-thirds of reader money and the
-    structural residual floor becomes roughly the Mastercard share — not the small
-    credit-funded rump `allocated_residual_alert_bps` (§3.3d) was designed around. Whether
-    the exclusion is permanent or merely not-yet-enabled on the sandbox is a question only
-    Stripe can answer, and live enablement was expected imminently. Re-run
-    `--brands --repeat 5` against live once enabled.
+  - **RAISED WITH STRIPE THE SAME DAY, and their answer changed the framing.** Support
+    confirmed **Mastercard IS in scope** — their docs list Visa/Mastercard/Discover/Amex/
+    Swish, the same list this repo's §2 had always carried — **and that the 500s are a bug
+    in the preview implementation**, now escalated to engineering. They also agreed an
+    unsupported brand should return `400 invalid_request_error` rather than a 500. So the
+    measurement records **a Stripe defect with a fix pending, not a scope boundary**, and
+    the residual consequence is temporary rather than structural.
+    - **What that makes our exclusion: a workaround with an expiry date.** Recorded as
+      such in the constant, §2, §5.9 and the queue, with an explicit **re-measure
+      trigger** — when the fix lands, re-run `--brands --repeat 5` and restore every 5/5
+      brand. Leaving Mastercard out afterwards is not safe-by-default in any useful sense:
+      it silently routes roughly a third of UK card volume to the unsegregated residual
+      forever, and nothing would connect that back to a constant nobody is looking at.
+    - **And a live risk in the other direction.** Diners works despite appearing in no
+      documented list; our inference is that eligibility follows the NETWORK (Diners
+      routes over Discover) rather than the `brand` string. That is unconfirmed and has
+      been put to Stripe, because if their check is brand-based and gets tightened
+      alongside the Mastercard fix, Diners would start 500ing and — being in our
+      allow-list — would wedge Diners readers exactly as Mastercard ones would have.
+    - **Do not baseline `allocated_residual_alert_bps` during the workaround period**
+      (§3.3d): with Mastercard excluded the residual reads roughly the Mastercard share of
+      payments rather than the credit-funded floor the dial was designed around, so a
+      baseline taken now measures the workaround.
+    - **Follow-on proposed, not built (queue 0c):** a bounded retry, so that after N
+      consecutive ambiguous failures a settlement is failed and the card flagged rather
+      than retried forever. The allow-list stops the cases we know about; this would cap
+      any deterministic ambiguous failure — including whichever one we meet next — at a
+      prompt to the reader instead of a permanent silent wedge. Owner call: it changes
+      failure semantics on a money path.
   - **Four harness defects found by running it, all mine, and three shared one shape —
     a check that could not fail.** (a) step 9's fallback list was consulted at card
     *attach* time when the failure is at *charge* time, so it never fired; (b) it then

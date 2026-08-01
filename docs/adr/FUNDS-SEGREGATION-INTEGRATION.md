@@ -189,14 +189,28 @@ All three verified against the Stripe documentation 2026-07-29.
    by the header.
 
 Also inherited from the beta:
-- **Payment methods restricted by card brand — and the restricted set is MEASURED, not
-  the one this bullet used to name.** It said "Visa, Mastercard, Amex, Discover and
-  Swish". Measured 2026-08-01 (`segregation-probes.ts --brands --repeat 5`, fifty
-  samples, Visa control in-window): **eligible** = `visa`, `visa_debit`, `amex`,
-  `discover`, `diners`; **ineligible** = `mastercard` (all three variants), `jcb`,
-  `unionpay`. So the old list was wrong in both directions — Mastercard is *out*, Diners
-  is *in* (it routes over Discover; eligibility follows the NETWORK, not the `brand`
-  string). One home: `ALLOCATION_ELIGIBLE_CARD_BRANDS`.
+- **Payment methods restricted by card brand — the documented set is "Visa, Mastercard,
+  Amex, Discover and Swish", and MEASUREMENT DISAGREES WITH IT IN BOTH DIRECTIONS.**
+  Measured 2026-08-01 (`segregation-probes.ts --brands --repeat 5`, fifty samples, Visa
+  control in-window): **works** = `visa`, `visa_debit`, `amex`, `discover`, `diners`;
+  **500s** = `mastercard` (all three variants), `jcb`, `unionpay`.
+
+  **Mastercard is documented as supported and fails anyway — Stripe support confirmed
+  (2026-08-01) that it is in scope and that these 500s are a bug in the preview, now
+  escalated to their engineering (answer outstanding).** So this bullet's list was never
+  wrong about Mastercard; the *implementation* is. Our exclusion of it in
+  `ALLOCATION_ELIGIBLE_CARD_BRANDS` is a temporary, defensive workaround — we cannot send
+  a param that deterministically 500s — **and it carries a re-measure trigger: when the
+  fix lands, re-run the probe and restore any brand returning 5/5.** Leaving Mastercard
+  out afterwards would silently route roughly a third of UK card volume to the
+  unsegregated residual forever.
+
+  **Diners works though no documented list names it.** Presumably because Diners Club
+  routes over the Discover network — i.e. eligibility follows the NETWORK, not the
+  `brand` string Stripe reports. That inference is ours, put to Stripe and unconfirmed;
+  if their check turns out to be brand-based and is tightened alongside the Mastercard
+  fix, Diners would begin 500ing and, being in our set, would wedge Diners readers. One
+  home for the set: `ALLOCATION_ELIGIBLE_CARD_BRANDS`.
 
   We use `payment_method_types: ['card']` (`settlement.ts`), which is deliberately
   **broader** than that set, and that stays right: a brand allow-list at settlement time
@@ -1174,11 +1188,14 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
    - **INELIGIBLE (0/5):** **`mastercard`, `mastercard_debit`, `mastercard_prepaid`**,
      `jcb`, `unionpay`
 
-   **Two things that overturns.** *Diners is eligible* though no brand list names it —
-   it routes over the Discover network, so eligibility follows the NETWORK, not the
-   `brand` string Stripe reports. And **Mastercard is NOT eligible**, all three variants,
-   so it is the network and not one test card. §3.3a's own comment named Mastercard as
-   eligible; it was wrong.
+   **What that means, after Stripe's reply (2026-08-01).** §3.3a's comment naming
+   Mastercard as eligible was NOT wrong — Stripe's docs say the same, and support
+   confirmed Mastercard is in scope and that these 500s are **a bug in the preview
+   implementation**, escalated to engineering with the answer outstanding. So the
+   measurement records a defect on Stripe's side, not a scope boundary. Diners working
+   despite appearing in no documented list is separately unexplained; our inference is
+   that eligibility follows the NETWORK (Diners routes over Discover) rather than the
+   `brand` string, and that has been put to Stripe alongside the bug.
 
    **The failure mode this exposed was a flip blocker.** Asking for allocation on an
    ineligible brand does NOT yield "a charge whose allocated balance syncs to 0", as
@@ -1203,16 +1220,25 @@ Sequence (assert ledger + our allocation model + Stripe all agree at every step)
    the end-to-end proof; 19 unit tests pin the set, mutation-verified (revert the guard →
    8 go red).
 
-   **STILL OPEN, and it is a flip gate in its own right: ASK STRIPE ABOUT MASTERCARD.**
-   Pre-flighting stops the wedge but does not answer what the guarantee is worth. With
-   Mastercard excluded, flipping segregates perhaps two-thirds of reader money, and the
-   structural residual floor becomes roughly the Mastercard share of payments — not the
-   small credit-funded rump `allocated_residual_alert_bps` (§3.3d) was designed around,
-   which changes how that dial must be set. Whether the exclusion is permanent or merely
-   not-yet-enabled on the sandbox is a question only Stripe can answer, and live
-   enablement was expected imminently. **Do not treat
-   `ALLOCATION_ELIGIBLE_CARD_BRANDS` as settled until they do**, and re-run the probe
-   against the live account once it is enabled.
+   **STILL OPEN — WITH STRIPE ENGINEERING, and it remains a flip gate.** Raised
+   2026-08-01; support confirmed Mastercard is in scope and the 500s are a preview bug,
+   and escalated. Two questions are outstanding with them: **(a)** when the Mastercard
+   failure is fixed; **(b)** whether eligibility is network-based (which would explain
+   Diners and make our reliance on it safe) or brand-based (in which case Diners could
+   start 500ing when they tighten it, and our allow-list would wedge those readers the
+   way it would have wedged Mastercard ones). We also argued **(c)** that an unsupported
+   brand should return `400 invalid_request_error` rather than a 500 — that is the half
+   that actually causes the damage, since the 500 is what makes it ambiguous and
+   ambiguity is what wedges the tab.
+
+   **Until they answer, `ALLOCATION_ELIGIBLE_CARD_BRANDS` is a workaround, not a
+   scope statement**, and it carries a re-measure trigger: when the fix lands, re-run
+   `--brands --repeat 5` (against live once enabled) and restore every brand returning
+   5/5. The residual consequence is now understood to be TEMPORARY rather than
+   structural — with Mastercard restored, `allocated_residual_alert_bps` (§3.3d) goes
+   back to the small credit-funded floor it was designed around; while Mastercard is
+   excluded it would read roughly the Mastercard share of payments, so do not baseline
+   that dial during the workaround period.
 10. Crash-resume: kill the worker mid-child-sequence; restart; assert idempotent
     completion, no double transfer, no re-pack, and that a child completed before the crash
     posts exactly one ledger entry.

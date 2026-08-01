@@ -1026,6 +1026,15 @@ type BrandCell = {
   errorCode?: string | null
   errorMessage?: string | null
   shouldRetry?: string | null
+  /**
+   * Stripe's own request id for the failing call.
+   *
+   * Captured because a support ticket without one is a slow ticket: "an unknown
+   * error occurred" is exactly the message that tells Stripe nothing, and
+   * `req_…` is what lets them read their own side of it. Omitted from the first
+   * cut of this probe (2026-08-01) and immediately wanted.
+   */
+  requestId?: string | null
 }
 
 async function brandCell(
@@ -1085,6 +1094,7 @@ async function brandCell(
       errorCode: err?.code ?? null,
       errorMessage: err?.message ?? String(err),
       shouldRetry: err?.headers?.['stripe-should-retry'] ?? null,
+      requestId: err?.requestId ?? err?.headers?.['request-id'] ?? null,
     }
   }
 }
