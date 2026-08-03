@@ -50,8 +50,14 @@ function fakeClientQuery(sql: string, params: any[] = []) {
     return Promise.resolve({ rows: found, rowCount: found.length })
   }
   if (/SUM\(net_pence - reversed_pence\)/.test(sql)) {
+    // Derived from the SQL it is handed, per the mock rule: the status set IS
+    // the §0o.3 fix (pending counts as standing), so restating it here would
+    // pin this fixture's list against a query that silently changed.
+    const statusList = sql.match(/status IN \(([^)]+)\)/)
+    if (!statusList) throw new Error(`outstanding tally lost its status filter: ${sql}`)
+    const statuses = statusList[1].split(',').map((s) => s.trim().replace(/'/g, ''))
     const outstanding = children
-      .filter((c) => c.parent_id === params[0] && ['completed', 'reversed'].includes(c.status))
+      .filter((c) => c.parent_id === params[0] && statuses.includes(c.status))
       .reduce((s, c) => s + (c.net_pence - c.reversed_pence), 0)
     return Promise.resolve({ rows: [{ outstanding: String(outstanding) }], rowCount: 1 })
   }
@@ -263,6 +269,44 @@ describe('reverseWriterPayout — one child among several', () => {
   it('reverses the PARENT once every child is fully reversed', async () => {
     await payoutService.reverseWriterPayout('tr_child_a', 8000)
     await payoutService.reverseWriterPayout('tr_child_b', 12000)
+
+    expect(statusFlips).toEqual(['payout-1'])
+  })
+
+  it('does NOT flip the parent while a sibling is still PENDING (§0o.3)', async () => {
+    // Child A completed, crash before B executed, A fully reversed before the
+    // next cycle. Flipping the parent here removes it from the resume sweeps
+    // (which scan pending parents only), freezing B and its claimed units
+    // forever. B's untouched net must count as outstanding.
+    children = [
+      child({ id: 'child-a', stripe_transfer_id: 'tr_child_a', net_pence: 8000 }),
+      child({
+        id: 'child-b',
+        stripe_transfer_id: 'tr_child_b',
+        net_pence: 12000,
+        status: 'pending',
+      }),
+    ]
+    await payoutService.reverseWriterPayout('tr_child_a', 8000)
+
+    expect(children.find((c) => c.id === 'child-a')!.status).toBe('reversed')
+    expect(statusFlips).toHaveLength(0)
+  })
+
+  it('a FAILED sibling does not hold the flip open — nothing moved, nothing will', async () => {
+    // failChild released a failed child's units, so it is not standing money in
+    // either direction: excluded from outstanding, and the reversed sibling
+    // alone decides the flip.
+    children = [
+      child({ id: 'child-a', stripe_transfer_id: 'tr_child_a', net_pence: 8000 }),
+      child({
+        id: 'child-b',
+        stripe_transfer_id: 'tr_child_b',
+        net_pence: 12000,
+        status: 'failed',
+      }),
+    ]
+    await payoutService.reverseWriterPayout('tr_child_a', 8000)
 
     expect(statusFlips).toEqual(['payout-1'])
   })

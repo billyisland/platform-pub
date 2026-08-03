@@ -164,6 +164,30 @@ export const PUBLICATION_PAYOUT_COMPLETE_SQL = `
         WHERE s.publication_payout_id = pp.id
           AND s.status = 'pending')`
 
+/**
+ * What is still standing of a parent, tallied when one of its children is
+ * reversed — the one home for the parent-flips-to-'reversed' rule, shared by
+ * all three cycles (writer / tribute / publication split; $2 is the
+ * parent_table).
+ *
+ * PENDING counts as standing (§0o.3, 2026-08-03). A pending child is money
+ * that has not moved YET, not money that never will: child A completes, the
+ * process crashes before child B executes, A is manually reversed before the
+ * next cycle — tallied over completed+reversed alone, outstanding reads 0 and
+ * the parent flips `pending → 'reversed'`, at which point the resume sweeps
+ * (which scan `status = 'pending'` parents only) never see it again and B's
+ * claimed units are frozen forever. Counting B's untouched net keeps the
+ * parent un-flipped until B resolves. FAILED stays excluded, in both
+ * directions deliberately: nothing moved and — since `failChild` released its
+ * units — nothing will, so a failed child must neither hold the flip open nor
+ * count toward what was reversed.
+ */
+export const REVERSAL_OUTSTANDING_SQL = `
+  SELECT COALESCE(SUM(net_pence - reversed_pence), 0) AS outstanding
+    FROM payout_transfers
+   WHERE parent_table = $2 AND parent_id = $1
+     AND status IN ('pending', 'completed', 'reversed')`
+
 // -----------------------------------------------------------------------------
 // The split re-pay sweep's SQL (§1.2, migration 167).
 //
@@ -1629,13 +1653,11 @@ class PayoutService {
         refId: payoutId,
       })
 
-      // The parent is 'reversed' only when nothing of it is left standing.
+      // The parent is 'reversed' only when nothing of it is left standing —
+      // and a PENDING sibling is still standing (§0o.3; see the constant).
       const { rows: [tally] } = await client.query<{ outstanding: string }>(
-        `SELECT COALESCE(SUM(net_pence - reversed_pence), 0) AS outstanding
-           FROM payout_transfers
-          WHERE parent_table = 'writer_payouts' AND parent_id = $1
-            AND status IN ('completed', 'reversed')`,
-        [payoutId],
+        REVERSAL_OUTSTANDING_SQL,
+        [payoutId, 'writer_payouts'],
       )
       if (parseInt(tally.outstanding, 10) <= 0) {
         await client.query(
@@ -1870,8 +1892,9 @@ class PayoutService {
   // rows while N transfers stayed live. Now:
   //
   //   1. reservePublicationPayout (Txn 1) — insert publication_payouts row as
-  //      'pending', claim read_events (writer_payout_id) + publication
-  //      subscription earnings (subscription_events.publication_payout_id, §1.3)
+  //      'pending', claim read_events (publication_payout_id, migration 168's
+  //      dedicated column — never writer_payout_id, the individual cycle's) +
+  //      publication subscription earnings (subscription_events.publication_payout_id, §1.3)
   //      under it so another cycle can't re-count them, compute splits from
   //      exactly the claimed sets, insert all splits as 'pending', mark
   //      flat-fee shares as paid_out.
@@ -3745,13 +3768,11 @@ class PayoutService {
         }
       }
 
-      // The parent is 'reversed' only when nothing of it is left standing.
+      // The parent is 'reversed' only when nothing of it is left standing —
+      // and a PENDING sibling is still standing (§0o.3; see the constant).
       const { rows: [tally] } = await client.query<{ outstanding: string }>(
-        `SELECT COALESCE(SUM(net_pence - reversed_pence), 0) AS outstanding
-           FROM payout_transfers
-          WHERE parent_table = 'tribute_payouts' AND parent_id = $1
-            AND status IN ('completed', 'reversed')`,
-        [p.id],
+        REVERSAL_OUTSTANDING_SQL,
+        [p.id, 'tribute_payouts'],
       )
       if (parseInt(tally.outstanding, 10) <= 0) {
         await client.query(
@@ -4009,13 +4030,12 @@ class PayoutService {
         refId: splitId,
       })
 
-      // The split is 'reversed' only when nothing of it is left standing.
+      // The split is 'reversed' only when nothing of it is left standing — a
+      // split has ONE child by construction, so the pending arm is unreachable
+      // here, but the rule keeps its one home (§0o.3; see the constant).
       const { rows: [tally] } = await client.query<{ outstanding: string }>(
-        `SELECT COALESCE(SUM(net_pence - reversed_pence), 0) AS outstanding
-           FROM payout_transfers
-          WHERE parent_table = 'publication_payout_splits' AND parent_id = $1
-            AND status IN ('completed', 'reversed')`,
-        [splitId],
+        REVERSAL_OUTSTANDING_SQL,
+        [splitId, 'publication_payout_splits'],
       )
       if (parseInt(tally.outstanding, 10) <= 0) {
         await client.query(

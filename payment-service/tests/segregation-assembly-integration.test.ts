@@ -9,6 +9,7 @@ import {
 } from '../src/lib/allocation-packer.js'
 import {
   PUBLICATION_PAYOUT_COMPLETE_SQL,
+  REVERSAL_OUTSTANDING_SQL,
   TRIBUTE_CHILD_CARVE_SQL,
   TRIBUTE_CHILD_ADVANCE_SQL,
   TRIBUTE_CHILD_VOID_SQL,
@@ -21,7 +22,12 @@ import {
   summariseResidual,
   type DivergenceCandidate,
 } from '../src/services/allocation-reconcile.js'
-import { RECORD_REFUND_DRAW_SQL } from '../src/services/settlement.js'
+import {
+  RECORD_REFUND_DRAW_SQL,
+  SYNC_ALLOCATION_CANDIDATES_SQL,
+  SYNC_ALLOCATION_REFUND_SNAPSHOT_SQL,
+  SYNC_ALLOCATION_STAMP_SQL,
+} from '../src/services/settlement.js'
 import {
   lockFundingSources,
   insertChildren,
@@ -594,6 +600,47 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
       expect(await reverseChild(client, fresh, 99999)).toBe(1000)
       expect(await reverseChild(client, fresh, null)).toBe(0)
     })
+
+    it('a PENDING sibling counts as outstanding, so the parent cannot flip to reversed (§0o.3)', async () => {
+      // Child A completed, crash before B executed, A fully reversed before the
+      // next cycle. Over completed+reversed alone the tally reads 0, the parent
+      // flips pending → 'reversed', and the resume sweeps (pending parents
+      // only) never see B again — its claimed units frozen forever.
+      const s1 = await insertSettlement(2000, 2000)
+      const s2 = await insertSettlement(2000, 2000)
+      const payoutId = await insertWriterPayout(2000)
+      const sources = await lockFundingSources(client, [s1, s2])
+      const { slices } = packUnits(
+        [unit('a', 800, 0, [s1]), unit('b', 1200, 0, [s2])],
+        sources,
+        { maxSlices: MAX_SLICES },
+      )
+      await insertChildren(client, 'writer_payouts', payoutId, slices)
+      const kids = await childrenOf('writer_payouts', payoutId)
+      const childA = kids.find((c) => c.settlement_id === s1)!
+      const childB = kids.find((c) => c.settlement_id === s2)!
+      await markCompleted(childA.id, 'tr_a') // B stays pending
+
+      const freshA = (await childrenOf('writer_payouts', payoutId)).find(
+        (c) => c.id === childA.id,
+      )!
+      expect(await reverseChild(client, freshA, 800)).toBe(800) // A fully reversed
+
+      const outstanding = async () => {
+        const { rows } = await raw.query<{ outstanding: string }>(
+          REVERSAL_OUTSTANDING_SQL,
+          [payoutId, 'writer_payouts'],
+        )
+        return parseInt(rows[0].outstanding, 10)
+      }
+      // B's untouched net holds the parent open.
+      expect(await outstanding()).toBe(1200)
+
+      // And a FAILED child is not standing money: nothing moved, and failChild
+      // released its units, so nothing will. The flip becomes legal.
+      await failChild(client, childB.id, 'account_invalid')
+      expect(await outstanding()).toBe(0)
+    })
   })
 
   // ==========================================================================
@@ -1163,6 +1210,141 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
       const after = await residualWindow()
       expect(after.total - base.total).toBe(500)
       expect(after.residual - base.residual).toBe(0)
+    })
+  })
+
+  // ==========================================================================
+  // Allocation sync — a drawn charge is never re-stamped (§0o.2)
+  // ==========================================================================
+
+  describe('allocation sync (§3.3a stamp, §0o.2)', () => {
+    /** The service's OWN candidate statement, at a 24h freshness window. */
+    async function syncCandidateIds(): Promise<string[]> {
+      const { rows } = await raw.query<{ id: string }>(
+        SYNC_ALLOCATION_CANDIDATES_SQL,
+        [24],
+      )
+      return rows.map((r) => r.id)
+    }
+
+    /**
+     * Age a row's sync stamp far past any freshness window — and far enough
+     * back that the oldest-first ORDER keeps the fixture inside the LIMIT 200
+     * even on a dev database carrying its own settlements.
+     */
+    async function freezeSyncAt1970(settlementId: string) {
+      await raw.query(
+        `UPDATE tab_settlements SET allocation_synced_at = '1970-01-01' WHERE id = $1`,
+        [settlementId],
+      )
+    }
+
+    it('the staleness arm skips a drawn charge, and still rotates its undrawn twin', async () => {
+      // The §0o.2 chain: sync 5000 → draw 2000 (Stripe's remaining now 3000) →
+      // re-sync would stamp 3000 → the budget would read 1000, the draw
+      // subtracted twice. The candidate query is where the chain is cut.
+      const drawn = await insertSettlement(5000, 5000)
+      const undrawn = await insertSettlement(5000, 5000)
+      await freezeSyncAt1970(drawn)
+      await freezeSyncAt1970(undrawn)
+
+      const payoutId = await insertWriterPayout(2000)
+      const sources = await lockFundingSources(client, [drawn])
+      const { slices } = packUnits([unit('u1', 1840, 160, [drawn])], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      await insertChildren(client, 'writer_payouts', payoutId, slices)
+
+      const ids = await syncCandidateIds()
+      expect(ids).not.toContain(drawn)
+      expect(ids).toContain(undrawn) // the rotation itself survives the fix
+      expect(await remainderOf(drawn)).toBe(3000) // and the budget stands
+    })
+
+    it('a refund draw freezes the stamp too — ANY draw kind means identity-maintained', async () => {
+      const refunded = await insertSettlement(5000, 5000)
+      await freezeSyncAt1970(refunded)
+      await recordRefundDraw(refunded, 500)
+
+      expect(await syncCandidateIds()).not.toContain(refunded)
+      expect(await remainderOf(refunded)).toBe(4500)
+    })
+
+    it('first sync ADDS BACK a refund already recorded, restoring budget == Stripe remaining', async () => {
+      // A refund can precede the first sync, and Stripe's reported remaining is
+      // already net of it. Stamping the raw figure would double-count the
+      // refund (budget 4400 on a charge Stripe says holds 4700); the add-back
+      // restores the identity the whole model rests on.
+      const s = await insertSettlement(5000, null) // never synced
+      await recordRefundDraw(s, 300)
+
+      expect(await syncCandidateIds()).toContain(s) // the NULL arm is unconditional
+
+      const { rows } = await raw.query<{ refund_pence: number }>(
+        SYNC_ALLOCATION_REFUND_SNAPSHOT_SQL,
+        [s],
+      )
+      const stripeRemaining = 4700 // what the retrieve would report, post-refund
+      await raw.query(SYNC_ALLOCATION_STAMP_SQL, [
+        s,
+        stripeRemaining + rows[0].refund_pence,
+      ])
+
+      expect(await remainderOf(s)).toBe(stripeRemaining)
+    })
+
+    it('the add-back is refund-kind ONLY: a transfer draw racing the re-sync arm stays subtracted', async () => {
+      // The race: an undrawn charge is selected for re-sync, then a pack lands
+      // a transfer draw before the stamp. Its transfer has NOT reached Stripe,
+      // so the retrieved remaining (still 5000) does not reflect it — adding it
+      // back would fund the committed slice twice.
+      const s = await insertSettlement(5000, 5000)
+      await freezeSyncAt1970(s)
+      expect(await syncCandidateIds()).toContain(s) // selected while undrawn
+
+      const payoutId = await insertWriterPayout(2000)
+      const sources = await lockFundingSources(client, [s])
+      const { slices } = packUnits([unit('u1', 1840, 160, [s])], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      await insertChildren(client, 'writer_payouts', payoutId, slices) // the racing pack
+
+      const { rows } = await raw.query<{ refund_pence: number }>(
+        SYNC_ALLOCATION_REFUND_SNAPSHOT_SQL,
+        [s],
+      )
+      expect(rows[0].refund_pence).toBe(0) // the transfer draw is NOT added back
+      await raw.query(SYNC_ALLOCATION_STAMP_SQL, [s, 5000 + rows[0].refund_pence])
+      expect(await remainderOf(s)).toBe(3000) // the committed slice stays funded
+    })
+
+    it('§3.6 checks a drawn charge FIRST, despite its frozen allocation_synced_at', async () => {
+      // Sync no longer rotates drawn charges, so sync-recency ordering would
+      // walk exactly the charges this check exists for out of the window.
+      const drawn = await insertSettlement(5000, 5000)
+      await freezeSyncAt1970(drawn)
+      const fresh = await insertSettlement(5000, 5000) // synced NOW, no draws
+
+      const payoutId = await insertWriterPayout(900)
+      const sources = await lockFundingSources(client, [drawn])
+      const { slices } = packUnits([unit('u1', 900, 100, [drawn])], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      await insertChildren(client, 'writer_payouts', payoutId, slices)
+
+      const { rows } = await raw.query<{ id: string }>(
+        ALLOCATION_DIVERGENCE_CANDIDATES_SQL,
+        [100000],
+      )
+      const ids = rows.map((r) => r.id)
+      const drawnAt = ids.indexOf(drawn)
+      const freshAt = ids.indexOf(fresh)
+      expect(drawnAt).toBeGreaterThanOrEqual(0)
+      expect(freshAt).toBeGreaterThanOrEqual(0)
+      // Our draw is the newest in the database (created inside this
+      // transaction), so the drawn fixture heads every no-draw row — including
+      // one whose sync stamp is seconds old.
+      expect(drawnAt).toBeLessThan(freshAt)
     })
   })
 
