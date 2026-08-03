@@ -82,27 +82,36 @@ export interface ResidualMetric {
  * truncation always errs backwards, so the bug ships green as a duplicate rather
  * than an error (three prior instances in this repo).
  *
- * This sweep needs no watermark at all, because `syncAllocations` already
- * provides the rotation: it re-syncs oldest-first past
- * `allocation_sync_freshness_hours`, so `allocation_synced_at` cycles through
- * the whole population. Taking the MOST RECENTLY SYNCED batch therefore walks a
- * moving window over every drawable charge, while comparing only figures fresh
- * enough that a difference means something — an hours-old `allocated_pence`
- * diverging from Stripe is our staleness, not a defect. No stored position, no
- * precision to lose.
+ * This sweep needs no watermark at all — no stored position, no precision to
+ * lose. DRAWN charges come first, ranked by most recent draw activity: since
+ * §0o.2 (2026-08-03) `syncAllocations` never re-stamps a drawn charge (a
+ * re-stamp double-counts its draws — see that method's header), so a drawn
+ * charge's `allocation_synced_at` is frozen at its first sync and sync-recency
+ * ordering would rotate exactly the charges whose model is now maintained by
+ * our own draw records — the ones this check exists to verify against Stripe —
+ * out of the window forever. The identity `allocated_pence − Σ draws == Stripe
+ * remaining` should hold at ANY age, so an old first-sync stamp is not
+ * staleness. UNDRAWN charges follow, most-recently-synced first: for them
+ * `syncAllocations` still rotates oldest-first past
+ * `allocation_sync_freshness_hours`, so taking the most recently synced batch
+ * walks a moving window comparing only figures fresh enough that a difference
+ * means something. (Bound, said out loud: a drawn population larger than the
+ * batch pins the check to its most-recently-active N — acceptable while the
+ * check is advisory; revisit with real payout volume.)
  *
  * Exported (with its row type) so the integration test executes THIS statement
- * rather than a copy: the remaining-budget arithmetic and the
- * `allocated_pence IS NOT NULL` guard are properties of the SQL, and a test
- * running its own copy could not detect a regression here at all.
+ * rather than a copy: the remaining-budget arithmetic, the drawn-first
+ * ordering and the `allocated_pence IS NOT NULL` guard are properties of the
+ * SQL, and a test running its own copy could not detect a regression here at
+ * all.
  *
  * `allocation_synced_at IS NOT NULL` is REDUNDANT and stays deliberately —
  * measured, not assumed: deleting it leaves every test green, because
  * `syncAllocations` writes both columns together and the `allocated_pence` guard
  * already excludes every row it could catch. It earns its place by making the
- * `ORDER BY … DESC` unambiguous (Postgres sorts NULLs FIRST under DESC, so a
- * never-synced row would otherwise head the batch). Unreachable, so untested —
- * said out loud rather than covered by a contrived fixture.
+ * sync-recency ORDER key unambiguous (Postgres sorts NULLs FIRST under DESC, so
+ * a never-synced row would otherwise head the undrawn tail). Unreachable, so
+ * untested — said out loud rather than covered by a contrived fixture.
  */
 export interface DivergenceCandidate {
   id: string
@@ -124,7 +133,9 @@ export const ALLOCATION_DIVERGENCE_CANDIDATES_SQL = `
      AND ts.allocated_pence IS NOT NULL
      AND ts.stripe_payment_intent_id IS NOT NULL
      AND ts.allocation_synced_at IS NOT NULL
-   ORDER BY ts.allocation_synced_at DESC
+   ORDER BY (SELECT MAX(d.created_at) FROM allocated_draws d
+              WHERE d.settlement_id = ts.id) DESC NULLS LAST,
+            ts.allocation_synced_at DESC
    LIMIT $1`
 
 /**

@@ -1679,8 +1679,10 @@ class SettlementService {
   // the allocation fact is independent of whether we have unwound the reads.
   //
   // A lost dispute is NOT handled here, per §3.5: disputed funds stay
-  // allocated, and unallocating them takes a Stripe support request. The
-  // `syncAllocations` sweep is the backstop that eventually re-reads the truth.
+  // allocated, and unallocating them takes a Stripe support request. For an
+  // UNDRAWN charge the `syncAllocations` sweep is the backstop that eventually
+  // re-reads the truth; a DRAWN charge is never re-stamped (see
+  // syncAllocations), so there the backstop is the §3.6 divergence alert.
   // ---------------------------------------------------------------------------
   // Exported below the class as RECORD_REFUND_DRAW_SQL so the integration test
   // executes THIS statement rather than a copy — the upsert's monotonicity is a
@@ -1745,6 +1747,39 @@ class SettlementService {
   // `allocated_pence` NULL means "not known to be drawable" and is the safe
   // default and the only default. This sweep is the sole writer.
   //
+  // A DRAWN CHARGE IS NEVER RE-STAMPED (§0o.2, 2026-08-03). Stripe's reported
+  // remaining is net of every EXECUTED draw, while the budget everywhere else
+  // is `allocated_pence − Σ draws` — so re-stamping a drawn charge subtracts
+  // its draws twice: sync 5000 → draw 2000 (Stripe now reports 3000) →
+  // re-sync stamps 3000 → the budget reads 1000. Money-safe (under-draw by
+  // construction) but coverage-destroying, and it made every drawn-then-
+  // resynced charge diverge by exactly Σ draws forever, turning the §3.6
+  // alert channel permanently red. So the staleness arm re-syncs only charges
+  // with NO draws at all: once the first draw exists, the budget is
+  // identity-maintained by the draws themselves (transfer draws at pack,
+  // refund draws from the webhook, reversal returns from reverseChild), and
+  // the §3.6 divergence sweep — which re-reads Stripe live and checks drawn
+  // charges FIRST — is what catches real drift (an unrecorded refund, a lost
+  // dispute, a missed reversal webhook).
+  //
+  // THE STAMP ADDS BACK REFUND DRAWS ALREADY ON THE ROW. A refund can precede
+  // the first sync, and Stripe's remaining is already net of it — stamping
+  // the raw figure would double-count the refund the same way. Stamping
+  // `remaining + Σ refund draws` restores the identity
+  // `allocated_pence − Σ draws == Stripe remaining` at the moment of sync.
+  // Refund-kind ONLY, and the snapshot is read BEFORE the Stripe retrieve —
+  // both so that every race errs toward under-draw:
+  //   • a transfer draw must never be added back: a pack racing the undrawn
+  //     re-sync arm inserts a draw whose transfer has NOT reached Stripe, so
+  //     the retrieved remaining does not reflect it — it must stay
+  //     subtracted, keeping the committed-but-unexecuted slice funded. (At
+  //     FIRST sync it cannot exist at all: the packer refuses a NULL
+  //     `allocated_pence` row, which is also why the add-back is complete
+  //     there — pre-first-sync draws are refund-kind by construction.)
+  //   • a refund landing between snapshot and stamp is missing from the
+  //     add-back, so it is subtracted once against a possibly-pre-refund
+  //     remaining — an under-draw, never an over-draw.
+  //
   // Deliberately NOT done synchronously in completeSettlement or
   // confirmSettlement: the webhook path is already the critical,
   // idempotency-guarded path, and doing it out of band is also what makes the
@@ -1758,21 +1793,18 @@ class SettlementService {
     const { rows: candidates } = await pool.query<{
       id: string;
       stripe_payment_intent_id: string;
-    }>(
-      `SELECT id, stripe_payment_intent_id
-         FROM tab_settlements
-        WHERE status = 'completed'
-          AND stripe_charge_id IS NOT NULL
-          AND stripe_payment_intent_id IS NOT NULL
-          AND (allocated_pence IS NULL
-               OR allocation_synced_at < now() - make_interval(hours => $1))
-        ORDER BY allocation_synced_at ASC NULLS FIRST, settled_at ASC
-        LIMIT 200`,
-      [config.allocationSyncFreshnessHours],
-    );
+    }>(SYNC_ALLOCATION_CANDIDATES_SQL, [config.allocationSyncFreshnessHours]);
 
     let synced = 0;
     for (const c of candidates) {
+      // Read the refund add-back BEFORE the Stripe retrieve (see the header:
+      // a refund landing in between must err to under-draw, never over-draw).
+      const { rows: snap } = await pool.query<{ refund_pence: string }>(
+        SYNC_ALLOCATION_REFUND_SNAPSHOT_SQL,
+        [c.id],
+      );
+      const refundAddBackPence = parseInt(snap[0].refund_pence, 10);
+
       let pi: Stripe.PaymentIntent;
       try {
         pi = await this.stripe.paymentIntents.retrieve(
@@ -1806,12 +1838,10 @@ class SettlementService {
       // and only the second stops the sweep re-reading it every cycle.
       const allocatedPence = readAllocatedBalance(charge);
 
-      await pool.query(
-        `UPDATE tab_settlements
-            SET allocated_pence = $2, allocation_synced_at = now()
-          WHERE id = $1`,
-        [c.id, allocatedPence],
-      );
+      await pool.query(SYNC_ALLOCATION_STAMP_SQL, [
+        c.id,
+        allocatedPence + refundAddBackPence,
+      ]);
       synced++;
     }
 
@@ -1844,5 +1874,47 @@ export const RECORD_REFUND_DRAW_SQL = `
   VALUES ($1, 'refund', 'tab_settlements', $1, $2)
   ON CONFLICT (ref_table, ref_id, kind)
   DO UPDATE SET gross_pence = GREATEST(allocated_draws.gross_pence, EXCLUDED.gross_pence)`;
+
+/**
+ * Which settlements `syncAllocations` re-reads (§3.3a + the §0o.2 correction).
+ *
+ * The NULL arm (first sync) is unconditional; the staleness arm re-syncs ONLY
+ * charges with no `allocated_draws` row of any kind. A drawn charge is never
+ * re-stamped — Stripe's remaining is net of executed draws, so a re-stamp
+ * would subtract every draw twice (see the method header). NOT EXISTS over
+ * every kind, deliberately: a refund- or reversal-drawn charge is
+ * identity-maintained the same way a transfer-drawn one is.
+ *
+ * Exported so the integration test executes THIS statement rather than a copy —
+ * the drawn-charge exclusion is a predicate only Postgres can evaluate.
+ */
+export const SYNC_ALLOCATION_CANDIDATES_SQL = `
+  SELECT id, stripe_payment_intent_id
+    FROM tab_settlements
+   WHERE status = 'completed'
+     AND stripe_charge_id IS NOT NULL
+     AND stripe_payment_intent_id IS NOT NULL
+     AND (allocated_pence IS NULL
+          OR (allocation_synced_at < now() - make_interval(hours => $1)
+              AND NOT EXISTS (SELECT 1 FROM allocated_draws d
+                               WHERE d.settlement_id = tab_settlements.id)))
+   ORDER BY allocation_synced_at ASC NULLS FIRST, settled_at ASC
+   LIMIT 200`;
+
+/**
+ * The refund add-back the stamp restores (§0o.2): refund-kind draws only, read
+ * BEFORE the Stripe retrieve. See the method header for why both halves of
+ * that sentence are load-bearing.
+ */
+export const SYNC_ALLOCATION_REFUND_SNAPSHOT_SQL = `
+  SELECT COALESCE(SUM(gross_pence), 0)::int AS refund_pence
+    FROM allocated_draws
+   WHERE settlement_id = $1 AND kind = 'refund'`;
+
+/** $2 is `Stripe remaining + the refund add-back`, never the raw remaining. */
+export const SYNC_ALLOCATION_STAMP_SQL = `
+  UPDATE tab_settlements
+     SET allocated_pence = $2, allocation_synced_at = now()
+   WHERE id = $1`;
 
 export const settlementService = new SettlementService();

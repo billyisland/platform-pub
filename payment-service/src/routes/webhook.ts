@@ -237,9 +237,10 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       // §3.5 deliberately does NOT insert an allocated_draws row here. Disputed
       // funds stay in the allocated state and unallocating them requires a
       // Stripe support request, so there is nothing for our budget to record and
-      // nothing to automate. The syncAllocations sweep re-reads the charge's
-      // real remaining allocation on its own cadence, which is the backstop if
-      // Stripe's number does move.
+      // nothing to automate. If Stripe's number does move: an UNDRAWN charge is
+      // re-read by the syncAllocations sweep on its own cadence; a DRAWN charge
+      // is never re-stamped (§0o.2 — a re-stamp double-counts its draws), so
+      // there the §3.6 divergence alert is what surfaces the moved number.
       await settlementService.reverseSettlement(chargeId, 'chargeback_lost')
       break
     }
