@@ -23,6 +23,102 @@ starts.
 
 ## Progress
 
+- **2026-08-03 (§0o.3 SHIPPED — a pending sibling now holds a reversed parent open, in
+  all three cycles)** — the audit's MEDIUM #3: the child-reversal paths tallied
+  `outstanding` over children `status IN ('completed','reversed')` only, so child A
+  completed + crash before B executes + A fully reversed (manual, 2am) read as
+  outstanding 0 and flipped the parent `pending → 'reversed'` — at which point the
+  resume sweeps (which scan `status = 'pending'` parents only) never see it again and
+  B's claimed units freeze permanently. The fix is the audit's first shape, given one
+  home: `REVERSAL_OUTSTANDING_SQL` (exported from `payout.ts`, parameterised on
+  `parent_table`, replacing the three inline copies at the writer/tribute/split sites)
+  counts `'pending'` as standing — a pending child is money that has not moved YET —
+  while `'failed'` stays excluded in both directions (nothing moved, and `failChild`
+  released its units, so nothing will: a failed child neither holds the flip open nor
+  counts as reversed). The split site keeps the shared rule with a comment noting its
+  pending arm is unreachable (one child by construction). **Tests +3 (314 → 317):** a
+  DB-backed assembly case running the production statement (pending sibling → 1200
+  outstanding; failing it → 0, flip legal) and two mocked handler cases
+  (pending-sibling → no flip; failed-sibling → flip) — plus the transfer-reversal
+  mock's tally route now PARSES the status list out of the SQL it is handed instead of
+  restating `['completed','reversed']`, which would have mis-modelled this exact fix
+  (the §0h.1 conformance-mock trap, pre-empted this time). **Mutation-verified:**
+  reverting the status list turns both layers red (1 DB + 1 mocked). Full suite
+  317/317; `tsc` clean; ESLint 0 errors; both money tripwires green.
+
+- **2026-08-03 (§0o.8 — the five-part docs/tracker tail cleared)** — the ADR §5 results
+  block gains the missing 2026-08-01 banner (steps 4–9 seven-of-seven with tallies and
+  the step-9 flip-blocker chain, superseding the "written and unrun" framing for those
+  steps too); ADR §2's brand bullet no longer poses the Mastercard question its own top
+  half records as answered (and carries the don't-baseline-during-workaround warning);
+  the two discharged §11 instructions are struck with their answering evidence cited;
+  attack-order 0c's deployment note records both halves deployed (the flip-precondition
+  kept as a property to preserve); and `payout.ts`'s publication-claim docblock now says
+  `publication_payout_id` (migration 168's column — the 0586c389 comment sweep had
+  missed it).
+
+- **2026-08-03 (§0o.5 + §0o.6 — the two frozen flip-instruction docs corrected)** — the
+  segregation ADR's "Build status" header and §10 intro no longer name §5 step 0 (closed
+  07-30) as the flip blocker: both now carry the real gates — the Mastercard escalation
+  (TODO attack order 0b) + Stripe live enablement — and the header's self-warning
+  parenthesis records that it has now frozen twice. `DEPLOYMENT.md`'s
+  `STRIPE_ALLOCATED_FUNDS` row (the operator's flip instruction) drops the falsified
+  "ineligible brand yields an unallocated charge, which is handled" premise for what
+  step 9 actually proved (asking 500s → ambiguous → wedged tab; the measured
+  `ALLOCATION_ELIGIBLE_CARD_BRANDS` pre-flight is what makes it safe) and gains the two
+  attack-order-0b warnings: re-measure `--brands` and restore every 5/5 brand when
+  Stripe's Mastercard fix lands, and never baseline `allocated_residual_alert_bps`
+  while a major brand is excluded.
+
+- **2026-08-03 (§0o.2 SHIPPED — a drawn charge is never re-stamped, so the allocation
+  budget stops double-counting draws)** — the same-day audit's HIGH #2, the flip
+  blocker: `syncAllocations`' staleness arm re-stamped `allocated_pence` with Stripe's
+  *current remaining* — already net of every executed draw — while the budget everywhere
+  is `allocated_pence − Σ draws`, so a 24h re-sync of a drawn charge subtracted its
+  draws twice (sync 5000 → draw 2000 → re-stamp 3000 → budget 1000). Money-safe
+  (under-draw by construction) but coverage-decaying, and `checkAllocationDivergence`
+  diverged by exactly Σ draws on every such charge forever — the alert channel
+  permanently red, burying the unrecorded-refund/missed-reversal signals it exists for.
+  - **The fix is one rule: once a charge has any draw, its budget is
+    identity-maintained and sync never touches it again.** `SYNC_ALLOCATION_CANDIDATES_SQL`
+    (exported): the first-sync arm (`allocated_pence IS NULL`) stays unconditional; the
+    staleness arm gains `NOT EXISTS (allocated_draws)` over every draw kind. A drawn
+    charge's drift detector is the §3.6 divergence sweep, whose candidate ORDER now
+    puts **drawn charges first** (by most recent draw activity) — sync no longer
+    rotates their frozen `allocation_synced_at`, so sync-recency ordering would have
+    walked exactly the charges the check exists for out of its window forever.
+  - **The stamp adds back recorded refunds** (`SYNC_ALLOCATION_REFUND_SNAPSHOT_SQL` +
+    `SYNC_ALLOCATION_STAMP_SQL`): a refund can precede the first sync, and Stripe's
+    remaining is already net of it, so the raw stamp double-counted refund draws the
+    same way (§0o.2's second arm). Stamping `remaining + Σ refund-kind draws` restores
+    `allocated_pence − Σ draws == Stripe remaining` at the moment of sync. Refund-kind
+    only, and the snapshot is read BEFORE the Stripe retrieve — both chosen so every
+    race errs to under-draw (a transfer draw racing the sweep is committed but
+    unexecuted on Stripe and must stay subtracted; a refund landing between snapshot
+    and stamp is subtracted once against a possibly-pre-refund remaining).
+  - **Tests +9 (305 → 314): 5 DB-backed** in `segregation-assembly-integration.test.ts`
+    (28 → 33 there), running the production SQL — drawn charge excluded from re-sync
+    while its undrawn twin still rotates; a refund draw freezes the stamp too; first
+    sync add-back restores budget == Stripe remaining; the add-back refuses a racing
+    transfer draw (the committed slice stays funded); §3.6 checks a drawn charge ahead
+    of a seconds-old undrawn one — **and 4 mocked** in the new `allocation-sync.test.ts`
+    (transfer-reversal idiom, flag ON) pinning the TS composition the SQL can't:
+    stamp = retrieved remaining + snapshot, snapshot-before-retrieve call order, a
+    failed retrieve skips without stamping, 0-not-NULL for a no-allocation charge.
+    **Mutation-verified, four mutants, each killed:** candidate `NOT EXISTS` removed →
+    2 DB tests red; add-back dropped from the stamp → 1 mocked red; snapshot moved
+    after the retrieve → 1 mocked red; divergence ORDER reverted to sync-recency →
+    1 DB test red. Full suite 314/314 with the DB-backed suites genuinely running;
+    `tsc` clean; ESLint 0 errors; both money tripwires green.
+  - **Docs:** ADR §3.3a gains the correction block (the sweep paragraph prescribed the
+    buggy stamp verbatim); the §10 as-built sync bullet, the lost-dispute backstop
+    sentence (undrawn → sync; drawn → §3.6) and the §3.6 no-watermark bullet rewritten;
+    same split stated at `recordRefundDraw`, the `charge.dispute.closed` handler, and
+    both rewritten module headers. Known bound, said out loud in both: a drawn
+    population larger than the divergence batch pins the check to its
+    most-recently-active N — acceptable while the check is advisory; revisit with real
+    payout volume.
+
 - **2026-08-03 (§0o.1 SHIPPED — the settlement idempotency-conflict wedge is now recovered, not retried forever)** —
   the same-day audit's HIGH #1, re-confirmed live before fixing, and worse than filed:
   **all three** dev `pending` settlements from the 07-31 sandbox run (`e14ab9c7…`,

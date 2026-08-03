@@ -10,13 +10,19 @@ per-settlement slice model remains withdrawn. See §9. Read §3.3 fresh.
 **Build status:** CODE COMPLETE, 2026-07-29, dark behind `STRIPE_ALLOCATED_FUNDS=0` — all
 three payout cycles (writer, publication, tribute) fund through the packer, and the
 refund/allocation hooks, the §3.6 reconcile sweep, the §3.3d residual metric and the dust
-script are all in. The remaining flip blocker is §5 step 0's MEASUREMENTS (harnesses
-committed 2026-07-30 — a credentials errand, not a build). **Read §10 before doing
-anything else**: it is the as-built record, and it is where the code and this spec
-diverge. *(This header previously froze at the part-1 state — "publication and tribute
-cycles … NOT [built]" — and stayed false at HEAD through four same-day docs commits while
-§10, the TODO and DEPLOYMENT.md all recorded the build complete; corrected 2026-07-30.
-Headers are what correction sweeps skip: when §10 moves, re-read this line.)*
+script are all in (§3.3a's re-sync double-count corrected 2026-08-03 — see that section's
+§0o.2 block). §5 steps 0–11 and 13 are RUN AND GREEN: step 0 closed 2026-07-30 (probes
+green; the production baseline returned nothing to measure, so both dials keep their
+recorded placeholders until payouts flow), steps 4–9 discharged 2026-08-01, step 12 waits
+on the Dial-A tribute rework. **The live flip gates are now:** (a) the Mastercard
+allocation 500, confirmed by Stripe as their bug and escalated (TODO attack order 0b —
+when their fix lands, re-measure `--brands` and restore every 5/5 brand to
+`ALLOCATION_ELIGIBLE_CARD_BRANDS`), and (b) Stripe enabling the beta on the live account.
+**Read §10 before doing anything else**: it is the as-built record, and it is where the
+code and this spec diverge. *(This header has now frozen TWICE — first at the part-1
+state, corrected 2026-07-30; then at "step 0's measurements are the remaining blocker"
+through six state-changing commits, corrected 2026-08-03 per §0o.5. Headers are what
+correction sweeps skip: when §10 or the flip gates move, re-read this line.)*
 **Owner context:** Segregation locks pooled reader funds into a holding state on the platform
 account so they can only move to connected accounts — the regulatory point of the whole
 exercise. Everything below is gated behind `STRIPE_ALLOCATED_FUNDS=1` so live behaviour is
@@ -229,9 +235,14 @@ Also inherited from the beta:
   **Consequence for the guarantee, not just for the code:** with Mastercard excluded, a
   large minority of reader money — roughly the Mastercard share of card payments — cannot
   be segregated at all and lands in the residual by construction. That is a direct input
-  to `allocated_residual_alert_bps` (§3.3d) and a **flip gate**: ask Stripe whether the
-  Mastercard exclusion is permanent or merely not yet enabled, before concluding what
-  flipping the flag buys.
+  to `allocated_residual_alert_bps` (§3.3d) — do **not** baseline that dial while the
+  workaround stands, or it measures the workaround rather than the structural floor. The
+  question this paragraph used to pose as open — permanent exclusion or not-yet-enabled? —
+  was ASKED AND ANSWERED 2026-08-01 (the top of this bullet records it): Mastercard is in
+  scope, the 500s are Stripe's bug, escalated. The remaining flip gate is their fix
+  landing (TODO attack order 0b: re-measure `--brands`, restore every 5/5 brand); still
+  outstanding with them is only whether eligibility is network- or brand-based (the
+  Diners question above).
 - Dashboard does NOT display allocated funds; fee billing becomes asynchronous. Our
   ledger + the allocation model (§3.3a) + a reconcile job (§3.6) are the only visibility.
 - Refunds/disputes draw allocated funds first, then platform balance. Transfer reversals
@@ -370,6 +381,24 @@ with `stripe_charge_id IS NOT NULL` and (`allocated_pence IS NULL` OR
 `expand[]=latest_charge.allocated_funds.balance` and stamp
 `allocated_pence = balance.pending + balance.available` (0 if the charge carries no
 `allocated_funds`). Bounded batch per run; oldest-unsynced first.
+
+> **CORRECTION, 2026-08-03 (§0o.2) — a drawn charge is never re-stamped, and the stamp
+> adds back recorded refunds.** As written above, the staleness arm re-stamped drawn
+> charges with Stripe's *current remaining* — which is net of every executed draw, while
+> the budget everywhere is `allocated_pence − Σ draws` — so a re-sync subtracted every
+> draw twice (sync 5000 → draw 2000 → 24h re-sync stamps 3000 → budget 1000), decaying
+> budgets toward the residual and making every drawn-then-resynced charge diverge by
+> exactly Σ draws forever, permanently reddening the §3.6 alert. As built now
+> (`SYNC_ALLOCATION_CANDIDATES_SQL`): the first-sync arm (`allocated_pence IS NULL`) is
+> unconditional; the staleness arm re-syncs only charges with **no `allocated_draws` row
+> of any kind** — once drawn, a charge's budget is identity-maintained by the draws
+> themselves and §3.6 (which re-reads Stripe live and checks drawn charges first) is the
+> drift detector. And the stamp writes `remaining + Σ refund-kind draws` (snapshot read
+> *before* the retrieve), restoring `allocated_pence − Σ draws == Stripe remaining` when
+> a refund preceded the first sync; refund-kind only and snapshot-first so every race
+> errs to under-draw — a transfer draw racing the sweep is unexecuted on Stripe and must
+> stay subtracted. Proven in `segregation-assembly-integration.test.ts` (5 DB-backed
+> tests) + `allocation-sync.test.ts` (the composition), all mutation-verified.
 
 This one mechanism disposes of three separate problems: ineligible card brands (§2),
 payment-method settlement timing (§2), and the pre-flip transition (§6) — in every case the
@@ -998,6 +1027,22 @@ cost and two of them produce numbers the design needs as inputs.
 > repo can currently reach. Step 12 is additionally blocked on the Dial-A tribute rework
 > — driving it today would test a model already scheduled for replacement.
 
+> **RUN (2026-08-01): STEPS 4–9 ARE GREEN — SEVEN OF SEVEN — AND STEP 9 FOUND A FLIP
+> BLOCKER.** Final tallies: step 4 **19/19**, steps 5+6 **25/25**, steps 7+7b **36/36**,
+> step 8 **15/15**, step 9 **11/11**. No defect was found in the code under test by any
+> of 4–8. Step 9 could not run *as written*: asking for allocation on an ineligible card
+> brand does not degrade to an unallocated charge (the premise §3.3a carried) — it
+> **500s**, is correctly classified ambiguous, and wedges that reader's tab permanently
+> (pending row, no PI id, no card flag, reads stuck `accrued`). Fixed by pre-flighting
+> the brand (`ALLOCATION_ELIGIBLE_CARD_BRANDS`, measured 50-sample matrix — Mastercard
+> OUT, Diners IN, i.e. both prior lists in this repo were wrong); step 9 then passed
+> 11/11 as the end-to-end proof, settling a Mastercard unallocated and routing the
+> payout around it. Stripe confirmed same-day that Mastercard IS in scope and the 500s
+> are **their bug**, escalated — so the exclusion is a workaround with an expiry date
+> (re-measure and restore on their fix; TODO attack order 0b). With this, §5 steps 0–11
+> and 13 have all run green; only step 12 remains, blocked on the Dial-A rework. Full
+> record: FIX-PROGRAMME 2026-08-01.
+>
 > **RUN (2026-07-31): STEPS 2, 3 AND 10 ARE GREEN. STEP 11 FOUND A P0 AND IS BLOCKED.**
 > This supersedes the "written and unrun" block below, which is kept for the shape of its
 > claims. 72 checks in one `--step 2,3,10` invocation: **step 2 41/41**, **step 3 15 + 1
@@ -1430,10 +1475,12 @@ coverage.
 sweep, the §3.3d residual metric and the §3.3f dust script are built, so **the
 build is complete**: all three payout cycles fund through the packer and the
 shared child lifecycle. §10.3 is now short and worth reading in full — what
-remains is the unrun §5 step 0 (the single flip blocker), one pre-existing
-carve/slice-cap interaction found on the way, and the Stripe-facing half of the
-execute loop that no test in this repo can reach. Read §10.1b and §10.3
-together.
+remains is one pre-existing carve/slice-cap interaction found on the way, and
+the Stripe-facing half of the execute loop that no test in this repo can reach.
+(§5 step 0, which this paragraph previously named the single flip blocker,
+closed 2026-07-30 — probes green, baseline empty by construction; the live
+gates are now the Mastercard escalation + live enablement, per the header.)
+Read §10.1b and §10.3 together.
 
 Everything below is behind `STRIPE_ALLOCATED_FUNDS` (default off). Flag off is
 byte-identical to before: the four conformance batteries pass unchanged, which is §5.13.
@@ -1452,7 +1499,9 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
 - **§3.2 settlement** — `allocated_funds[enabled]` + `transfer_group` on the PI.
 - **§3.3a allocation sync** — `settlementService.syncAllocations()`, wired as the
   settlement-reconcile worker's fourth sweep, `LIMIT 200`, oldest-unsynced first, `0`
-  (not NULL) for a charge carrying no allocation.
+  (not NULL) for a charge carrying no allocation. Since 2026-08-03 (§0o.2): the
+  staleness arm skips drawn charges and the stamp adds back recorded refund draws —
+  see the §3.3a correction block.
 - **§3.3b packer** — `payment-service/src/lib/allocation-packer.ts`: `packUnits`,
   `apportionCarve`, `prorateWithheldFee`. Pure, 20 tests, and three mutations were run
   against it (gross ignoring the fee; the carve's `min` clamp; floor→ceil on the fee
@@ -1481,7 +1530,9 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
   `(ref_table, ref_id, kind)` unique; **GREATEST, not assignment**, because
   webhook delivery is unordered and a late redelivery of the first partial must
   not shrink the budget back. A lost dispute deliberately records nothing
-  (§3.5: disputed funds stay allocated), with `syncAllocations` as the backstop.
+  (§3.5: disputed funds stay allocated); the backstop is `syncAllocations` for an
+  undrawn charge, the §3.6 divergence alert for a drawn one (which sync never
+  re-stamps — §0o.2).
 - **§3.4 the publication cycle.** `packPublicationSplits` runs inside
   `reservePublicationPayout`'s transaction: one unit per split, the pool's
   contributing settlements (from the claimed reads' and subs'
@@ -1555,11 +1606,13 @@ byte-identical to before: the four conformance batteries pass unchanged, which i
   cost us the halting decision above it.
   - **No watermark, deliberately.** §3.6 warns a watermark over
     `allocation_synced_at` must round-trip at Postgres precision. This sweep needs
-    none: `syncAllocations` already rotates oldest-first past
-    `allocation_sync_freshness_hours`, so taking the MOST RECENTLY SYNCED batch
-    walks a moving window over the whole population, comparing only figures fresh
-    enough that a difference means something. No stored position, no precision to
-    lose.
+    none — no stored position, no precision to lose. Since §0o.2 the batch is
+    DRAWN CHARGES FIRST (by most recent draw activity): sync never re-stamps a
+    drawn charge, so its `allocation_synced_at` is frozen and sync-recency
+    ordering would rotate exactly the charges whose model this check exists to
+    verify out of the window forever; the identity `allocated − Σ draws ==
+    Stripe remaining` holds at any age. Undrawn charges follow, most-recently-
+    synced first, where the old freshness argument still applies.
   - The divergence figure is deliberately **not** `GREATEST(0, …)` — a model that
     has drawn past zero is exactly the state worth alerting on, and flooring it
     (as `lockFundingSources` correctly does, where an under-draw is safe) would
