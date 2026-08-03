@@ -60,16 +60,24 @@ starts.
     negative control). **Mutation-verified**: reverting `settlement.ts` fails 6 of them
     with the wedge reproduced (row `pending` forever). Full suite 305/305 with the
     DB-backed suites genuinely running; ESLint 0 errors; both money tripwires green.
-  - **Live verification is HALF done, blocked on credentials:** with the fix running in
-    the dev stack, the age alert fired on the three specimens at first startup — but
-    recovery itself errors `api_key_expired`: **the dev sandbox's `sk_test_…` key has
-    expired since the 08-01 run.** That error is ambiguous (correctly: leave pending,
-    alert), so the rows wait. Next session with a fresh sandbox key: restart
-    payment-service and watch the three rows resolve — expected `failed`/
-    `idempotency_key_conflict` (their first requests 500'd creating nothing — the
-    pre-fix Mastercard case), then a clean re-settle on the next sweep. (Housekeeping:
-    recreated the compose network for the known inter-container ETIMEDOUT — the payment
-    container had been unhealthy on DB connection timeouts.)
+  - **Live outcome (same day, fresh key): all three specimens resolved — via the NORMAL
+    path, and the reason is a finding in itself.** The first run surfaced that the dev
+    sandbox's `sk_test_…` key had expired since 08-01 (`api_key_expired` — ambiguous,
+    correctly: leave pending, and the new alert fired on all three, its first live
+    trip). With a fresh key, the retried creates were **accepted as new requests** and
+    all three completed with fresh PIs (`pi_3U0MKw…`/`pi_3U0MKy…`/`pi_3U0MKz…`,
+    confirm via webhook/reconcile as normal): **Stripe GCs idempotency keys ~24h after
+    first use**, and the wedged keys had aged out. So the audit's "2½ days refutes the
+    24h self-heal" was confounded — the API key expired mid-window, and auth errors
+    (not conflicts) blocked most of it. Corrected wedge model: payload drift freezes the
+    tab until Stripe drops the key (≥24h, undocumented precisely, at 3 retries/day) —
+    shorter than "forever", still a silent day-plus tab freeze per drift event, which
+    the recovery now cuts to the next resume pass and the alert makes loud. The
+    recovery's live-fire proof therefore remains the mutation-verified battery (a live
+    conflict now requires manufacturing drift inside the same 24h window — not worth a
+    session; the class is covered). (Housekeeping: recreated the compose network for
+    the known inter-container ETIMEDOUT — the payment container had been unhealthy on
+    DB connection timeouts.)
   - **Deliberately NOT built here:** the generic bounded retry for *any* deterministic
     ambiguous failure (attack order 0c) — that changes failure semantics on a money path
     and stays an owner call. This fix removes the only *known* member of the class; the
