@@ -7,7 +7,10 @@ import {
 } from "@platform-pub/shared/db/client.js";
 import { recordLedger, applyLedgerDelta } from "@platform-pub/shared/lib/ledger.js";
 import { readNetSql } from "@platform-pub/shared/lib/per-read-net.js";
-import { isTerminalChargeError } from "../lib/charge-errors.js";
+import {
+  isTerminalChargeError,
+  isIdempotencyConflict,
+} from "../lib/charge-errors.js";
 import {
   createAllocationAwareStripe,
   allocatedFundsParam,
@@ -18,6 +21,7 @@ import { tributesEnabled, allocatedFundsEnabled } from "@platform-pub/shared/lib
 import {
   executeStripeIdempotent,
   stripeErrorCode,
+  type StripeIdempotentOutcome,
 } from "../lib/stripe-idempotent.js";
 import {
   computeChargebackReversal,
@@ -44,6 +48,14 @@ import logger from "../lib/logger.js";
 
 const STRIPE_MIN_CHARGE_PENCE = 30;
 
+// One full settlement-reconcile cycle (the worker runs 3×/day). A pending row
+// that has survived a whole cycle of retries is wedged, not in flight — and a
+// wedged pending row freezes its tab via the in-flight guard, so it must never
+// linger silently (§0o.1: three did, for days). Alert-only: resolution stays
+// with the retry/recovery paths, never a blind timeout-fail (the charge may
+// exist — failing it here is the double-charge, PAYMENTS ADR §1.1).
+const STUCK_PENDING_ALERT_HOURS = 8;
+
 /**
  * The reserve-time guard: is a settlement already IN FLIGHT on this tab?
  *
@@ -56,8 +68,16 @@ const STRIPE_MIN_CHARGE_PENCE = 30;
  * the tab still reads full, so a `pending`-only guard admitted a second
  * settlement and charged the reader twice (measured 2026-07-31 — see the note
  * at the call site). `stripe_charge_id IS NULL` is the same marker
- * reconcileSettlements uses for "charged but not yet applied", which is also
- * what bounds this: that sweep releases anything stuck here.
+ * reconcileSettlements uses for "charged but not yet applied", and that sweep
+ * is what bounds the SECOND arm.
+ *
+ * The `pending` arm is bounded only by resumePendingSettlements (startup +
+ * every reconcile cycle) SUCCEEDING: a persistently-ambiguous Stripe error
+ * holds the tab frozen for as long as it persists. The one such error a retry
+ * can never clear — the idempotency key conflict — is recovered specifically
+ * (recoverIdempotencyConflict, §0o.1), and anything else that lingers past a
+ * full retry cycle trips the resume sweep's stuck-pending age alert rather
+ * than freezing silently.
  */
 export const SETTLEMENT_IN_FLIGHT_SQL = `
   SELECT id, status
@@ -403,61 +423,31 @@ class SettlementService {
       return;
     }
 
-    const outcome = await executeStripeIdempotent(
-      "settlement",
-      `settlement-${settlementId}`,
-      () =>
-        this.stripe.paymentIntents.create(
-          {
-            amount: amountPence,
-            currency: "gbp",
-            customer: stripeCustomerId,
-            // Deliberately BROADER than the allocated-funds beta's eligible brand
-            // set. A brand allow-list HERE would refuse a reader's card at
-            // settlement time, turning a compliance nicety into lost revenue; the
-            // allow-list belongs on the allocation param instead (below), so an
-            // ineligible card is charged normally and simply carries no
-            // segregated balance. NEVER switch this to
-            // automatic_payment_methods.
-            //
-            // The older form of this comment claimed an ineligible brand "simply
-            // yields a charge whose allocated balance syncs to 0". Measured
-            // 2026-08-01: it does not — with `allocated_funds` set, the create
-            // 500s and no charge exists at all. That is why the brand is now
-            // pre-flighted rather than assumed; the INTENT of this comment is
-            // unchanged and is what the pre-flight restores.
-            payment_method_types: ["card"],
-            // The reader's attached card, by id. A PI does not inherit the
-            // customer's invoice_settings default — see
-            // resolveDefaultPaymentMethod above for what omitting this cost.
-            payment_method: paymentMethodId,
-            confirm: true,
-            off_session: true,
-            // Lock this charge's funds into the allocated state — flag on AND
-            // the card's brand accepted by the beta. An ineligible brand gets {}
-            // here and charges perfectly normally, unallocated; asking anyway
-            // 500s the create and wedges this tab forever (see
-            // allocatedFundsParam for the full failure chain).
-            ...allocatedFundsParam(defaultCard?.brand ?? null),
-            // Grouping only — it buys legibility in the dashboard and nothing
-            // else; source_transaction on the transfer is what does the work.
-            ...(allocatedFundsEnabled()
-              ? { transfer_group: `settlement-${settlementId}` }
-              : {}),
-            metadata: {
-              platform: "all.haus",
-              reader_id: readerId,
-              tab_id: tabId,
-              settlement_id: settlementId,
-              trigger_type: triggerType,
-            },
-          },
-          {
-            idempotencyKey: `settlement-${settlementId}`,
-          },
-        ),
-      isTerminalChargeError,
-    );
+    let outcome: StripeIdempotentOutcome<Stripe.Response<Stripe.PaymentIntent>>;
+    try {
+      outcome = await this.createSettlementIntent(
+        settlementId,
+        amountPence,
+        stripeCustomerId,
+        readerId,
+        tabId,
+        triggerType,
+        paymentMethodId,
+        defaultCard?.brand ?? null,
+      );
+    } catch (err) {
+      // The one ambiguous error a retry can never clear: the payload drifted
+      // under the row-stable key (deploy / card swap / brand flip — §0o.1).
+      // Resolve it by looking the first attempt's PI up instead of re-throwing
+      // into an infinite conflict loop that freezes the tab.
+      if (!isIdempotencyConflict(err)) throw err;
+      await this.recoverIdempotencyConflict(
+        settlementId,
+        stripeCustomerId,
+        readerId,
+      );
+      return;
+    }
     if (!outcome.ok) {
       // Terminal decline / SCA / unusable card: mark the settlement 'failed' so
       // the reserveSettlement pending-guard releases and the tab unfreezes, and
@@ -515,6 +505,253 @@ class SettlementService {
         paymentIntentId: paymentIntent.id,
       },
       "Settlement completed — awaiting Stripe confirmation",
+    );
+  }
+
+  // The Stripe create, factored out only so completeSettlement can catch the
+  // idempotency-conflict case around it; classification (terminal vs ambiguous)
+  // stays executeStripeIdempotent's.
+  private createSettlementIntent(
+    settlementId: string,
+    amountPence: number,
+    stripeCustomerId: string,
+    readerId: string,
+    tabId: string,
+    triggerType: "threshold" | "monthly_fallback",
+    paymentMethodId: string,
+    cardBrand: string | null,
+  ): Promise<StripeIdempotentOutcome<Stripe.Response<Stripe.PaymentIntent>>> {
+    return executeStripeIdempotent(
+      "settlement",
+      `settlement-${settlementId}`,
+      () =>
+        this.stripe.paymentIntents.create(
+          {
+            amount: amountPence,
+            currency: "gbp",
+            customer: stripeCustomerId,
+            // Deliberately BROADER than the allocated-funds beta's eligible brand
+            // set. A brand allow-list HERE would refuse a reader's card at
+            // settlement time, turning a compliance nicety into lost revenue; the
+            // allow-list belongs on the allocation param instead (below), so an
+            // ineligible card is charged normally and simply carries no
+            // segregated balance. NEVER switch this to
+            // automatic_payment_methods.
+            //
+            // The older form of this comment claimed an ineligible brand "simply
+            // yields a charge whose allocated balance syncs to 0". Measured
+            // 2026-08-01: it does not — with `allocated_funds` set, the create
+            // 500s and no charge exists at all. That is why the brand is now
+            // pre-flighted rather than assumed; the INTENT of this comment is
+            // unchanged and is what the pre-flight restores.
+            payment_method_types: ["card"],
+            // The reader's attached card, by id. A PI does not inherit the
+            // customer's invoice_settings default — see
+            // resolveDefaultPaymentMethod above for what omitting this cost.
+            payment_method: paymentMethodId,
+            confirm: true,
+            off_session: true,
+            // Lock this charge's funds into the allocated state — flag on AND
+            // the card's brand accepted by the beta. An ineligible brand gets {}
+            // here and charges perfectly normally, unallocated; asking anyway
+            // 500s the create and wedges this tab forever (see
+            // allocatedFundsParam for the full failure chain).
+            ...allocatedFundsParam(cardBrand),
+            // Grouping only — it buys legibility in the dashboard and nothing
+            // else; source_transaction on the transfer is what does the work.
+            ...(allocatedFundsEnabled()
+              ? { transfer_group: `settlement-${settlementId}` }
+              : {}),
+            metadata: {
+              platform: "all.haus",
+              reader_id: readerId,
+              tab_id: tabId,
+              settlement_id: settlementId,
+              trigger_type: triggerType,
+            },
+          },
+          {
+            idempotencyKey: `settlement-${settlementId}`,
+          },
+        ),
+      isTerminalChargeError,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // recoverIdempotencyConflict — resolve the one ambiguous create error a retry
+  // can never clear (2026-08-03 audit §0o.1).
+  //
+  // completeSettlement rebuilds its create payload on every attempt (the default
+  // card is re-resolved live; the allocation param depends on its brand), so the
+  // payload can drift between an ambiguous first attempt and its resume: a
+  // deploy changing the create shape, the reader swapping default cards, a
+  // brand-eligibility flip. The row-stable key then makes every retry a
+  // StripeIdempotencyError, which is (correctly) ambiguous — so the row stayed
+  // 'pending' and the in-flight guard froze the tab forever, silently. Measured
+  // live: three dev settlements wedged this way, 2026-07-31.
+  //
+  // A key conflict is uniquely RESOLVABLE ambiguity: it proves the first request
+  // reached Stripe and was recorded, and every settlement PI carries
+  // metadata.settlement_id. So look the PaymentIntent up instead of retrying:
+  //
+  //   • found, succeeded/processing → ADOPT it: the first attempt's charge IS
+  //     the settlement's charge. Store its id + flip 'completed'; confirm
+  //     immediately when the charge id is already known, else the webhook (which
+  //     matches on the now-stored PI id) or reconcileSettlements finishes.
+  //   • found, dead (requires_payment_method / requires_action / canceled) →
+  //     the terminal-decline disposition: 'failed' + card-action flag.
+  //   • provably absent → the first request errored before creating anything
+  //     (e.g. the measured allocation-on-ineligible-brand 500). Mark 'failed'
+  //     WITHOUT the card flag — the card was never the problem — and the
+  //     threshold sweep re-reserves a FRESH row whose fresh key charges cleanly
+  //     under the current payload.
+  //   • enumeration truncated → absence unproven, so change NOTHING (failing
+  //     here could double-charge); the stuck-pending age alert keeps it visible.
+  //
+  // Enumeration is paymentIntents.LIST, never .search: the search index lags,
+  // and a lagged miss here would read as "provably absent" and re-charge. The
+  // window is bounded by the row's own created_at (the first request necessarily
+  // post-dates the reserve), minus generous clock slack.
+  // ---------------------------------------------------------------------------
+  private async recoverIdempotencyConflict(
+    settlementId: string,
+    stripeCustomerId: string,
+    readerId: string,
+  ): Promise<void> {
+    const { rows } = await pool.query<{ created_at: string | Date }>(
+      `SELECT created_at FROM tab_settlements WHERE id = $1 AND status = 'pending'`,
+      [settlementId],
+    );
+    if (rows.length === 0) return; // another path already moved the row on
+
+    const createdGte =
+      Math.floor(new Date(rows[0].created_at).getTime() / 1000) - 3600;
+
+    const MAX_PAGES = 10; // 1,000 PIs in the window — far past any real reader
+    let match: Stripe.PaymentIntent | null = null;
+    let sawWholeWindow = false;
+    let startingAfter: string | undefined;
+    for (let page = 0; page < MAX_PAGES && !match; page++) {
+      const batch = await this.stripe.paymentIntents.list({
+        customer: stripeCustomerId,
+        created: { gte: createdGte },
+        limit: 100,
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+      match =
+        batch.data.find((pi) => pi.metadata?.settlement_id === settlementId) ??
+        null;
+      if (!batch.has_more) {
+        sawWholeWindow = true;
+        break;
+      }
+      startingAfter = batch.data[batch.data.length - 1]?.id;
+      if (!startingAfter) break; // has_more on an empty page: treat as truncated
+    }
+
+    if (match) {
+      if (match.status === "succeeded" || match.status === "processing") {
+        await pool.query(
+          `UPDATE tab_settlements
+             SET stripe_payment_intent_id = $1, status = 'completed'
+             WHERE id = $2 AND status = 'pending'`,
+          [match.id, settlementId],
+        );
+        logger.warn(
+          {
+            settlementId,
+            readerId,
+            paymentIntentId: match.id,
+            piStatus: match.status,
+          },
+          "Idempotency-conflict recovery: adopted the PaymentIntent the first attempt created",
+        );
+        if (match.status === "succeeded") {
+          const chargeId =
+            typeof match.latest_charge === "string"
+              ? match.latest_charge
+              : (match.latest_charge?.id ?? null);
+          if (chargeId) {
+            try {
+              await this.confirmSettlement(match.id, chargeId);
+            } catch (err) {
+              // Adoption is already durable; confirmation lands via the webhook
+              // (the PI id now matches) or the reconcileSettlements backstop.
+              logger.warn(
+                { err, settlementId, paymentIntentId: match.id },
+                "Idempotency-conflict recovery: adopted but immediate confirm failed — reconcile sweep will finish",
+              );
+            }
+          }
+        }
+        return;
+      }
+      if (
+        match.status === "requires_payment_method" ||
+        match.status === "requires_action" ||
+        match.status === "canceled"
+      ) {
+        // The first attempt's charge is dead without the reader acting — the
+        // terminal-decline disposition (mirrors completeSettlement's !ok arm).
+        await withTransaction(async (client) => {
+          await client.query(
+            `UPDATE tab_settlements
+               SET status = 'failed',
+                   stripe_payment_intent_id = COALESCE($1, stripe_payment_intent_id),
+                   failure_reason = $2
+               WHERE id = $3 AND status = 'pending'`,
+            [match!.id, match!.status, settlementId],
+          );
+          await client.query(
+            `UPDATE accounts
+               SET card_action_required_at = now(), updated_at = now()
+               WHERE id = $1`,
+            [readerId],
+          );
+        });
+        logger.warn(
+          {
+            settlementId,
+            readerId,
+            paymentIntentId: match.id,
+            piStatus: match.status,
+          },
+          "Idempotency-conflict recovery: first attempt's PaymentIntent is dead — settlement failed, tab unfrozen, card-action flagged",
+        );
+        return;
+      }
+      // requires_confirmation / requires_capture — states a confirm-and-capture
+      // create never mints. Change nothing; the age alert keeps it visible.
+      logger.error(
+        { settlementId, paymentIntentId: match.id, piStatus: match.status },
+        "Idempotency-conflict recovery: PaymentIntent in a state this flow never mints — leaving pending for manual review",
+      );
+      return;
+    }
+
+    if (!sawWholeWindow) {
+      logger.error(
+        { settlementId, stripeCustomerId },
+        "Idempotency-conflict recovery: window enumeration truncated, absence unproven — leaving pending",
+      );
+      return;
+    }
+
+    // Key recorded, provably no PaymentIntent: the first request errored before
+    // creating anything. Fail WITHOUT the card flag — the card was never the
+    // problem — so the threshold sweep re-reserves under a fresh id and key.
+    await pool.query(
+      `UPDATE tab_settlements
+         SET status = 'failed',
+             stripe_payment_intent_id = COALESCE($1, stripe_payment_intent_id),
+             failure_reason = $2
+         WHERE id = $3 AND status = 'pending'`,
+      [null, "idempotency_key_conflict", settlementId],
+    );
+    logger.warn(
+      { settlementId, readerId },
+      "Idempotency-conflict recovery: key recorded but no PaymentIntent exists — settlement failed (no card flag); the sweep re-reserves under a fresh key",
     );
   }
 
@@ -582,14 +819,31 @@ class SettlementService {
       tab_id: string;
       amount_pence: number;
       trigger_type: "threshold" | "monthly_fallback";
+      created_at: string | Date;
     }>(
-      `SELECT id, reader_id, tab_id, amount_pence, trigger_type
+      `SELECT id, reader_id, tab_id, amount_pence, trigger_type, created_at
        FROM tab_settlements
        WHERE status = 'pending'
        ORDER BY created_at ASC`,
     );
 
     if (rows.length === 0) return;
+
+    const stale = rows.filter(
+      (r) =>
+        Date.now() - new Date(r.created_at).getTime() >
+        STUCK_PENDING_ALERT_HOURS * 3600_000,
+    );
+    if (stale.length > 0) {
+      logger.error(
+        {
+          count: stale.length,
+          oldestCreatedAt: stale[0].created_at,
+          settlementIds: stale.slice(0, 20).map((r) => r.id),
+        },
+        "SETTLEMENT STUCK PENDING — rows have survived at least one full retry cycle; each freezes its tab via the in-flight guard until resolved. The per-row error logged below is not clearing on its own — investigate it.",
+      );
+    }
 
     logger.info({ count: rows.length }, "Resuming pending settlements");
 

@@ -21,6 +21,12 @@ export const invalidRequest = (code = 'parameter_invalid') => ({
 /** AMBIGUOUS for both: the resource may have been created before the response
  *  was lost, so the flow must re-throw and leave the row pending for resume. */
 export const connectionError = () => ({ type: 'StripeConnectionError' })
+/** Same key, different parameters — the §0o.1 wedge. Ambiguous to the terminal
+ *  classifiers, but specifically recoverable (isIdempotencyConflict). */
+export const idempotencyConflict = () => ({
+  type: 'StripeIdempotencyError',
+  rawType: 'idempotency_error',
+})
 export const apiError = () => ({ type: 'StripeAPIError' })
 export const rateLimitError = () => ({ type: 'StripeRateLimitError' })
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   isTerminalChargeError,
   isTerminalTransferError,
+  isIdempotencyConflict,
 } from "../src/lib/charge-errors.js";
 
 // =============================================================================
@@ -140,5 +141,30 @@ describe("isTerminalTransferError — ambiguous / transient (re-throw, NEVER rol
     expect(isTerminalTransferError(null)).toBe(false);
     expect(isTerminalTransferError(new Error("boom"))).toBe(false);
     expect(isTerminalTransferError("StripeInvalidRequestError")).toBe(false);
+  });
+});
+
+describe("isIdempotencyConflict — the one ambiguous error a retry can never clear (§0o.1)", () => {
+  it("matches a StripeIdempotencyError", () => {
+    expect(
+      isIdempotencyConflict({
+        type: "StripeIdempotencyError",
+        rawType: "idempotency_error",
+      }),
+    ).toBe(true);
+  });
+
+  it("stays AMBIGUOUS to both terminal classifiers (recovery, never rollback)", () => {
+    const err = { type: "StripeIdempotencyError" };
+    expect(isTerminalChargeError(err)).toBe(false);
+    expect(isTerminalTransferError(err)).toBe(false);
+  });
+
+  it("does not match other ambiguous types, terminal types, or junk", () => {
+    expect(isIdempotencyConflict({ type: "StripeConnectionError" })).toBe(false);
+    expect(isIdempotencyConflict({ type: "StripeCardError" })).toBe(false);
+    expect(isIdempotencyConflict(null)).toBe(false);
+    expect(isIdempotencyConflict(new Error("boom"))).toBe(false);
+    expect(isIdempotencyConflict("StripeIdempotencyError")).toBe(false);
   });
 });

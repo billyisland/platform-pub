@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   cardDeclined,
   connectionError,
+  idempotencyConflict,
   invalidRequest,
   readerParity,
   type LedgerRow,
@@ -40,30 +41,63 @@ const { paymentIntents, customers } = vi.hoisted(() => {
   function makeResource(prefix: string) {
     const calls: Array<{ key?: string; threw: boolean }> = []
     const byKey = new Map<string, { id: string; [k: string]: unknown }>()
+    const byKeyParams = new Map<string, string>()
     const byId = new Map<string, { id: string; [k: string]: unknown }>()
     const script: Array<{ throw?: unknown; obj?: Record<string, unknown> }> = []
     let seq = 0
+    let forceListHasMore = false
     return {
       calls,
       get distinctKeys() { return byKey.size },
       createCountFor(key: string) { return calls.filter((c) => c.key === key).length },
       succeedNext(obj?: Record<string, unknown>) { script.push({ obj: obj ?? {} }) },
       throwNext(err: unknown) { script.push({ throw: err }) },
+      /** Every list() answers has_more: the recovery's absence proof must refuse
+       *  to conclude from a window it cannot finish enumerating. */
+      forceListTruncation() { forceListHasMore = true },
       async create(_params: Record<string, unknown>, opts?: { idempotencyKey?: string }) {
         const key = opts?.idempotencyKey
-        if (key && byKey.has(key)) { calls.push({ key, threw: false }); return byKey.get(key)! }
+        if (key && byKey.has(key)) {
+          // Stripe replays a recorded key only for a byte-identical request;
+          // same key + different params is the idempotency conflict (§0o.1).
+          if (byKeyParams.get(key) !== JSON.stringify(_params)) {
+            calls.push({ key, threw: true })
+            throw { type: 'StripeIdempotencyError', rawType: 'idempotency_error' }
+          }
+          calls.push({ key, threw: false })
+          return byKey.get(key)!
+        }
         const step = script.shift()
         if (step && 'throw' in step && step.throw !== undefined) { calls.push({ key, threw: true }); throw step.throw }
         seq += 1
         const id = (step?.obj?.id as string) ?? `${prefix}_${seq}`
-        const obj = { status: 'succeeded', latest_charge: `ch_${seq}`, ...(step?.obj ?? {}), id }
+        // Carries the request's customer/metadata (and a created stamp) so the
+        // recovery's list-by-customer + metadata.settlement_id match works
+        // against what the create ACTUALLY minted, not a fixture.
+        const obj = {
+          status: 'succeeded',
+          latest_charge: `ch_${seq}`,
+          customer: _params.customer,
+          metadata: _params.metadata ?? {},
+          created: Math.floor(Date.now() / 1000),
+          ...(step?.obj ?? {}),
+          id,
+        }
         calls.push({ key, threw: false })
-        if (key) byKey.set(key, obj)
+        if (key) { byKey.set(key, obj); byKeyParams.set(key, JSON.stringify(_params)) }
         byId.set(id, obj)
         return obj
       },
       async retrieve(id: string) { return byId.get(id) ?? { id, status: 'succeeded', latest_charge: `ch_${id}` } },
-      _reset() { calls.length = 0; byKey.clear(); byId.clear(); script.length = 0; seq = 0 },
+      async list(params: { customer?: string; created?: { gte?: number }; limit?: number; starting_after?: string }) {
+        const data = [...byId.values()].filter(
+          (o) =>
+            (!params.customer || o.customer === params.customer) &&
+            (!params.created?.gte || ((o.created as number) ?? 0) >= params.created.gte),
+        )
+        return { data, has_more: forceListHasMore }
+      },
+      _reset() { calls.length = 0; byKey.clear(); byKeyParams.clear(); byId.clear(); script.length = 0; seq = 0; forceListHasMore = false },
     }
   }
   // The reader's saved card, which completeSettlement resolves before charging.
@@ -120,6 +154,7 @@ interface SettlementRow {
   reversed_at: string | null
   reversal_reason: string | null
   failure_reason: string | null
+  created_at: Date
   seq: number
 }
 interface TabRow {
@@ -252,6 +287,7 @@ function query(sql: string, params: unknown[] = []) {
       reversed_at: null,
       reversal_reason: null,
       failure_reason: null,
+      created_at: new Date(),
       seq: db.seq,
     }
     db.settlements.set(id, row)
@@ -306,12 +342,19 @@ function query(sql: string, params: unknown[] = []) {
     )
   }
   // --- resume pending list ---
-  if (/SELECT id, reader_id, tab_id, amount_pence, trigger_type\s+FROM tab_settlements\s+WHERE status = 'pending'/.test(sql)) {
+  if (/SELECT id, reader_id, tab_id, amount_pence, trigger_type, created_at\s+FROM tab_settlements\s+WHERE status = 'pending'/.test(sql)) {
     const rows = [...db.settlements.values()]
       .filter((s) => s.status === 'pending')
       .sort((a, b) => a.seq - b.seq)
-      .map((s) => ({ id: s.id, reader_id: s.reader_id, tab_id: s.tab_id, amount_pence: s.amount_pence, trigger_type: s.trigger_type }))
+      .map((s) => ({ id: s.id, reader_id: s.reader_id, tab_id: s.tab_id, amount_pence: s.amount_pence, trigger_type: s.trigger_type, created_at: s.created_at }))
     return Promise.resolve(ok(rows))
+  }
+  // --- idempotency-conflict recovery: row created_at (window floor) ---
+  if (/SELECT created_at FROM tab_settlements WHERE id = \$1 AND status = 'pending'/.test(sql)) {
+    const row = db.settlements.get(params[0] as string)
+    return Promise.resolve(
+      ok(row && row.status === 'pending' ? [{ created_at: row.created_at }] : []),
+    )
   }
   // --- confirm lookup by PI id ---
   if (/FROM tab_settlements\s+WHERE stripe_payment_intent_id = \$1/.test(sql)) {
@@ -438,6 +481,7 @@ vi.mock('../src/lib/logger.js', () => ({
 }))
 
 import { settlementService } from '../src/services/settlement.js'
+import logger from '../src/lib/logger.js'
 
 const only = () => [...db.settlements.values()][0]
 
@@ -639,5 +683,118 @@ describe('settlement — resume-sweep idempotency', () => {
   it('the sweep on an empty pending set does nothing', async () => {
     await settlementService.resumePendingSettlements()
     expect(paymentIntents.calls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §0o.1 — the idempotency-conflict wedge. completeSettlement rebuilds its
+// payload per attempt, so a card swap / deploy / brand flip between an
+// ambiguous first attempt and its resume turns the row-stable key into a
+// permanent StripeIdempotencyError: before the recovery, the row stayed
+// 'pending' forever and the in-flight guard froze the TAB with it (three dev
+// settlements measured wedged, 2026-07-31).
+describe('settlement — idempotency-conflict recovery (§0o.1)', () => {
+  it('card swap after a charged-but-uncompleted attempt → the retry conflicts, recovery ADOPTS the first charge (no second charge)', async () => {
+    seedReader('reader-1', 1000)
+    // Attempt 1: the charge goes through, the local completion UPDATE crashes.
+    crashOn(/UPDATE tab_settlements\s+SET stripe_payment_intent_id = \$1, status = 'completed'/)
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+    expect(only().status).toBe('pending')
+    expect(paymentIntents.distinctKeys).toBe(1) // the charge exists at Stripe
+
+    // The reader swaps their default card before the resume: the rebuilt
+    // payload no longer matches the recorded key.
+    customers.defaultPaymentMethod = 'pm_swapped'
+    await settlementService.resumePendingSettlements()
+
+    // Recovery found pi_1 via metadata.settlement_id and adopted it — and the
+    // charge id was already known, so it confirmed immediately.
+    expect(only().status).toBe('completed')
+    expect(only().stripe_payment_intent_id).toBe('pi_1')
+    expect(paymentIntents.distinctKeys).toBe(1) // STILL exactly one charge
+    const tab = db.tabsByReader.get('reader-1')!
+    expect(tab.balance_pence).toBe(0) // confirm ran: debt paid down
+    expect(db.ledger.filter((e) => e.trigger === 'tab_settlement')).toHaveLength(1)
+    expect(readerParity(db.ledger, 'reader-1', tab.balance_pence)).toBe(true)
+  })
+
+  it('conflict with the first attempt\'s PI in a dead state → terminal-decline disposition (failed + card flag + PI id kept)', async () => {
+    seedReader('reader-1', 1000)
+    // Attempt 1 minted a PI that is going nowhere without the reader (SCA/decline
+    // recorded on it), and the process died before the local completion landed.
+    paymentIntents.succeedNext({ status: 'requires_payment_method', latest_charge: null })
+    crashOn(/UPDATE tab_settlements\s+SET stripe_payment_intent_id = \$1, status = 'completed'/)
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+    expect(only().status).toBe('pending')
+
+    customers.defaultPaymentMethod = 'pm_swapped' // drift → conflict on resume
+    await settlementService.resumePendingSettlements()
+
+    expect(only().status).toBe('failed')
+    expect(only().failure_reason).toBe('requires_payment_method')
+    expect(only().stripe_payment_intent_id).toBe('pi_1') // kept for the failure webhook
+    expect(db.accounts.get('reader-1')!.card_action_required_at).not.toBeNull()
+    expect(paymentIntents.distinctKeys).toBe(1) // no fresh charge minted
+    expect(db.ledger.filter((e) => e.trigger.startsWith('tab_settlement'))).toHaveLength(0)
+  })
+
+  it('conflict but provably NO PaymentIntent exists → failed WITHOUT the card flag, and a fresh reserve settles cleanly under a fresh key', async () => {
+    seedReader('reader-1', 1000)
+    // Attempt 1 never created anything (ambiguous network failure)…
+    paymentIntents.throwNext(connectionError())
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+    // …but Stripe recorded the key (e.g. the first request 500'd server-side),
+    // so the resume's rebuilt payload now conflicts.
+    paymentIntents.throwNext(idempotencyConflict())
+    await settlementService.resumePendingSettlements()
+
+    // Enumerated the whole window, found nothing → the row fails so the tab
+    // unfreezes — and the card is NOT flagged, because it was never the problem.
+    expect(only().status).toBe('failed')
+    expect(only().failure_reason).toBe('idempotency_key_conflict')
+    expect(db.accounts.get('reader-1')!.card_action_required_at).toBeNull()
+
+    // Convergence: the next settle reserves a FRESH row, whose fresh key
+    // charges cleanly with the current payload.
+    await settlementService.checkAndSettle('reader-1')
+    const rows = [...db.settlements.values()]
+    expect(rows).toHaveLength(2)
+    expect(rows[1].status).toBe('completed')
+    expect(paymentIntents.distinctKeys).toBe(1) // exactly one real charge, the new one
+  })
+
+  it('conflict with a truncated enumeration window → absence unproven, row left pending, nothing charged or failed', async () => {
+    seedReader('reader-1', 1000)
+    paymentIntents.throwNext(connectionError())
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+
+    paymentIntents.forceListTruncation() // recovery can never see the whole window
+    paymentIntents.throwNext(idempotencyConflict())
+    await settlementService.resumePendingSettlements()
+
+    expect(only().status).toBe('pending') // no guess: failing here could double-charge
+    expect(only().failure_reason).toBeNull()
+    expect(db.accounts.get('reader-1')!.card_action_required_at).toBeNull()
+    expect(paymentIntents.distinctKeys).toBe(0)
+  })
+
+  it('a pending row older than a full retry cycle trips the STUCK PENDING alert; a fresh one does not', async () => {
+    seedReader('reader-1', 1000)
+    paymentIntents.throwNext(connectionError())
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+
+    vi.mocked(logger.error).mockClear()
+    paymentIntents.throwNext(connectionError()) // still failing, but row is fresh
+    await settlementService.resumePendingSettlements()
+    expect(
+      vi.mocked(logger.error).mock.calls.some(([, msg]) => typeof msg === 'string' && msg.includes('SETTLEMENT STUCK PENDING')),
+    ).toBe(false)
+
+    only().created_at = new Date(Date.now() - 9 * 3600_000) // past one 8h cycle
+    paymentIntents.throwNext(connectionError())
+    await settlementService.resumePendingSettlements()
+    expect(
+      vi.mocked(logger.error).mock.calls.some(([, msg]) => typeof msg === 'string' && msg.includes('SETTLEMENT STUCK PENDING')),
+    ).toBe(true)
   })
 })

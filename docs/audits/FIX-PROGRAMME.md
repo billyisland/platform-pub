@@ -23,6 +23,58 @@ starts.
 
 ## Progress
 
+- **2026-08-03 (§0o.1 SHIPPED — the settlement idempotency-conflict wedge is now recovered, not retried forever)** —
+  the same-day audit's HIGH #1, re-confirmed live before fixing, and worse than filed:
+  **all three** dev `pending` settlements from the 07-31 sandbox run (`e14ab9c7…`,
+  `89057f12…`, `96c499c7…` — the audit had found one) were erroring
+  `StripeIdempotencyError` on every resume, exactly the payload-drift chain described
+  (resume re-resolves the card and rebuilds the brand-dependent create per attempt under
+  the row-stable key; Stripe replays only a byte-identical request).
+  - **The fix is a specific handler for the one ambiguous error a retry can never
+    clear.** `isIdempotencyConflict` (`charge-errors.ts`) names it; `completeSettlement`
+    catches it around the factored-out `createSettlementIntent` and calls
+    `recoverIdempotencyConflict` (`settlement.ts`), which resolves the ambiguity the
+    error itself proves resolvable: enumerate the customer's PIs via
+    **`paymentIntents.list`** (consistent — never `.search`, whose index lags: a lagged
+    miss would read as "provably absent" and re-charge), window-floored at the row's own
+    `created_at` − 1h, matched on `metadata.settlement_id`. Found succeeded/processing →
+    **adopt** (store the PI id, flip `completed`, confirm immediately when the charge id
+    is known — else the webhook, which now matches, or `reconcileSettlements` finishes).
+    Found dead (`requires_payment_method`/`requires_action`/`canceled`) → the
+    terminal-decline disposition (failed + card flag, PI id kept for the failure
+    webhook). Provably absent (whole window enumerated) → failed
+    `idempotency_key_conflict` **without** the card flag — the card was never the
+    problem — so the threshold sweep re-reserves under a fresh id/key and charges
+    cleanly. Window truncated (>1,000 PIs) → change nothing; unproven absence is not
+    absence.
+  - **Stuck-pending age alert** (§0o.4's ask, delivered): the resume sweep now logs
+    `SETTLEMENT STUCK PENDING` (error level) for any pending row older than one full
+    retry cycle (8h), and `SETTLEMENT_IN_FLIGHT_SQL`'s false "that sweep releases
+    anything stuck here" claim is rewritten to the true bounding story.
+  - **Tests +8** (mocked 241 → 249; 305 total with DB-backed): the conformance Stripe
+    double now records per-key params and throws the conflict on drift (as Stripe does),
+    mints PIs carrying the request's real `customer`/`metadata`, and grew a `list`; the
+    five new battery cases cover adopt-after-card-swap (exactly one charge, parity
+    holds), the dead-PI disposition, provably-absent → fresh-key convergence (two rows,
+    one real charge), the truncated-window refusal, and the age alert (with a fresh-row
+    negative control). **Mutation-verified**: reverting `settlement.ts` fails 6 of them
+    with the wedge reproduced (row `pending` forever). Full suite 305/305 with the
+    DB-backed suites genuinely running; ESLint 0 errors; both money tripwires green.
+  - **Live verification is HALF done, blocked on credentials:** with the fix running in
+    the dev stack, the age alert fired on the three specimens at first startup — but
+    recovery itself errors `api_key_expired`: **the dev sandbox's `sk_test_…` key has
+    expired since the 08-01 run.** That error is ambiguous (correctly: leave pending,
+    alert), so the rows wait. Next session with a fresh sandbox key: restart
+    payment-service and watch the three rows resolve — expected `failed`/
+    `idempotency_key_conflict` (their first requests 500'd creating nothing — the
+    pre-fix Mastercard case), then a clean re-settle on the next sweep. (Housekeeping:
+    recreated the compose network for the known inter-container ETIMEDOUT — the payment
+    container had been unhealthy on DB connection timeouts.)
+  - **Deliberately NOT built here:** the generic bounded retry for *any* deterministic
+    ambiguous failure (attack order 0c) — that changes failure semantics on a money path
+    and stays an owner call. This fix removes the only *known* member of the class; the
+    age alert is what caps the unknown ones at "loud" rather than "silent forever".
+
 - **2026-08-01 (§5 steps 4–9 RUN — seven of seven green, and step 9 found a flip blocker
   that would have wedged every Mastercard reader)** — the family written the previous day
   was driven against the segregation sandbox. **Six steps passed as written; the seventh

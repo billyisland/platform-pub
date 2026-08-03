@@ -52,3 +52,28 @@ export function isTerminalTransferError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   return (err as { type?: string }).type === "StripeInvalidRequestError";
 }
+
+// =============================================================================
+// isIdempotencyConflict — Stripe recorded a previous request under this key
+// with DIFFERENT parameters ("Keys for idempotent requests can only be used
+// with the same parameters they were first used with").
+//
+// Still classified AMBIGUOUS by the two terminal classifiers above — correctly,
+// because the first request may have created the resource. But it is the one
+// ambiguous error a retry can NEVER clear: the settlement flow rebuilds its
+// create payload per attempt (the default card is re-resolved live, and the
+// allocation param depends on its brand), so once the payload drifts — a deploy
+// changing the create shape, a card swap, a brand-eligibility flip — the
+// row-stable key returns this error on every retry forever, the row stays
+// 'pending', and the in-flight guard freezes the TAB with it (2026-08-03 audit
+// §0o.1; three dev settlements measured wedged this way).
+//
+// It is also uniquely RESOLVABLE ambiguity: the error is proof a first request
+// reached Stripe and was recorded, and every settlement PI carries
+// metadata.settlement_id — so the caller can look the resource up instead of
+// retrying. Recovery: settlement.ts::recoverIdempotencyConflict.
+// =============================================================================
+export function isIdempotencyConflict(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  return (err as { type?: string }).type === "StripeIdempotencyError";
+}
