@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict dPsPSMQsFDJykzrEVHU1GHVhbAyNC7ebpOIPgPzFREkoY8gvx9Bt4AEbj3hclI3
+\restrict UwzeMERcDfkJUfEGytrw6lAjTlO7GskiV5YFITaLKIriAPjcrPBgb5vdsf78CAg
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -755,9 +755,17 @@ CREATE TABLE public.accounts (
     discovery_synced_at timestamp with time zone,
     discovery_enabled boolean DEFAULT false NOT NULL,
     card_action_required_at timestamp with time zone,
+    free_allowance_granted_pence integer DEFAULT 500 NOT NULL,
     CONSTRAINT accounts_annual_discount_pct_check CHECK (((annual_discount_pct >= 0) AND (annual_discount_pct <= 30))),
     CONSTRAINT accounts_hosting_type_check CHECK ((hosting_type = ANY (ARRAY['hosted'::text, 'self_hosted'::text])))
 );
+
+
+--
+-- Name: COLUMN accounts.free_allowance_granted_pence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.accounts.free_allowance_granted_pence IS 'What this reader was gifted as their free allowance, stamped from the free_allowance_pence dial at signup. Historical fact — never restated when the dial is retuned. free_allowance_remaining_pence is what is left of it.';
 
 
 --
@@ -7470,7 +7478,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict dPsPSMQsFDJykzrEVHU1GHVhbAyNC7ebpOIPgPzFREkoY8gvx9Bt4AEbj3hclI3
+\unrestrict UwzeMERcDfkJUfEGytrw6lAjTlO7GskiV5YFITaLKIriAPjcrPBgb5vdsf78CAg
 
 
 --
@@ -7643,4 +7651,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('165_funds_segregation.sql'),
     ('166_allocated_draws_comment_sign.sql'),
     ('167_publication_split_repay.sql'),
-    ('168_read_events_publication_payout_id.sql');
+    ('168_read_events_publication_payout_id.sql'),
+    ('169_free_allowance_granted.sql');

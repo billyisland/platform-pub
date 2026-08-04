@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { pool, withTransaction } from '../db/client.js'
+import { pool, withTransaction, loadConfig } from '../db/client.js'
 import { createSession } from './session.js'
 import logger from '../lib/logger.js'
 import type { FastifyReply } from 'fastify'
@@ -13,7 +13,10 @@ import type { FastifyReply } from 'fastify'
 // gateway/src/routes/google-auth.ts):
 //   1. User provides email + display name
 //   2. Platform generates a custodial Nostr keypair
-//   3. Account created with full capability — free_allowance=500 (£5)
+//   3. Account created with full capability — free allowance from the
+//      `free_allowance_pence` dial (£5 seeded), stamped onto both the granted
+//      and remaining columns (migration 169). Twin of provisionAccount's
+//      INSERT in gateway/src/lib/account-provision.ts; keep the two in step.
 //   4. Reading tab created (one per account)
 //   5. Session cookie set
 //
@@ -62,6 +65,8 @@ export async function signup(
   reply: FastifyReply,
   keypair: { pubkeyHex: string; privkeyEncrypted: string }
 ): Promise<SignupResult> {
+  const { freeAllowancePence } = await loadConfig()
+
   return withTransaction(async (client) => {
     // Create account
     const accountRow = await client.query<{
@@ -71,10 +76,10 @@ export async function signup(
     }>(
       `INSERT INTO accounts (
          nostr_pubkey, nostr_privkey_enc, username, display_name, email,
-         status, free_allowance_remaining_pence
-       ) VALUES ($1, $2, $3, $4, $5, 'active', 500)
+         status, free_allowance_granted_pence, free_allowance_remaining_pence
+       ) VALUES ($1, $2, $3, $4, $5, 'active', $6, $6)
        RETURNING id, nostr_pubkey, username`,
-      [keypair.pubkeyHex, keypair.privkeyEncrypted, input.username, input.displayName, input.email.toLowerCase().trim()]
+      [keypair.pubkeyHex, keypair.privkeyEncrypted, input.username, input.displayName, input.email.toLowerCase().trim(), freeAllowancePence]
     )
 
     const account = accountRow.rows[0]

@@ -18,6 +18,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
       // movement posts a mirror entry; the backfill aligned pre-Phase-1 history).
       const account = await pool.query(
         `SELECT a.free_allowance_remaining_pence,
+                a.free_allowance_granted_pence,
                 a.card_action_required_at,
                 COALESCE(lrb.balance_pence, 0) AS balance_pence
          FROM accounts a
@@ -47,6 +48,15 @@ export async function myAccountRoutes(app: FastifyInstance) {
         tabBalancePence: account.rows[0]?.balance_pence ?? 0,
         freeAllowanceRemainingPence:
           account.rows[0]?.free_allowance_remaining_pence ?? 0,
+        // The gauge's denominator, and it is THIS READER'S grant (migration 169)
+        // rather than the current `free_allowance_pence` dial. The two differ the
+        // moment an operator retunes: sending the live dial would tell a reader
+        // gifted £5 that they had been gifted £7.50, restating a historical fact
+        // — and the gift is the one thing the free-allowance invariant says is
+        // never revisited. It was a `500` hardcoded in LedgerPanel before, which
+        // was right only for as long as nothing could change it.
+        freeAllowanceTotalPence:
+          account.rows[0]?.free_allowance_granted_pence ?? 0,
         lastSettledAt: settled?.settledAt || null,
         // Set when an off-session settlement charge terminally declined; the tab
         // is frozen (settlement backs off) until the reader re-attaches a card.
@@ -110,14 +120,16 @@ export async function myAccountRoutes(app: FastifyInstance) {
 
         const statementSQL = `
           WITH statement AS (
-            -- Free allowance credit (initial £5)
+            -- Free allowance credit — what THIS reader was granted at signup
+            -- (migration 169), not a literal and not the current dial: this is
+            -- a statement line, so it must say what actually happened to them.
             SELECT
               'free-allowance' AS id,
               a.created_at AS date,
               'credit' AS type,
               'free_allowance' AS category,
               'Starting credit' AS description,
-              500 AS amount_pence,
+              a.free_allowance_granted_pence AS amount_pence,
               NULL AS link
             FROM accounts a
             WHERE a.id = $1

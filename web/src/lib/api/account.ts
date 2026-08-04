@@ -49,6 +49,13 @@ export const payment = {
  * balance, which reads `earnings − tabBalance`: with `tabBalance` permanently 0,
  * a reader who owed money saw a net balance as though they owed none.
  *
+ * `freeAllowanceTotalPence` is now genuinely on the wire (§0o.9a) — the reader's
+ * OWN granted allowance (`accounts.free_allowance_granted_pence`, migration
+ * 169), not the current `free_allowance_pence` dial, so a retune never restates
+ * what an existing reader was gifted. It is declared here because it is SENT,
+ * not to restore a name that was previously a fiction; the component that
+ * consumed the fiction had fallen back to a hardcoded 500.
+ *
  * `tabBalancePence` is the LEDGER balance (`ledger_reader_balance`), not
  * `reading_tabs.balance_pence` — see the route's own note on why display reads
  * the ledger while settlement locks the column.
@@ -56,6 +63,8 @@ export const payment = {
 export interface TabOverview {
   tabBalancePence: number
   freeAllowanceRemainingPence: number
+  /** The `free_allowance_pence` dial — the gauge's denominator. See above. */
+  freeAllowanceTotalPence: number
   lastSettledAt: string | null
   /**
    * Set when an off-session settlement charge terminally declined. The tab is

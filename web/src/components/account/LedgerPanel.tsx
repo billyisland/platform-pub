@@ -67,12 +67,13 @@ export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
   const tabBalance = tab?.tabBalancePence ?? 0
   const netBalance = earningsPence - tabBalance
 
-  // FREE_ALLOWANCE_TOTAL_PENCE. The route sends only what REMAINS, so the total
-  // is the constant the allowance is defined by (£5, per the "free allowance is
-  // a gift" invariant) rather than a field to read off the response — the
-  // previous `tab?.freeAllowanceTotalPence` was undefined too and always fell
-  // through to this same number.
-  const freeAllowanceTotalPence = 500
+  // The gauge's denominator: what THIS reader was granted (the route sends it
+  // alongside what remains). It was a hardcoded 500 here, on the reasoning that
+  // £5 is "the constant the allowance is defined by" — but the allowance is a
+  // tuning dial, so the constant was only ever right because nothing read the
+  // dial. The 500 survives as the pre-response fallback alone: `tab` is null
+  // until the fetch lands, and it matches the dial's seeded default.
+  const freeAllowanceTotalPence = tab?.freeAllowanceTotalPence ?? 500
 
   const body = (
     <>

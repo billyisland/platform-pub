@@ -1,4 +1,8 @@
-import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
+import {
+  pool,
+  withTransaction,
+  loadConfig,
+} from "@platform-pub/shared/db/client.js";
 import { generateKeypair } from "./key-custody-client.js";
 import { randomBytes } from "crypto";
 
@@ -28,6 +32,11 @@ import { randomBytes } from "crypto";
 // every reader needs. Starter feeds are NOT seeded here — they seed lazily on
 // the owner's first feed list (`seedStarterFeeds`, feeds/crud.ts), so a member
 // provisioned by either path gets them on first load.
+//
+// The allowance comes from the `free_allowance_pence` dial (migration 169), not
+// a literal — and it is stamped onto BOTH columns: granted (what this reader was
+// gifted, a historical fact never restated) and remaining (what is left, which
+// starts equal). `signup()` must stay in step; it is the twin of this INSERT.
 // =============================================================================
 
 /**
@@ -96,12 +105,14 @@ export async function provisionAccount(
   const keypair = await generateKeypair();
   const username = await deriveUsername(email, displayName);
 
+  const { freeAllowancePence } = await loadConfig();
+
   return withTransaction(async (client) => {
     const result = await client.query<{ id: string }>(
       `INSERT INTO accounts (
          nostr_pubkey, nostr_privkey_enc, username, display_name, email,
-         status, free_allowance_remaining_pence
-       ) VALUES ($1, $2, $3, $4, $5, 'active', 500)
+         status, free_allowance_granted_pence, free_allowance_remaining_pence
+       ) VALUES ($1, $2, $3, $4, $5, 'active', $6, $6)
        RETURNING id`,
       [
         keypair.pubkeyHex,
@@ -109,6 +120,7 @@ export async function provisionAccount(
         username,
         displayName,
         email,
+        freeAllowancePence,
       ],
     );
 

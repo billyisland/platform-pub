@@ -264,7 +264,7 @@ html.dark {
     color: var(--ah-on-crimson);
   }
 
-  /* No hairline hrs — use slab-rule classes instead */
+  /* No hairline hrs — use slab-rule classes instead  hairline-ok (prose: names the UA default this rule ABOLISHES; the hr below is a 4px slab) */
   hr {
     border: none;
     height: 4px;

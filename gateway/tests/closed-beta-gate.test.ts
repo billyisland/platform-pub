@@ -72,6 +72,11 @@ vi.mock("@platform-pub/shared/db/client.js", () => ({
   pool: { query: (sql: string) => query(sql) },
   withTransaction: (cb: (c: { query: typeof query }) => Promise<unknown>) =>
     cb({ query }),
+  // provisionAccount stamps the free allowance from the dial (migration 169),
+  // so the module it reads that from has to answer here too. What the grant
+  // actually is, is this file's business not at all — free-allowance-grant.test.ts
+  // owns that; this one only needs the provision path to reach its INSERT.
+  loadConfig: async () => ({ freeAllowancePence: 500 }),
 }));
 
 vi.mock("@platform-pub/shared/lib/logger.js", () => ({
