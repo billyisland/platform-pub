@@ -23,6 +23,54 @@ starts.
 
 ## Progress
 
+- **2026-08-04 (§0o.7 SHIPPED — the LOW payments batch, all three)** —
+  - **(a) The compensating draw returns the prorated FEE with the principal.**
+    `reverseChild` inserted the transfer draw at GROSS (net + fee) but returned only
+    the principal on reversal, so every fee-carrying reversed child under-counted its
+    charge's budget by the fee share, permanently (a drawn charge is never re-stamped —
+    §0o.2) — a standing §3.6 false-divergence contributor. The fee share now rides the
+    same `prorateCarveReversal` cumulative-floor proration the §5 probes validated
+    against Stripe's real partial-reversal behaviour, so a fully-reversed child makes
+    its charge WHOLE. The accounting assumes the runbook-mandated
+    `refund_application_fee=true`; a flagless manual reversal now reads as a positive
+    §3.6 delta (loud, and Stripe refuses an actual over-transfer) instead of the old
+    silent permanent under-count — `DEPLOYMENT.md`'s runbook bullet rewritten to say so.
+  - **(b) The resume sweep's no-customer branch now flags the card prompt.** A pending
+    settlement whose account had lost its `stripe_customer_id` was failed WITHOUT
+    setting `card_action_required_at` (the adjacent no-default-card branch sets it), so
+    the tab unfroze but the reader was never told why settlement stopped. Same
+    disposition now: `failed` + `failure_reason='no_stripe_customer'` + the flag, in
+    one transaction.
+  - **(c) `confirmSettlement` gains the `metadata.settlement_id` fallback.** A PI
+    created just before a crash stored its id was previously reachable only through
+    the resume sweep's same-key dedupe — the channel §0o.1 proved can wedge on payload
+    drift. The success webhook now adopts such a row via the metadata the create
+    stamps, guarded three ways: only a row with NO stored intent id is a candidate
+    (a row owned by a different PI is never clobbered), the adopting UPDATE is
+    rowCount-checked under the tab lock AFTER it (preserving the documented
+    {reading_tabs, tab_settlements} lock order; a lost race defers), and the
+    failed/duplicate dispositions run first unchanged.
+  - **Tests +4 (317 → 321), each half at its right layer:** a DB-backed assembly case
+    proving the fee proration against the real statements (half back → +500 not +450;
+    full reversal → charge whole again), and three battery cases (no-customer resume →
+    failed + reason + flag; crash-before-store → webhook adopts, confirms, parity
+    holds; the wrong-owner control → a stray PI carrying our id as a hint cannot steal
+    the row). The battery's router gained arms for the three new statement shapes, all
+    answering from the SQL handed; the dead unguarded `SET status='failed'` arm was
+    removed so a reintroduction surfaces instead of being absorbed.
+    **Mutation-verified, three mutants, each killed** (fee dropped from the draw → 2
+    red across both layers; card flag dropped → 1 red; fallback disabled → 2 red).
+    Full suite 321/321 with the DB-backed suites genuinely running; `tsc` clean;
+    ESLint 0 errors; both money tripwires green.
+  - **A live catch by the mock rule, worth recording:** the first run of the (a) test
+    FAILED in the mocked suite while passing against real Postgres — the
+    transfer-reversal mock handed out its LIVE child objects, so the
+    `reversed_pence` UPDATE retro-mutated the snapshot `reverseChild` had already
+    read and the fee proration computed 0. Fixed on both sides: the mock now returns
+    copies (the CLAUDE.md copies-not-live-objects corollary, cited at the site), and
+    `reverseChild` captures `prevReversed` before issuing the UPDATE rather than
+    re-reading its row object afterwards.
+
 - **2026-08-03 (§0o.3 SHIPPED — a pending sibling now holds a reversed parent open, in
   all three cycles)** — the audit's MEDIUM #3: the child-reversal paths tallied
   `outstanding` over children `status IN ('completed','reversed')` only, so child A

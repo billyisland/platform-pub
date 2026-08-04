@@ -167,7 +167,13 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         break
       }
 
-      await settlementService.confirmSettlement(pi.id, chargeId)
+      // metadata.settlement_id: the §0o.7c fallback for a PI created just
+      // before a crash stored its id — see confirmSettlement's header.
+      await settlementService.confirmSettlement(
+        pi.id,
+        chargeId,
+        pi.metadata?.settlement_id ?? null,
+      )
       break
     }
 

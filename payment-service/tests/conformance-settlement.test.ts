@@ -356,6 +356,15 @@ function query(sql: string, params: unknown[] = []) {
       ok(row && row.status === 'pending' ? [{ created_at: row.created_at }] : []),
     )
   }
+  // --- confirm §0o.7c fallback: lookup by metadata settlement id, un-owned rows only ---
+  if (/FROM tab_settlements\s+WHERE id = \$1 AND stripe_payment_intent_id IS NULL/.test(sql)) {
+    const row = db.settlements.get(params[0] as string)
+    return Promise.resolve(
+      ok(row && row.stripe_payment_intent_id === null
+        ? [{ id: row.id, reader_id: row.reader_id, tab_id: row.tab_id, amount_pence: row.amount_pence, stripe_charge_id: row.stripe_charge_id, status: row.status }]
+        : []),
+    )
+  }
   // --- confirm lookup by PI id ---
   if (/FROM tab_settlements\s+WHERE stripe_payment_intent_id = \$1/.test(sql)) {
     const row = [...db.settlements.values()].find((s) => s.stripe_payment_intent_id === params[0])
@@ -394,6 +403,26 @@ function query(sql: string, params: unknown[] = []) {
       }
       return Promise.resolve({ rows: [], rowCount: 0 })
     }
+    // confirm §0o.7c adopt (rowCount-guarded on IS NULL, like the real table)
+    if (/SET stripe_payment_intent_id = \$1\s+WHERE id = \$2 AND stripe_payment_intent_id IS NULL/.test(sql)) {
+      const row = db.settlements.get(params[1] as string)
+      if (row && row.stripe_payment_intent_id === null) {
+        row.stripe_payment_intent_id = params[0] as string
+        return Promise.resolve({ rows: [], rowCount: 1 })
+      }
+      return Promise.resolve({ rows: [], rowCount: 0 })
+    }
+    // no-card / no-customer failure (failure_reason = $1, id = $2 — the
+    // completeSettlement no-default-card and resume no-customer branches)
+    if (/failure_reason = \$1/.test(sql) && /AND status = 'pending'/.test(sql)) {
+      const row = db.settlements.get(params[1] as string)
+      if (row && row.status === 'pending') {
+        row.status = 'failed'
+        row.failure_reason = params[0] as string
+        return Promise.resolve({ rows: [], rowCount: 1 })
+      }
+      return Promise.resolve({ rows: [], rowCount: 0 })
+    }
     // confirm claim
     if (/SET stripe_charge_id = \$1/.test(sql)) {
       const row = db.settlements.get(params[1] as string)
@@ -422,12 +451,10 @@ function query(sql: string, params: unknown[] = []) {
       }
       return Promise.resolve({ rows: [], rowCount: 0 })
     }
-    // resume no-customer flip (unguarded)
-    if (/SET status = 'failed'/.test(sql)) {
-      const row = db.settlements.get(params[0] as string)
-      if (row) row.status = 'failed'
-      return Promise.resolve({ rows: [], rowCount: row ? 1 : 0 })
-    }
+    // (The old unguarded resume no-customer flip is gone — §0o.7b moved that
+    // branch onto the failure_reason = $1 shape above. No arm for an unguarded
+    // `SET status = 'failed'` on purpose: reintroducing one in production
+    // should surface here as a routing gap, not be silently absorbed.)
   }
 
   // --- accounts card-action flag ---
@@ -526,6 +553,64 @@ describe('settlement — crash & resume (exactly once)', () => {
     expect(only().status).toBe('completed')
     expect(paymentIntents.distinctKeys).toBe(1) // still exactly one charge
     expect(only().stripe_payment_intent_id).toBe('pi_1')
+  })
+
+  it('resume with NO customer record fails the row AND flags for card attach (§0o.7b)', async () => {
+    seedReader('reader-1', 1000)
+    paymentIntents.throwNext(connectionError())
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+    expect(only().status).toBe('pending')
+
+    // The customer record vanished between reserve and resume (detached, or
+    // the account row rewritten). Previously this branch failed the row
+    // SILENTLY — tab unfrozen, but the reader never prompted to attach a card,
+    // so settlement just stopped with nothing telling them why.
+    db.accounts.get('reader-1')!.stripe_customer_id = null
+
+    await settlementService.resumePendingSettlements()
+
+    expect(only().status).toBe('failed')
+    expect(only().failure_reason).toBe('no_stripe_customer')
+    expect(db.accounts.get('reader-1')!.card_action_required_at).not.toBeNull()
+  })
+
+  it('a PI created but never stored confirms via metadata.settlement_id (§0o.7c)', async () => {
+    seedReader('reader-1', 1000)
+    crashOn(/UPDATE tab_settlements\s+SET stripe_payment_intent_id = \$1, status = 'completed'/)
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+    expect(only().stripe_payment_intent_id).toBeNull() // the id was never stored
+    expect(paymentIntents.distinctKeys).toBe(1) // but the charge DID go through
+
+    // The success webhook arrives before any resume, carrying the metadata the
+    // create stamped. Without the hint this event warn-ignores and the row
+    // waits on the resume sweep's same-key dedupe — the channel §0o.1 showed
+    // can wedge on payload drift.
+    await settlementService.confirmSettlement('pi_1', 'ch_1', only().id)
+
+    expect(only().stripe_payment_intent_id).toBe('pi_1') // adopted
+    expect(only().stripe_charge_id).toBe('ch_1') // and confirmed
+    const tab = db.tabsByReader.get('reader-1')!
+    expect(tab.balance_pence).toBe(0)
+    expect(readerParity(db.ledger, 'reader-1', tab.balance_pence)).toBe(true)
+    // Status stays 'pending' until the resume sweep's same-key dedupe flips it
+    // — the identical eventual flip the id-stored crash window has always
+    // used; the duplicate-claim guard makes that later confirm a no-op.
+  })
+
+  it('the metadata fallback never steals a row that belongs to a DIFFERENT intent', async () => {
+    seedReader('reader-1', 1000)
+    paymentIntents.succeedNext() // pi_1, stored normally
+    await settlementService.checkAndSettle('reader-1')
+    expect(only().stripe_payment_intent_id).toBe('pi_1')
+
+    // A stray success for some other PI carrying our settlement id as its hint
+    // (a manual dashboard charge copying metadata, a forged event) must not
+    // clobber the row: the IS NULL guard refuses the adopt and the event is
+    // warn-ignored.
+    await settlementService.confirmSettlement('pi_other', 'ch_other', only().id)
+
+    expect(only().stripe_payment_intent_id).toBe('pi_1')
+    expect(only().stripe_charge_id).toBeNull() // untouched — nothing confirmed
   })
 })
 

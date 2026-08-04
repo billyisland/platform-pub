@@ -862,13 +862,29 @@ class SettlementService {
 
         const stripeCustomerId = accRows[0]?.stripe_customer_id;
         if (!stripeCustomerId) {
+          // Same disposition as the no-default-card branch in
+          // completeSettlement (§0o.7b): a reader with no customer record has
+          // no card to charge, so failing the row silently left them never
+          // prompted to attach one — the tab unfroze but nothing told the
+          // reader why settlement stopped. Flag for (re-)attach in the same
+          // transaction as the failure.
+          await withTransaction(async (client) => {
+            await client.query(
+              `UPDATE tab_settlements
+                 SET status = 'failed', failure_reason = $1
+                 WHERE id = $2 AND status = 'pending'`,
+              ["no_stripe_customer", row.id],
+            );
+            await client.query(
+              `UPDATE accounts
+                 SET card_action_required_at = now(), updated_at = now()
+                 WHERE id = $1`,
+              [row.reader_id],
+            );
+          });
           logger.warn(
-            { settlementId: row.id, tabId: row.tab_id },
-            "Cannot resume settlement — no stripe_customer_id found, marking failed",
-          );
-          await pool.query(
-            `UPDATE tab_settlements SET status = 'failed' WHERE id = $1`,
-            [row.id],
+            { settlementId: row.id, tabId: row.tab_id, readerId: row.reader_id },
+            "Cannot resume settlement — no stripe_customer_id; failed and card-action flagged",
           );
           continue;
         }
@@ -895,14 +911,27 @@ class SettlementService {
   //
   // Subtracts the settled amount from the tab balance. Safe even if new reads
   // arrived between initiation and confirmation.
+  //
+  // `settlementIdHint` is the webhook's `metadata.settlement_id` (§0o.7c): a PI
+  // created just before a crash may never have had its id stored (the UPDATE at
+  // the end of completeSettlement), and such a row was previously reachable
+  // only through the resume sweep's same-key dedupe — the channel §0o.1 showed
+  // can wedge on payload drift. The metadata the create stamps (and the §0o.1
+  // recovery already matches on) lets the success webhook confirm it directly.
+  // Adoption is guarded three ways: the row must still carry NO PI id (a row
+  // owned by a DIFFERENT intent is never clobbered), the adopting UPDATE is
+  // rowCount-checked under the tab lock (a lost race defers to the winner), and
+  // the failed/duplicate dispositions run before it exactly as for a normal
+  // match.
   // ---------------------------------------------------------------------------
 
   async confirmSettlement(
     paymentIntentId: string,
     stripeChargeId: string,
+    settlementIdHint: string | null = null,
   ): Promise<void> {
     await withTransaction(async (client) => {
-      const settlementRow = await client.query<{
+      let settlementRow = await client.query<{
         id: string;
         reader_id: string;
         tab_id: string;
@@ -915,6 +944,26 @@ class SettlementService {
          WHERE stripe_payment_intent_id = $1`,
         [paymentIntentId],
       );
+
+      let adopting = false;
+      if (settlementRow.rowCount === 0 && settlementIdHint) {
+        // §0o.7c fallback — only a row that never learned ANY intent id is a
+        // candidate; the IS NULL guard is what keeps a stray success for some
+        // other PI from stealing a row that belongs to a different attempt.
+        settlementRow = await client.query(
+          `SELECT id, reader_id, tab_id, amount_pence, stripe_charge_id, status
+           FROM tab_settlements
+           WHERE id = $1 AND stripe_payment_intent_id IS NULL`,
+          [settlementIdHint],
+        );
+        adopting = (settlementRow.rowCount ?? 0) > 0;
+        if (adopting) {
+          logger.warn(
+            { paymentIntentId, settlementId: settlementIdHint },
+            "confirmSettlement: PI unknown by id — adopting via metadata.settlement_id (crash before the id was stored)",
+          );
+        }
+      }
 
       if (settlementRow.rowCount === 0) {
         // An unknown PaymentIntent is not one of our settlements (a manual
@@ -969,6 +1018,27 @@ class SettlementService {
         "SELECT balance_pence FROM reading_tabs WHERE id = $1 FOR UPDATE",
         [settlement.tab_id],
       );
+
+      if (adopting) {
+        // AFTER the tab lock, never before — an early tab_settlements write
+        // would take its row lock ahead of reading_tabs, the reverse of the
+        // {reading_tabs, tab_settlements} order documented above. The IS NULL
+        // re-check makes a lost adopt race a clean defer: whoever stored an id
+        // meanwhile (the resume sweep's dedupe, a concurrent delivery) owns the
+        // row, and if it is this same PI the ordinary claim below dedupes.
+        const adopted = await client.query(
+          `UPDATE tab_settlements SET stripe_payment_intent_id = $1
+            WHERE id = $2 AND stripe_payment_intent_id IS NULL`,
+          [paymentIntentId, settlement.id],
+        );
+        if (adopted.rowCount === 0) {
+          logger.warn(
+            { paymentIntentId, settlementId: settlement.id },
+            "confirmSettlement: adopt lost its race — another writer stored an intent id; deferring to it",
+          );
+          return;
+        }
+      }
 
       const claimed = await client.query(
         `UPDATE tab_settlements SET stripe_charge_id = $1 WHERE id = $2 AND stripe_charge_id IS NULL`,

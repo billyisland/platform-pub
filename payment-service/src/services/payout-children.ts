@@ -8,7 +8,11 @@ import {
   type StripeIdempotentOutcome,
 } from '../lib/stripe-idempotent.js'
 import { allocatedTransferParams } from '../lib/stripe-client.js'
-import type { FundingSource, PackedSlice } from '../lib/allocation-packer.js'
+import {
+  prorateCarveReversal,
+  type FundingSource,
+  type PackedSlice,
+} from '../lib/allocation-packer.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -591,9 +595,10 @@ export async function reverseChild(
   const { rows } = await client.query<{
     id: string
     net_pence: number
+    fee_pence: number
     reversed_pence: number
   }>(
-    `SELECT id, net_pence, reversed_pence FROM payout_transfers
+    `SELECT id, net_pence, fee_pence, reversed_pence FROM payout_transfers
       WHERE id = $1 AND status IN ('completed', 'reversed')
       FOR UPDATE`,
     [child.id],
@@ -601,9 +606,15 @@ export async function reverseChild(
   if (rows.length === 0) return 0
 
   const net = rows[0].net_pence
+  // Captured BEFORE the UPDATE below, and used instead of re-reading rows[0]:
+  // against a real database the row object is a snapshot either way, but
+  // depending on that is exactly what let a live-object mock read back its own
+  // write here (the CLAUDE.md copies-not-live-objects corollary, met in the
+  // §0o.7a fee proration).
+  const prevReversed = rows[0].reversed_pence
   // A missing amount_reversed (defensive) means full; never exceed the child.
   const target = Math.min(amountReversedPence ?? net, net)
-  const delta = target - rows[0].reversed_pence
+  const delta = target - prevReversed
   if (delta <= 0) return 0
 
   await client.query(
@@ -617,10 +628,24 @@ export async function reverseChild(
   // and touches no allocation. UPSERT on the (ref, kind) unique so a staged
   // partial reversal accumulates rather than colliding.
   //
+  // PRINCIPAL PLUS THE PRORATED FEE (§0o.7a). The transfer draw was inserted at
+  // GROSS (net + fee), and with `refund_application_fee=true` — which the
+  // runbook mandates below — Stripe returns the fee to the allocated state too,
+  // PRORATED on a partial reversal (measured, §5 probe 7b). A principal-only
+  // compensating draw therefore under-counted every fee-carrying reversed
+  // child's budget by the fee share, permanently (a drawn charge is never
+  // re-stamped — see syncAllocations), and made it §3.6 divergence noise. The
+  // fee share reuses `prorateCarveReversal`, the same cumulative-floor
+  // proration the probes validated, so a staged partial accumulates drift-free.
+  //
   // When reversing MANUALLY, pass refund_application_fee=true, or the fee stays
-  // with the platform while the principal returns to allocation — a silent
-  // divergence between our model and Stripe's. This belongs in the ops runbook;
-  // it is the kind of thing only ever done by hand at 2am.
+  // with the platform while the principal returns to allocation. Under this
+  // accounting a flagless reversal leaves the budget OPTIMISTIC by the fee
+  // share — which §3.6 flags as a positive "we would over-draw" delta, the
+  // alert's exact purpose, and Stripe itself rejects an actual over-transfer
+  // (§5 step 3) — strictly better than the silent permanent under-count the
+  // mandated path used to produce. This belongs in the ops runbook; it is the
+  // kind of thing only ever done by hand at 2am.
   //
   // AND IF THAT CALL 500s, RETRY IT — do not conclude the flag is unsupported and
   // reverse without it. Measured 2026-07-30 in the segregation sandbox: this exact
@@ -633,13 +658,19 @@ export async function reverseChild(
   // silently leaves the fee behind — the failure mode this note exists to prevent.
   // Repro/isolation harness: scripts/segregation-reversal-isolate.ts.
   if (child.funding === 'allocated' && child.settlement_id) {
+    const feeDelta = prorateCarveReversal(
+      rows[0].fee_pence,
+      net,
+      prevReversed,
+      target,
+    )
     await client.query(
       `INSERT INTO allocated_draws
          (settlement_id, kind, ref_table, ref_id, gross_pence)
        VALUES ($1, 'reversal', 'payout_transfers', $2, $3)
        ON CONFLICT (ref_table, ref_id, kind)
        DO UPDATE SET gross_pence = allocated_draws.gross_pence + EXCLUDED.gross_pence`,
-      [child.settlement_id, child.id, -delta],
+      [child.settlement_id, child.id, -(delta + feeDelta)],
     )
   }
 

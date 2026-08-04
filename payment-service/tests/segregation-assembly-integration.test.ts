@@ -601,6 +601,35 @@ describe.skipIf(!DB_URL)('funds segregation — the flag-ON assembly', () => {
       expect(await reverseChild(client, fresh, null)).toBe(0)
     })
 
+    it('returns the prorated FEE with the principal — a fully-reversed child makes the charge whole (§0o.7a)', async () => {
+      const s1 = await insertSettlement(2000, 2000)
+      const payoutId = await insertWriterPayout(900)
+      const sources = await lockFundingSources(client, [s1])
+      const { slices } = packUnits([unit('r1', 900, 100, [s1])], sources, {
+        maxSlices: MAX_SLICES,
+      })
+      await insertChildren(client, 'writer_payouts', payoutId, slices)
+      const [child] = await childrenOf('writer_payouts', payoutId)
+      await markCompleted(child.id, 'tr_1')
+      const fresh = (await childrenOf('writer_payouts', payoutId))[0]
+
+      // Drew 1000 GROSS (900 net + 100 fee): remainder 1000.
+      expect(await remainderOf(s1)).toBe(1000)
+
+      // Half the principal back. refund_application_fee=true (the runbook's
+      // mandated call) returns the fee PRORATED (measured, §5 probe 7b), so
+      // the budget grows by 450 + floor(100·450/900) = 500 — not 450.
+      expect(await reverseChild(client, fresh, 450)).toBe(450)
+      expect(await remainderOf(s1)).toBe(1500)
+
+      // Full reversal: the cumulative fee share tops up to exactly 100 and the
+      // charge is WHOLE again — not short by the fee, which was the §0o.7a
+      // permanent under-count (a drawn charge is never re-stamped, so nothing
+      // else would ever have corrected it).
+      expect(await reverseChild(client, fresh, 900)).toBe(450)
+      expect(await remainderOf(s1)).toBe(2000)
+    })
+
     it('a PENDING sibling counts as outstanding, so the parent cannot flip to reversed (§0o.3)', async () => {
       // Child A completed, crash before B executed, A fully reversed before the
       // next cycle. Over completed+reversed alone the tally reads 0, the parent

@@ -36,18 +36,25 @@ let children: FakeChild[] = []
 let draws: Array<{ ref_id: string; kind: string; gross_pence: number }> = []
 
 function fakeClientQuery(sql: string, params: any[] = []) {
+  // SELECTs hand out COPIES, never the live objects (the CLAUDE.md mock-rule
+  // corollary): a real database returns snapshots, so a later UPDATE must not
+  // retro-mutate what an earlier SELECT already returned. The live-object
+  // version of this mock fed reverseChild's fee proration its own subsequent
+  // write (reversed_pence already at target ⇒ fee delta 0) — a state no
+  // database would ever show it.
+  const copies = (found: FakeChild[]) =>
+    Promise.resolve({ rows: found.map((c) => ({ ...c })), rowCount: found.length })
+
   // --- payout_transfers (children) ----------------------------------------
   if (/FROM payout_transfers/.test(sql) && /stripe_transfer_id = \$1/.test(sql)) {
-    const found = children.filter((c) => c.stripe_transfer_id === params[0])
-    return Promise.resolve({ rows: found, rowCount: found.length })
+    return copies(children.filter((c) => c.stripe_transfer_id === params[0]))
   }
   if (/FROM payout_transfers/.test(sql) && /reversed_pence/.test(sql) && /FOR UPDATE/.test(sql)) {
     // Mirrors the SQL's own status filter — a child not in (completed, reversed)
     // must not be found, or the test would pin the fixture rather than the query.
-    const found = children.filter(
+    return copies(children.filter(
       (c) => c.id === params[0] && ['completed', 'reversed'].includes(c.status),
-    )
-    return Promise.resolve({ rows: found, rowCount: found.length })
+    ))
   }
   if (/SUM\(net_pence - reversed_pence\)/.test(sql)) {
     // Derived from the SQL it is handed, per the mock rule: the status set IS
@@ -233,9 +240,12 @@ describe('reverseWriterPayout — one child among several', () => {
     await payoutService.reverseWriterPayout('tr_child_a', 8000)
 
     // A compensating draw, negative, so the charge's remainder grows back and
-    // the next cycle can draw on it again.
+    // the next cycle can draw on it again — at PRINCIPAL PLUS THE FEE (§0o.7a):
+    // the transfer draw was inserted at gross (8000 + 700), and the mandated
+    // refund_application_fee=true returns the fee to allocation too, so a
+    // principal-only return would leave the budget short by the fee forever.
     expect(draws).toEqual([
-      { ref_id: 'child-a', kind: 'reversal', gross_pence: -8000 },
+      { ref_id: 'child-a', kind: 'reversal', gross_pence: -8700 },
     ])
   })
 
