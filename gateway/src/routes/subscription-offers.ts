@@ -12,6 +12,14 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // GET    /subscription-offers              — list writer's offers
 // DELETE /subscription-offers/:offerId     — revoke an offer
 // GET    /subscription-offers/redeem/:code — public lookup for redeem page
+//
+// TWO MODES, ONE ADDRESSING SCHEME (§1.10, 2026-08-04). Both get a code and so
+// a /subscribe/:code URL; they differ in WHO may redeem, not in how the offer is
+// reached. A `code` offer is bearer — anyone holding the URL, up to
+// max_redemptions. A `grant` names one recipient, and both the lookup here and
+// the redemption in routes/subscriptions/writer.ts check it. Before this, a
+// grant was created with code = NULL and was therefore unreachable and
+// unredeemable — modelled end to end and dead on arrival.
 // =============================================================================
 
 export async function subscriptionOfferRoutes(app: FastifyInstance) {
@@ -59,7 +67,14 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
         recipientId = recipient.rows[0].id
       }
 
-      const code = mode === 'code' ? crypto.randomBytes(8).toString('base64url') : null
+      // §1.10: a GRANT gets a code too. Grant mode was modelled end to end —
+      // the offer row, the recipient check in the subscribe path — but created
+      // with code = NULL, and both the redeem lookup and the /subscribe page are
+      // code-keyed, so a grant offer had no URL and no way to be redeemed. The
+      // code is not the secret here (the redeem lookup below refuses a grant to
+      // anyone but its named recipient); it is simply the addressing scheme
+      // /subscribe/:code already uses.
+      const code = crypto.randomBytes(8).toString('base64url')
 
       const { rows } = await pool.query<{ id: string; code: string | null }>(
         `INSERT INTO subscription_offers
@@ -77,7 +92,22 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
       )
 
       const offer = rows[0]
-      const url = code ? `/subscribe/${code}` : null
+      const url = `/subscribe/${offer.code}`
+
+      // A grant is addressed at one person, so tell them it exists — otherwise
+      // the URL only ever reaches them if the writer copies it out by hand,
+      // which is the shape that left grant mode unused. Non-blocking, and
+      // deliberately outside the INSERT's error path: a failed notification
+      // must not fail the offer. `notifications.type` is free text (no CHECK),
+      // so this needs no migration.
+      if (mode === 'grant' && recipientId) {
+        pool.query(
+          `INSERT INTO notifications (recipient_id, actor_id, type)
+           VALUES ($1, $2, 'subscription_offer')
+           ON CONFLICT DO NOTHING`,
+          [recipientId, writerId],
+        ).catch((err) => logger.warn({ err, offerId: offer.id }, 'Failed to insert subscription_offer notification'))
+      }
 
       logger.info({ writerId, offerId: offer.id, mode, discountPct }, 'Subscription offer created')
       return reply.status(201).send({
@@ -192,6 +222,7 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
         max_redemptions: number | null
         redemption_count: number
         expires_at: Date | null
+        recipient_id: string | null
         writer_id: string
         writer_username: string
         writer_display_name: string | null
@@ -199,14 +230,14 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
       }>(
         `SELECT so.id, so.label, so.mode, so.discount_pct, so.duration_months,
                 so.max_redemptions, so.redemption_count, so.expires_at,
+                so.recipient_id,
                 a.id AS writer_id, a.username AS writer_username,
                 a.display_name AS writer_display_name,
                 a.subscription_price_pence
          FROM subscription_offers so
          JOIN accounts a ON a.id = so.writer_id
          WHERE so.code = $1
-           AND so.revoked_at IS NULL
-           AND so.mode = 'code'`,
+           AND so.revoked_at IS NULL`,
         [code]
       )
 
@@ -215,6 +246,32 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
       }
 
       const offer = rows[0]
+
+      // §1.10: the mode filter used to live in the WHERE clause, which is what
+      // made a grant offer unlookupable. It is now a recipient check. Two arms,
+      // deliberately different:
+      //   • no session → 401, so the page can offer "log in and come back"
+      //     rather than a dead end. The recipient arriving from their
+      //     notification while logged out is the COMMON case, and 404-ing them
+      //     would make the feature unusable for exactly the person it is for.
+      //     What this concedes to a code-holder is only "this code names a
+      //     grant" — and they already hold 64 bits of code to learn it.
+      //   • wrong session → the SAME 404 as a code that does not exist, so a
+      //     forwarded link tells its new holder nothing.
+      // The subscribe path applies the identical recipient check again at
+      // redemption (writer.ts) — this one is for the page, that one is the gate.
+      if (offer.mode === 'grant') {
+        const viewerId = req.session?.sub ?? null
+        if (!viewerId) {
+          return reply.status(401).send({
+            error: 'login_required',
+            message: 'Log in to view this offer.',
+          })
+        }
+        if (offer.recipient_id !== viewerId) {
+          return reply.status(404).send({ error: 'Offer not found or no longer available' })
+        }
+      }
 
       // Check expiration and redemption limits
       if (offer.expires_at && new Date(offer.expires_at) < new Date()) {
@@ -230,6 +287,9 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
       return reply.status(200).send({
         id: offer.id,
         label: offer.label,
+        // The page reads this to say "a gift for you" rather than "an offer".
+        // Only ever 'grant' for the recipient — the arm above saw to that.
+        mode: offer.mode,
         discountPct: offer.discount_pct,
         durationMonths: offer.duration_months,
         writerId: offer.writer_id,

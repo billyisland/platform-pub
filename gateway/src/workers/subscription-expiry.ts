@@ -6,6 +6,7 @@ import {
   sendSubscriptionExpiryWarningEmail,
 } from "@platform-pub/shared/lib/subscription-emails.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import { advanceSubscriptionPeriod } from "@platform-pub/shared/lib/subscription-period.js";
 import { logSubscriptionCharge } from "../routes/subscriptions/index.js";
 
 // =============================================================================
@@ -40,9 +41,10 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
     writer_standard_price: number | null;
     writer_annual_discount_pct: number | null;
     reader_stripe_customer_id: string | null;
+    period_anchor_day: number;
   }>(
     `SELECT s.id, s.reader_id, s.writer_id, s.publication_id, s.price_pence,
-            s.current_period_end,
+            s.current_period_end, s.period_anchor_day,
             r.stripe_customer_id AS reader_stripe_customer_id,
             r.nostr_pubkey AS reader_pubkey,
             COALESCE(w.nostr_pubkey, p.nostr_pubkey) AS writer_pubkey,
@@ -89,18 +91,18 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
       continue;
     }
 
-    // Wave-5 P3: calendar arithmetic, not a fixed 30/365-day millisecond add.
-    // Advance the period end by one calendar month (or year) in UTC so renewal
-    // periods don't drift across month lengths, DST, or leap years — setUTCMonth/
-    // setUTCFullYear carry calendar semantics with natural overflow normalisation
-    // (e.g. Jan 31 + 1mo → Mar 3) and no timezone shift.
+    // Wave-5 P3 gave this calendar arithmetic; §1.5 gave it an ANCHOR. Advancing
+    // the previous end with setUTCMonth normalises an overflow forward (31 Jan
+    // + 1mo → 3 Mar) and the next cycle then advances the drifted value, so a
+    // subscriber who signed up on the 31st walked forward every month. The
+    // period now lands on the subscription's stored anchor day in the target
+    // month, clamped to that month's last day: 31 Jan → 28 Feb → 31 Mar.
     const newPeriodStart = sub.current_period_end;
-    const newPeriodEnd = new Date(newPeriodStart);
-    if (sub.subscription_period === "annual") {
-      newPeriodEnd.setUTCFullYear(newPeriodEnd.getUTCFullYear() + 1);
-    } else {
-      newPeriodEnd.setUTCMonth(newPeriodEnd.getUTCMonth() + 1);
-    }
+    const newPeriodEnd = advanceSubscriptionPeriod(
+      newPeriodStart,
+      sub.subscription_period === "annual" ? "annual" : "monthly",
+      sub.period_anchor_day,
+    );
 
     // subscription_events.writer_id holds the publication_id for publication
     // subscriptions (mirrors the subscribe path in routes/subscriptions/*).

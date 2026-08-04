@@ -132,7 +132,10 @@ export async function articleSubscriptionConvertRoutes(app: FastifyInstance) {
             .send({ error: "Spend threshold not met for conversion" });
         }
 
-        // Period ends at end of current calendar month
+        // Period ends at end of current calendar month. This route deliberately
+        // does NOT use firstPeriodEnd: conversion aligns the reader to the
+        // calendar month they already spent in, so the anchor is the 1st and
+        // every later renewal lands there (migration 170).
         const now = new Date();
         const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1); // first of next month
 
@@ -143,15 +146,16 @@ export async function articleSubscriptionConvertRoutes(app: FastifyInstance) {
             `UPDATE subscriptions
              SET status = 'active', auto_renew = TRUE, cancelled_at = NULL,
                  current_period_start = $1, current_period_end = $2,
-                 price_pence = $3, subscription_period = 'monthly', updated_at = now()
+                 price_pence = $3, subscription_period = 'monthly',
+                 period_anchor_day = 1, updated_at = now()
              WHERE id = $4`,
             [now, periodEnd, subPrice, existingSub.rows[0].id],
           );
           subscriptionId = existingSub.rows[0].id;
         } else {
           const subResult = await client.query<{ id: string }>(
-            `INSERT INTO subscriptions (reader_id, writer_id, status, price_pence, subscription_period, current_period_start, current_period_end, auto_renew)
-             VALUES ($1, $2, 'active', $3, 'monthly', $4, $5, TRUE)
+            `INSERT INTO subscriptions (reader_id, writer_id, status, price_pence, subscription_period, current_period_start, current_period_end, auto_renew, period_anchor_day)
+             VALUES ($1, $2, 'active', $3, 'monthly', $4, $5, TRUE, 1)
              RETURNING id`,
             [readerId, writerId, subPrice, now, periodEnd],
           );

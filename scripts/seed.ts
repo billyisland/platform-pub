@@ -482,6 +482,7 @@ async function seedSubscriptions(
         reader.id, writer.id, price, status, true, period, false, false,
         startedAt, periodStart, periodEnd,
         status === "cancelled" ? recentDate(14) : null,
+        periodStart.getUTCDate(),
       ]);
     }
   }
@@ -500,7 +501,7 @@ async function seedSubscriptions(
       const periodEnd = new Date(periodStart.getTime() + 30 * 86400000);
       rows.push([
         sub.id, myAccount.id, 500, "active", true, "monthly", false, false,
-        startedAt, periodStart, periodEnd, null,
+        startedAt, periodStart, periodEnd, null, periodStart.getUTCDate(),
       ]);
     }
   }
@@ -512,6 +513,7 @@ async function seedSubscriptions(
       "reader_id", "writer_id", "price_pence", "status", "auto_renew",
       "subscription_period", "is_comp", "hidden",
       "started_at", "current_period_start", "current_period_end", "cancelled_at",
+      "period_anchor_day",
     ],
     rows
   );

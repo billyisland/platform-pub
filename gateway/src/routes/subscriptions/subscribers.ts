@@ -2,6 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import {
+  anchorDayOf,
+  firstPeriodEnd,
+} from "@platform-pub/shared/lib/subscription-period.js";
 
 // =============================================================================
 // Writer-side subscriber management
@@ -121,7 +125,11 @@ export async function subscriptionSubscribersRoutes(app: FastifyInstance) {
       }
 
       const now = new Date();
-      const periodEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 year comp
+      // One calendar year, not 365 days — a comp granted the day before a leap
+      // day otherwise ends a day short (§1.5). A comp never auto-renews, so the
+      // anchor is stored for consistency rather than for a future advance.
+      const anchorDay = anchorDayOf(now);
+      const periodEnd = firstPeriodEnd(now, "annual");
 
       const { subscriptionId, status } = await withTransaction(
         async (client) => {
@@ -139,9 +147,9 @@ export async function subscriptionSubscribersRoutes(app: FastifyInstance) {
               `UPDATE subscriptions
              SET status = 'active', auto_renew = FALSE, is_comp = TRUE, price_pence = 0,
                  cancelled_at = NULL, current_period_start = $1, current_period_end = $2,
-                 updated_at = now()
+                 period_anchor_day = $4, updated_at = now()
              WHERE id = $3`,
-              [now, periodEnd, sub.id],
+              [now, periodEnd, sub.id, anchorDay],
             );
             logger.info(
               { writerId, readerId, subscriptionId: sub.id },
@@ -152,14 +160,15 @@ export async function subscriptionSubscribersRoutes(app: FastifyInstance) {
 
           const result = await client.query<{ id: string }>(
             `INSERT INTO subscriptions (reader_id, writer_id, price_pence, status, is_comp, auto_renew,
-             current_period_start, current_period_end)
-           VALUES ($1, $2, 0, 'active', TRUE, FALSE, $3, $4)
+             current_period_start, current_period_end, period_anchor_day)
+           VALUES ($1, $2, 0, 'active', TRUE, FALSE, $3, $4, $5)
            ON CONFLICT (reader_id, writer_id) WHERE writer_id IS NOT NULL DO UPDATE
              SET status = 'active', auto_renew = FALSE, is_comp = TRUE, price_pence = 0,
                  cancelled_at = NULL, current_period_start = EXCLUDED.current_period_start,
-                 current_period_end = EXCLUDED.current_period_end, updated_at = now()
+                 current_period_end = EXCLUDED.current_period_end,
+                 period_anchor_day = EXCLUDED.period_anchor_day, updated_at = now()
            RETURNING id`,
-            [readerId, writerId, now, periodEnd],
+            [readerId, writerId, now, periodEnd, anchorDay],
           );
 
           const subId = result.rows[0].id;

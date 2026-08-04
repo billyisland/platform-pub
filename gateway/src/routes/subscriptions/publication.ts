@@ -4,6 +4,10 @@ import { requireAuth } from "../../middleware/auth.js";
 import { signSubscriptionEvent } from "../../lib/nostr-publisher.js";
 import { enqueueRelayPublish } from "@platform-pub/shared/lib/relay-outbox.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import {
+  anchorDayOf,
+  firstPeriodEnd,
+} from "@platform-pub/shared/lib/subscription-period.js";
 import { logSubscriptionCharge } from "./shared.js";
 
 // =============================================================================
@@ -66,10 +70,10 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
         );
 
         const now = new Date();
-        const periodDays = period === "annual" ? 365 : 30;
-        const periodEnd = new Date(
-          now.getTime() + periodDays * 24 * 60 * 60 * 1000,
-        );
+        // Calendar periods anchored on today, for both the re-activate and the
+        // create branch below (a re-activation starts a fresh run) — §1.5.
+        const anchorDay = anchorDayOf(now);
+        const periodEnd = firstPeriodEnd(now, period);
         const readerPubkey = req.session!.pubkey;
 
         if (existing.rows.length > 0) {
@@ -82,9 +86,10 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
             `UPDATE subscriptions
              SET status = 'active', auto_renew = TRUE, cancelled_at = NULL,
                  current_period_start = $1, current_period_end = $2,
-                 price_pence = $3, subscription_period = $5, updated_at = now()
+                 price_pence = $3, subscription_period = $5,
+                 period_anchor_day = $6, updated_at = now()
              WHERE id = $4`,
-            [now, periodEnd, pricePence, sub.id, period],
+            [now, periodEnd, pricePence, sub.id, period, anchorDay],
           );
 
           // F1: charge the reading tab (inside logSubscriptionCharge), not the
@@ -140,10 +145,19 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
 
         const { rows } = await client.query<{ id: string }>(
           `INSERT INTO subscriptions (reader_id, publication_id, price_pence, status,
-             current_period_start, current_period_end, subscription_period)
-           VALUES ($1, $2, $3, 'active', $4, $5, $6)
+             current_period_start, current_period_end, subscription_period,
+             period_anchor_day)
+           VALUES ($1, $2, $3, 'active', $4, $5, $6, $7)
            RETURNING id`,
-          [readerId, publicationId, pricePence, now, periodEnd, period],
+          [
+            readerId,
+            publicationId,
+            pricePence,
+            now,
+            periodEnd,
+            period,
+            anchorDay,
+          ],
         );
         const subscriptionId = rows[0].id;
 

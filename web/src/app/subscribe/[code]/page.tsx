@@ -55,6 +55,11 @@ export default function RedeemOfferPage() {
   const [offer, setOffer] = useState<OfferLookup | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // A grant offer names one recipient, so a logged-out visitor cannot be
+  // resolved and the lookup 401s (§1.10). That is the COMMON arrival — the
+  // recipient following the link from their notification — so it gets its own
+  // state and a log-in CTA rather than falling into the dead-end error card.
+  const [needsLogin, setNeedsLogin] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
   const [success, setSuccess] = useState(false)
 
@@ -64,14 +69,22 @@ export default function RedeemOfferPage() {
       try {
         const result = await subscriptionOffers.lookup(params.code)
         setOffer(result)
+        setNeedsLogin(false)
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'This offer is not available.',
-        )
+        if ((err as { status?: number })?.status === 401) {
+          setNeedsLogin(true)
+        } else {
+          setError(
+            err instanceof Error ? err.message : 'This offer is not available.',
+          )
+        }
       } finally {
         setLoading(false)
       }
     })()
+    // Not keyed on auth: the lookup carries the session cookie whether or not
+    // the auth store has resolved yet, so the gateway already sees the viewer
+    // on the first call. Logging in remounts this page anyway.
   }, [params.code])
 
   async function handleSubscribe() {
@@ -104,6 +117,32 @@ export default function RedeemOfferPage() {
         <PublicVessel>
           <PublicCard style={{ padding: 0 }}>
             <IndeterminateSlab label="Loading offer" />
+          </PublicCard>
+        </PublicVessel>
+      </PublicShell>
+    )
+  }
+
+  if (needsLogin && !offer) {
+    return (
+      <PublicShell>
+        <PublicVessel>
+          <PublicCard>
+            <PublicTitle>This one’s addressed to you</PublicTitle>
+            <div style={{ marginTop: 10 }}>
+              <PublicBody>
+                It’s a gift subscription for a particular account. Log in and
+                we’ll show you what it is.
+              </PublicBody>
+            </div>
+          </PublicCard>
+          <PublicCard>
+            <PublicButton
+              full
+              href={`/auth?mode=login&redirect=${encodeURIComponent(`/subscribe/${params.code}`)}`}
+            >
+              Log in to view
+            </PublicButton>
           </PublicCard>
         </PublicVessel>
       </PublicShell>
@@ -162,12 +201,12 @@ export default function RedeemOfferPage() {
             className="label-ui"
             style={{ color: palette.cardMeta, marginBottom: 12 }}
           >
-            Subscription offer
+            {offer.mode === 'grant' ? 'A gift for you' : 'Subscription offer'}
           </div>
           <PublicTitle>{offer.label}</PublicTitle>
           <div style={{ marginTop: 10 }}>
             <PublicBody>
-              Subscribe to{' '}
+              {offer.mode === 'grant' ? 'From ' : 'Subscribe to '}
               <ProfileLink
                 href={`/${offer.writerUsername}`}
                 className="underline underline-offset-4"

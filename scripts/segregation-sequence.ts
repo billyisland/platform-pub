@@ -3618,10 +3618,10 @@ async function stepEight(fx: Fixture): Promise<StepResult> {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO subscriptions
          (reader_id, writer_id, status, price_pence, subscription_period,
-          current_period_start, current_period_end, auto_renew)
-       VALUES ($1, $2, 'active', $3, 'monthly', $4, $5, TRUE)
+          current_period_start, current_period_end, auto_renew, period_anchor_day)
+       VALUES ($1, $2, 'active', $3, 'monthly', $4, $5, TRUE, $6)
        RETURNING id`,
-      [reader.accountId, payable.accountId, SUB_PRICE_PENCE, now, periodEnd],
+      [reader.accountId, payable.accountId, SUB_PRICE_PENCE, now, periodEnd, now.getUTCDate()],
     )
     subscriptionId = rows[0].id
 

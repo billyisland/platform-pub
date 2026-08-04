@@ -6,6 +6,7 @@ import { signSubscriptionEvent } from '../../lib/nostr-publisher.js'
 import { enqueueRelayPublish } from '@platform-pub/shared/lib/relay-outbox.js'
 import { sendSubscriptionCancelledEmail, sendNewSubscriberEmail } from '@platform-pub/shared/lib/subscription-emails.js'
 import logger from '@platform-pub/shared/lib/logger.js'
+import { anchorDayOf, firstPeriodEnd } from '@platform-pub/shared/lib/subscription-period.js'
 import { logSubscriptionCharge } from './shared.js'
 
 // =============================================================================
@@ -144,19 +145,21 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
           if (sub.status === 'active') {
             return reply.status(409).send({ error: 'Already subscribed' })
           }
-          // Re-activate a cancelled or expired subscription
+          // Re-activate a cancelled or expired subscription. A re-activation
+          // starts a fresh run of periods, so it re-anchors on today (§1.5).
           const now = new Date()
-          const periodDays = period === 'annual' ? 365 : 30
-          const periodEnd = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000)
+          const anchorDay = anchorDayOf(now)
+          const periodEnd = firstPeriodEnd(now, period)
 
           await client.query(
             `UPDATE subscriptions
              SET status = 'active', auto_renew = TRUE, cancelled_at = NULL,
                  current_period_start = $1, current_period_end = $2,
                  price_pence = $3, subscription_period = $5,
-                 offer_id = $6, offer_periods_remaining = $7, updated_at = now()
+                 offer_id = $6, offer_periods_remaining = $7,
+                 period_anchor_day = $8, updated_at = now()
              WHERE id = $4`,
-            [now, periodEnd, pricePence, sub.id, period, offerId, offerPeriodsRemaining]
+            [now, periodEnd, pricePence, sub.id, period, offerId, offerPeriodsRemaining, anchorDay]
           )
 
           // F1: charge the reading tab (inside logSubscriptionCharge), not the
@@ -204,16 +207,15 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
 
         // Create new subscription
         const now = new Date()
-        const periodDays = period === 'annual' ? 365 : 30
-        const periodEnd = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000)
+        const periodEnd = firstPeriodEnd(now, period)
 
         const subResult = await client.query<{ id: string }>(
           `INSERT INTO subscriptions (reader_id, writer_id, price_pence, status,
              current_period_start, current_period_end, subscription_period,
-             offer_id, offer_periods_remaining)
-           VALUES ($1, $2, $3, 'active', $4, $5, $6, $7, $8)
+             offer_id, offer_periods_remaining, period_anchor_day)
+           VALUES ($1, $2, $3, 'active', $4, $5, $6, $7, $8, $9)
            RETURNING id`,
-          [readerId, writerId, pricePence, now, periodEnd, period, offerId, offerPeriodsRemaining]
+          [readerId, writerId, pricePence, now, periodEnd, period, offerId, offerPeriodsRemaining, anchorDayOf(now)]
         )
 
         const subscriptionId = subResult.rows[0].id

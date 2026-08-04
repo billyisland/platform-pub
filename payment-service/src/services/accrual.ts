@@ -323,9 +323,17 @@ class AccrualService {
       // Audit F9 (2026-07-06): paid voting was removed, so there are no new
       // provisional vote_charges to convert. Historical vote_charges are left
       // inert (never converted here); only reads convert.
-      if (provisionalReads.length === 0) {
-        return 0;
-      }
+      //
+      // §1.6: NO early return here. The unlock flip below is a SEPARATE claim
+      // from the read conversion, and the two sets are not the same set: a read
+      // charged back, reversed, or already converted by a previous card-connect
+      // leaves its `article_unlocks` row provisional with nothing left to
+      // convert, and the old zero-rows return then skipped the flip for good.
+      // Inert while the promised provisional-unlock GC does not exist; the
+      // moment it does, those rows are reaped and the reader loses articles
+      // they paid for. The flip is idempotent and cheap (idx_article_unlocks_
+      // reader), so running it unconditionally costs a no-op UPDATE in the
+      // common already-clean case.
 
       // Move the tab balance + post the mirror ledger debit per converted read.
       // These provisional reads never moved the tab when created (no card ⇒ no
@@ -356,17 +364,24 @@ class AccrualService {
 
       // F3: the reader has committed to paying (connected a card), so their
       // provisional unlocks become permanent.
-      await client.query(
+      const unlocks = await client.query(
         `UPDATE article_unlocks
          SET is_provisional = FALSE
          WHERE reader_id = $1 AND is_provisional = TRUE`,
         [readerId],
       );
 
-      logger.info(
-        { readerId, convertedCount: provisionalReads.length, totalPence },
-        "Provisional reads converted to accrued",
-      );
+      if (provisionalReads.length > 0 || (unlocks.rowCount ?? 0) > 0) {
+        logger.info(
+          {
+            readerId,
+            convertedCount: provisionalReads.length,
+            unlocksMadePermanent: unlocks.rowCount ?? 0,
+            totalPence,
+          },
+          "Provisional reads converted to accrued",
+        );
+      }
 
       return provisionalReads.length;
     });

@@ -70,6 +70,7 @@ function writerSub(overrides: Record<string, any> = {}) {
     writer_standard_price: 500,
     writer_annual_discount_pct: 15,
     reader_stripe_customer_id: 'cus_test',
+    period_anchor_day: 1,
     ...overrides,
   }
 }
@@ -116,6 +117,32 @@ describe('expireAndRenewSubscriptions — renewal', () => {
     expect(logSubscriptionCharge.mock.calls[0][3]).toBe('writer-1')
     expect(logSubscriptionCharge.mock.calls[0][7]).toBeNull()
     expect(sendSubscriptionRenewedEmail).toHaveBeenCalledOnce()
+  })
+
+  it('rolls the period to the STORED anchor day, not the previous end (§1.5)', async () => {
+    // The subscription hangs off the 31st; the period being renewed ends
+    // 28 Feb because January's advance had to borrow. The pre-fix worker
+    // advanced that clamped end with setUTCMonth and landed on 28 March,
+    // permanently short — and next cycle would advance 28 March again. The
+    // anchor puts it back on the 31st.
+    routePool([
+      writerSub({
+        current_period_end: new Date('2026-02-28T09:00:00Z'),
+        period_anchor_day: 31,
+      }),
+    ])
+    await expireAndRenewSubscriptions()
+
+    const roll = txCalls.find((c) => /SET current_period_start/.test(c.sql))
+    expect(roll).toBeDefined()
+    // $1 = new period start (the old end), $2 = new period end.
+    expect((roll!.params[0] as Date).toISOString()).toBe('2026-02-28T09:00:00.000Z')
+    expect((roll!.params[1] as Date).toISOString()).toBe('2026-03-31T09:00:00.000Z')
+
+    // Paired control: what the pre-fix advance produced from the same row.
+    const preFix = new Date('2026-02-28T09:00:00Z')
+    preFix.setUTCMonth(preFix.getUTCMonth() + 1)
+    expect(preFix.toISOString()).toBe('2026-03-28T09:00:00.000Z')
   })
 
   it('renews a publication subscription and routes the earning to the publication', async () => {

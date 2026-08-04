@@ -125,6 +125,12 @@ export interface SubscriptionOffer {
 export interface OfferLookup {
   id: string
   label: string
+  /**
+   * 'grant' only ever reaches the account the offer names — the lookup 404s
+   * for anyone else and 401s for a logged-out visitor (§1.10). So the page can
+   * treat it as "a gift for you" without re-checking anything.
+   */
+  mode: 'code' | 'grant'
   discountPct: number
   durationMonths: number | null
   writerId: string
@@ -144,7 +150,9 @@ export const subscriptionOffers = {
     expiresAt?: string | null
     recipientUsername?: string
   }) =>
-    request<{ id: string; code: string | null; url: string | null }>('/subscription-offers', {
+    // Both modes now carry a code and therefore a /subscribe/:code URL — a
+    // grant used to be created with neither, which is what made it dead (§1.10).
+    request<{ id: string; code: string; url: string }>('/subscription-offers', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict UwzeMERcDfkJUfEGytrw6lAjTlO7GskiV5YFITaLKIriAPjcrPBgb5vdsf78CAg
+\restrict kTCPSmLlwmnEcXXbUYckMbPACHALcFbZ9XKOdCRm4ZoNoFA2bmgP1e1dhhA0VZb
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2252,9 +2252,18 @@ CREATE TABLE public.subscriptions (
     offer_periods_remaining integer,
     publication_id uuid,
     notify_on_publish boolean DEFAULT true NOT NULL,
+    period_anchor_day smallint NOT NULL,
+    CONSTRAINT subscriptions_period_anchor_day_check CHECK (((period_anchor_day >= 1) AND (period_anchor_day <= 31))),
     CONSTRAINT subscriptions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'cancelled'::text, 'expired'::text]))),
     CONSTRAINT subscriptions_target_check CHECK ((num_nonnulls(writer_id, publication_id) = 1))
 );
+
+
+--
+-- Name: COLUMN subscriptions.period_anchor_day; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.subscriptions.period_anchor_day IS 'Day-of-month (UTC, 1..31) the subscription''s renewal periods are anchored to. Each advance lands on this day in the target month, clamped to that month''s last day — so anchor 31 gives 31 Jan → 28 Feb → 31 Mar, never a walk. Set from the subscribe/re-activate moment; never recomputed from a clamped period end.';
 
 
 --
@@ -7478,8 +7487,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict UwzeMERcDfkJUfEGytrw6lAjTlO7GskiV5YFITaLKIriAPjcrPBgb5vdsf78CAg
-
+\unrestrict kTCPSmLlwmnEcXXbUYckMbPACHALcFbZ9XKOdCRm4ZoNoFA2bmgP1e1dhhA0VZb
 
 --
 
@@ -7652,4 +7660,6 @@ INSERT INTO public._migrations (filename) VALUES
     ('166_allocated_draws_comment_sign.sql'),
     ('167_publication_split_repay.sql'),
     ('168_read_events_publication_payout_id.sql'),
-    ('169_free_allowance_granted.sql');
+    ('169_free_allowance_granted.sql'),
+    ('170_subscription_period_anchor.sql'),
+    ('171_grant_offer_codes.sql');
