@@ -40,6 +40,7 @@ Companion to `schema.sql` (83 tables, 151 indexes, 157 FKs, 50 CHECK constraints
 | `subscription_offers` | `subscription_offers_mode_check`         | Enum: `code`, `grant`                                                                           |
 | `subscriptions`       | `subscriptions_status_check`             | Enum: `active`, `cancelled`, `expired`                                                          |
 | `subscriptions`       | `subscriptions_target_check`             | Exactly one of `writer_id` or `publication_id` must be non-null (`num_nonnulls = 1`)            |
+| `subscriptions`       | `subscriptions_period_anchor_day_check`  | 1-31. The day-of-month renewal periods anchor to — stored because it cannot be recovered from a clamped period end (migration 170) |
 
 ### Feeds & External
 

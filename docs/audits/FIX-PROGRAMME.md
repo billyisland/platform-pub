@@ -23,6 +23,85 @@ starts.
 
 ## Progress
 
+- **2026-08-04 (SMALL-MONEY BATCH SHIPPED — §1.5 calendar arithmetic,
+  §1.6 provisional unlocks, §1.10 grant-mode redemption)** — attack-order item 4,
+  three of its four parts (§1.9's dev reconcile-ledger run closed 2026-07-16;
+  the meaningful prod run stays in §11). Migrations **170** and **171**.
+
+  **§1.5 — a month is a calendar month, and it hangs off an ANCHOR.** Two
+  defects, and the second is the one that compounds. (a) Subscribe, re-activate,
+  publication-subscribe and comp all added a literal 30 or 365 days, so a
+  "monthly" subscription taken out on 1 January renewed on the 31st. (b) The
+  renewal worker did use calendar arithmetic (Wave-5 P3) but advanced the
+  PREVIOUS period end with `setUTCMonth`, which **overflows rather than clamps**
+  (31 Jan + 1mo → 3 Mar) — and then advanced that drifted value the next cycle,
+  so a subscriber who signed up on the 31st walked forward a few days every
+  month until their renewal date had nothing to do with the day they subscribed.
+  **The anchor cannot be inferred from the stored dates** — once a period end
+  has been clamped to 28 February there is nothing left in the row saying the
+  subscription hangs off the 31st — so it becomes a stored fact:
+  `subscriptions.period_anchor_day` (migration 170, `NOT NULL`, `CHECK 1..31`,
+  no column default so a new write path fails loudly instead of silently
+  inheriting "the 1st"). One home for the arithmetic,
+  `shared/src/lib/subscription-period.ts` (`advanceSubscriptionPeriod` /
+  `anchorDayOf` / `firstPeriodEnd`), consumed by all six write paths.
+  **The backfill is deliberately `current_period_start`, not `started_at`:**
+  restoring the original day would push an existing subscriber's next renewal
+  LATER than the date they have already been told, so the drift is frozen where
+  it is rather than corrected — correcting history is a refund question, not a
+  migration. 12 unit tests + 1 worker test, **mutation-verified** (removing the
+  clamp fails 6; re-anchoring on the previous end fails the six-cycle walk case;
+  making the worker ignore the stored anchor fails the worker test), each with
+  the pre-fix expression as a **paired control** so the walk is demonstrated,
+  not asserted. `subscription-convert.ts` is deliberately NOT on the shared
+  helper — conversion aligns the reader to the calendar month they already spent
+  in, so its anchor is the 1st by construction.
+
+  **§1.6 — the unlock flip is a separate claim from the read conversion.** A
+  zero-rows early return sat between them in `convertProvisionalReads`, so a
+  reader whose provisional reads had already been converted, reversed or charged
+  back kept `article_unlocks.is_provisional = TRUE` for ever. Inert today;
+  the moment the promised provisional-unlock GC ships, those rows are reaped and
+  the reader loses articles they paid for. The return is gone and the flip is
+  unconditional (idempotent, `idx_article_unlocks_reader`, and the info log now
+  fires only when something actually moved). 3 tests, mutation-verified by
+  restoring the early return.
+
+  **§1.10 — grant mode was modelled end to end and dead on arrival.** Offers
+  were created with `code = NULL` while the redeem lookup filtered
+  `mode = 'code'` and the page is addressed `/subscribe/:code`, so a grant had
+  no URL and the recipient check already sitting in the subscribe path could
+  never be reached. **Wiring it was cheaper than deleting it** — the redemption
+  gate existed; only the addressing was missing. Both modes now get a code (the
+  code is an ADDRESS, not the secret), and the mode filter moved out of the
+  `WHERE` clause and became a recipient check with two deliberately different
+  arms: **401 with no session** (the recipient arriving from their notification
+  while logged out is the common case, and 404-ing them would make the feature
+  unusable for exactly the person it is for — what it concedes to a code-holder
+  is only "this code names a grant", and they already hold 64 bits of code to
+  learn it), **404 for a different account** (byte-identical to the no-such-code
+  response, so a forwarded link tells its new holder nothing). Migration 171
+  mints codes for historical grants so no cohort stays permanently dead;
+  `notifications.type` is free text, so the recipient notification needed no
+  DDL. Web: the redeem page gains a log-in-and-come-back card and reads as
+  "A gift for you"; the dashboard's existing `offer.code &&` guard means the
+  Copy-link button appears for grants with no change. 5 tests,
+  **mutation-verified against all three arms** (restoring `code = null` fails 1;
+  restoring the `mode = 'code'` filter fails 3; dropping the wrong-recipient
+  404 fails 1).
+
+  **Validation:** shared 117 / gateway 480 / payment-service 324, all green
+  including the DB-backed suites against a migrated dev DB; `tsc --noEmit` clean
+  in all four workspaces; `npm run lint` 0 errors; `next build` clean;
+  `check-schema-drift.sh` all seven checks green after a pg_dump regen of
+  `schema.sql` (170's `ADD COLUMN` is Check 3's known column-level gap, so the
+  mechanical dump-and-re-append discipline is what closed it — the structural
+  diff was exactly the column, its CHECK and its COMMENT, and nothing else);
+  `check-ledger-adjacency.sh` and `check-read-chargeable.sh` unchanged and
+  green; `check-hairlines.sh` clean on the touched web files.
+  **Deploy:** ordinary shape — migrations 170 and 171 both run under the
+  standard manual `migrate.ts` step; no flag, no backfill job, no config dial.
+
 - **2026-08-04 (§0o.9c SHIPPED — the money dials' fallbacks are enforced, not
   asked for)** — `loadConfig`'s nine dials each carry an inline fallback
   (`int(map, 'free_allowance_pence', 500)`, …) whose docblock said "keep the two
