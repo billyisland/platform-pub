@@ -74,14 +74,20 @@ export async function withTransaction<T>(
 //
 // All monetary values are in pence (integers). Fee is in basis points.
 //
-// The fallbacks below match config-defaults.sql, which is where these six dials
-// now live. They used to be seeded by an INSERT inside schema.sql itself, until
-// f8c73e6 regenerated it with --schema-only and silently dropped the data — so
-// from then until 2026-07-20 every one of them (the platform fee, the free
+// The fallbacks below match config-defaults.sql, which is where these nine
+// dials now live. They used to be seeded by an INSERT inside schema.sql itself,
+// until f8c73e6 regenerated it with --schema-only and silently dropped the data
+// — so from then until 2026-07-20 every one of them (the platform fee, the free
 // allowance, both settlement thresholds) existed ONLY as the fallback here, and
 // was untunable by an operator: an UPDATE on a missing row changes nothing and
-// raises nothing. Keep the two in step; never re-add config data to schema.sql
-// (a regeneration will drop it again — that is the whole lesson).
+// raises nothing. Never re-add config data to schema.sql (a regeneration will
+// drop it again — that is the whole lesson).
+//
+// "Keep the two in step" is now enforced rather than asked for:
+// shared/tests/config-fallback-parity.test.ts drives this loader against an
+// empty table and diffs every fallback against the SQL file, and fails if a
+// dial is added here without a line there. A drifted fallback is invisible
+// exactly when the row is missing, which is the one case it exists for.
 // =============================================================================
 
 let cachedConfig: PlatformConfig | null = null

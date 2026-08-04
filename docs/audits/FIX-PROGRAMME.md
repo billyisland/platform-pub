@@ -23,6 +23,46 @@ starts.
 
 ## Progress
 
+- **2026-08-04 (§0o.9c SHIPPED — the money dials' fallbacks are enforced, not
+  asked for)** — `loadConfig`'s nine dials each carry an inline fallback
+  (`int(map, 'free_allowance_pence', 500)`, …) whose docblock said "keep the two
+  in step" with `config-defaults.sql`, and nothing did. Now
+  `shared/tests/config-fallback-parity.test.ts` does — third of the parity trio
+  (gateway feed-rank, feed-ingest resonance, this), same `diffAgainstDefaults`
+  shape, driving the **real** loader against an empty table so it asserts the
+  shipping fallback path rather than a copy of it (the pool is stubbed at the
+  one SELECT `loadConfig` makes, so it stays an ordinary no-DB suite test). All
+  nine currently agree with the file.
+
+  **Why this file rather than another:** it is the one whose drift the docblock
+  is a monument to — from f8c73e6 until 2026-07-20 these dials existed ONLY as
+  these fallbacks, because a `--schema-only` regeneration silently dropped the
+  seeding INSERT — and they are the money dials: the platform's cut, what a
+  reader is gifted, when a card is charged, when a writer is paid. A drifted
+  fallback does not error; it moves money by a number no operator can see, and
+  it is invisible **exactly when the row is missing**, which is the one case the
+  fallback exists for. §0o.9 the same day was the second instance of these dials
+  governing nothing, which is what moved this from cosmetic to worth doing.
+
+  Four tests: the parity diff over all nine; a seeded row beating its fallback
+  (the other direction — a fallback that shadowed a present row would pass the
+  parity test while leaving operators no control at all); the `isNaN` arm
+  falling back rather than throwing, pinned because it is the same silent
+  substitution the parity check is what makes safe; and a **completeness pin**
+  that greps `int(map, '…')` out of `client.ts` and fails if a tenth dial is
+  added to the loader without a line in the test — the parity map is
+  hand-written, so without this the next dial would ship unchecked and the gap
+  would reopen in the shape it was just closed in.
+
+  **Five mutants, each killed** (control green after every revert): a drifted
+  in-code fallback (800 → 900); a drifted **SQL** value (800 → 750, proving the
+  test reads the real file and not a fixture); `int()` ignoring the seeded row;
+  `int()` letting `NaN` through; a tenth dial appearing in `loadConfig`
+  untested. 101 → 105 shared tests, all 9 files green; root lint 0 errors; both
+  money tripwires green; `tsc --noEmit` clean. The docblock is amended in the
+  same commit — "six dials" was stale at nine, and "keep the two in step" now
+  names the test that holds them there.
+
 - **2026-08-04 (§0o.9 SHIPPED — and the item's premise was backwards: the dial
   governed nothing)** — the filed finding was that `LedgerPanel.tsx:73` hardcoded
   the gauge denominator at `500` while the allowance is the `free_allowance_pence`
