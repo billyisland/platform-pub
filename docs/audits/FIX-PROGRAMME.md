@@ -23,6 +23,54 @@ starts.
 
 ## Progress
 
+- **2026-08-05 (the two `drives.ts` notification defects — fixed ahead of
+  resurrection, not with it; migration 174)** — queued the same day as
+  must-fix-before-unparking (§10), then done on request. `drive_funded` and
+  `commission_request` were the only two `INSERT INTO notifications` in the
+  codebase with **no `ON CONFLICT` clause at all**, so a dedup collision raised
+  23505 instead of doing nothing — and `drive_funded`'s runs inside the pledge
+  `withTransaction`, so the same pledger funding a SECOND drive by the same
+  creator **aborted the pledge**: the money never moved and the pledger got a
+  500, on a money path, from a notification. Both behind `PLEDGES_ENABLED` (the
+  `/drives` plugin 403s wholesale), so no live incident.
+
+  **The clause alone would have been the wrong fix**, and finding out why is the
+  substance of this. `idx_notifications_dedup` keyed on nothing the drive
+  notifications set, so to it two DIFFERENT drives between the same two people
+  were the same notification — adding `DO NOTHING` in isolation converts a crash
+  into a silent drop, and on `drive_funded` that means a creator is never told
+  their second drive was funded. The reference column already existed:
+  **`notifications.drive_id` has been there since migration 020, whose first
+  line reads "for frontend routing"**, with a real FK, selected by
+  `notifications.ts` and declared by the web's `Notification` interface as
+  `driveId?: string` — **and no insert has ever written it.** Six years of
+  end-to-end plumbing with no source. It is migration 172's bug one table over.
+
+  So 174 does the 172 shape: binds `drive_id` on all three drive notifications,
+  adds it to the dedup index (keeping 173's partial clause and bare `actor_id`),
+  adds `idx_notifications_drive`, and only then the `ON CONFLICT` clauses.
+  `pledge_fulfilled` gets both too although it names no actor and so cannot
+  collide today — all three read the same, and a later decision to name an actor
+  there cannot resurrect the 23505. `ON DELETE SET NULL` kept, deliberately not
+  the offer's CASCADE: "a pledge drive you backed was published" reads sensibly
+  without the drive, and all three types route to the proposals *list* anyway.
+
+  **Validation — both halves mutated.** Four new DB-backed cases. Mutant A (drop
+  `COALESCE(drive_id, …)` from the index) fails exactly the two
+  drive-distinguishing tests. Mutant B (remove `ON CONFLICT` from the
+  `drive_funded` statement — i.e. the pre-fix route) fails exactly the
+  transaction test, with the real `23505 … idx_notifications_dedup`. That test
+  is the one that matters and is why the suite is DB-backed: Postgres puts an
+  aborted transaction into 25P02 for every later statement, so a statement that
+  still succeeds after the repeat **is** the proof the pledge survived. Suites
+  after: gateway **493/493**, drift guard **8/8** (Check 3b now covers 214
+  indexes and validated 174 on its first run), root lint 0 errors, tsc clean,
+  both money tripwires green.
+
+  Rule added to CLAUDE.md, since this class has now shipped twice in two months:
+  a notification binds its target, that column is in the dedup index, the insert
+  carries `ON CONFLICT`, and `actor_id` stays bare.
+
 - **2026-08-05 (§0p.1 — the dedup index that has been wrong on every database
   for three years, and the guard that could not see it)** — migration 019 made
   `idx_notifications_dedup` PARTIAL (`WHERE read = false`) so that reading a

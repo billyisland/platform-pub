@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict YFcbuXU3pnPmJWzCiWNBPdsfm6eDyatiAMVQebLygZ0e5gWgSi8EeYSriPMMS0q
+\restrict QJjx2spVI97HSyOEgRlurVxhF20kRXWySzXD67nkQYGncfVNb63sp9mWHE9uex6
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1731,6 +1731,13 @@ CREATE TABLE public.notifications (
     drive_id uuid,
     offer_id uuid
 );
+
+
+--
+-- Name: COLUMN notifications.drive_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.notifications.drive_id IS 'The pledge drive this notification is about (commission_request, drive_funded, pledge_fulfilled). Part of idx_notifications_dedup, so two drives between the same two people are two notifications rather than one. ON DELETE SET NULL, not CASCADE — the notification still reads sensibly without the drive.';
 
 
 --
@@ -4779,14 +4786,21 @@ CREATE INDEX idx_notes_reply_to ON public.notes USING btree (reply_to_event_id) 
 -- Name: idx_notifications_dedup; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree (recipient_id, actor_id, type, COALESCE(article_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(note_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(comment_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(offer_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE (read = false);
+CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree (recipient_id, actor_id, type, COALESCE(article_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(note_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(comment_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(offer_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(drive_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE (read = false);
 
 
 --
 -- Name: INDEX idx_notifications_dedup; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON INDEX public.idx_notifications_dedup IS 'At most one UNREAD notification per (recipient, actor, type, targets). Reading a notification frees its slot so the next occurrence of the same event notifies again — migration 019''s intent, in force from 173. Every INSERT INTO notifications is a bare ON CONFLICT DO NOTHING, so this index alone decides what collapses.';
+COMMENT ON INDEX public.idx_notifications_dedup IS 'At most one UNREAD notification per (recipient, actor, type, targets). Reading a notification frees its slot so the next occurrence of the same event notifies again — migration 019''s intent, in force from 173. Every INSERT INTO notifications is a bare ON CONFLICT DO NOTHING, so this index alone decides what collapses. actor_id is deliberately NOT COALESCEd: actor-less types (pledge_fulfilled) must never dedup against each other.';
+
+
+--
+-- Name: idx_notifications_drive; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notifications_drive ON public.notifications USING btree (drive_id) WHERE (drive_id IS NOT NULL);
 
 
 --
@@ -7517,7 +7531,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict YFcbuXU3pnPmJWzCiWNBPdsfm6eDyatiAMVQebLygZ0e5gWgSi8EeYSriPMMS0q
+\unrestrict QJjx2spVI97HSyOEgRlurVxhF20kRXWySzXD67nkQYGncfVNb63sp9mWHE9uex6
 
 --
 
@@ -7694,4 +7708,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('170_subscription_period_anchor.sql'),
     ('171_grant_offer_codes.sql'),
     ('172_notifications_offer_id.sql'),
-    ('173_notification_dedup_partial.sql');
+    ('173_notification_dedup_partial.sql'),
+    ('174_notifications_dedup_drive.sql');

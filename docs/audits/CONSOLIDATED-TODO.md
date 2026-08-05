@@ -549,7 +549,7 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 - **Trust graph** (behind `TRUST_SYSTEM_ENABLED`; Phases 5–6 gated on scale) and the dormant PipPanel/PipTrigger. Known spec gaps parked with it: Layer 4 "valued set" signals hand-waved; Layer 1 signals for external authors not persisted by adapters.
 - **Traffology** (containers down, beacon off; Phases 2–4 with it). Its untested aggregation math (Payments ADR §1.3(4), archived) rides with it — write those tests only if traffology comes back.
-- **Pledge drives + commissioning** (behind `PLEDGES_ENABLED`, parked 2026-07-13; not deleted, revivable). Its ledger/tab fulfilment tests (Payments ADR §1.3(2), archived) ride with it — write them only on resurrection. **Two defects found 2026-08-05 (§0p.1 work) that must be fixed BEFORE it is unparked, not after:** `drives.ts`'s `drive_funded` (~:376) and `commission_request` (~:134) are the only two `INSERT INTO notifications` in the codebase with **no `ON CONFLICT` clause at all**, so a dedup collision raises 23505 — and `drive_funded`'s sits inside the pledge `withTransaction`, so the unique violation **aborts the pledge itself** (the same pledger funding a second drive by the same creator). Migration 173's partial clause narrows the window to "while the first is unread"; it does not close it. Fix is one clause each, but it changes a money path's failure mode, so it belongs with the resurrection.
+- **Pledge drives + commissioning** (behind `PLEDGES_ENABLED`, parked 2026-07-13; not deleted, revivable). Its ledger/tab fulfilment tests (Payments ADR §1.3(2), archived) ride with it — write them only on resurrection. ~~Two defects found 2026-08-05 that must be fixed before it is unparked~~ — **FIXED 2026-08-05 (migration 174), ahead of resurrection rather than with it.** `drive_funded` and `commission_request` were the only two `INSERT INTO notifications` with no `ON CONFLICT` at all, so a collision raised 23505, and `drive_funded`'s sat inside the pledge `withTransaction` — the same pledger funding a second drive by the same creator **aborted the pledge itself**. The clause alone would only have traded a crash for a silent drop, because the dedup index carried no drive reference: `notifications.drive_id` has existed since migration 020 "for frontend routing", is selected by the gateway and declared by the web, and **no insert had ever written it**. So 174 binds the column on all three drive notifications, puts it in the index (two drives are two rows) and adds the clause. Four DB-backed cases, both halves mutation-verified — see FIX-PROGRAMME 2026-08-05.
 - **Network-concierge Phase 4** (see §2.3).
 - **Content spine / federation** (item 2 Plan C) — deferred to the self-host effort with the genesis migration.
 - **Feed-ingest Slices 4–7**: Telegram (demand-gated), Farcaster + Matrix (infrastructure-gated), AP inbox (posture-gated).
@@ -563,11 +563,12 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
   because this entry's predecessors were stale four times.* Master has gained
   **migration 172** (`notifications.offer_id` + the rebuilt
   `idx_notifications_dedup`), **migration 173** (that index made partial —
-  §0p.1), **gateway** code (`my-account.ts`, `notifications.ts`,
-  `subscription-offers.ts`), **payment-service** code (`settlement.ts`) and
-  **web** code (the notification type, label and destination). **No `shared/`
-  change**, so this is NOT the everything-is-stale shape: `gateway`, `payment`
-  and `web` only.
+  §0p.1), **migration 174** (`drive_id` into that index + `idx_notifications_drive`),
+  **gateway** code (`my-account.ts`, `notifications.ts`,
+  `subscription-offers.ts`, **`drives.ts`**), **payment-service** code
+  (`settlement.ts`) and **web** code (the notification type, label and
+  destination). **No `shared/` change**, so this is NOT the everything-is-stale
+  shape: `gateway`, `payment` and `web` only.
 
   **Ordering is safe in both directions here, unlike 170** (see §0p.2): 172's
   new column is nullable with no constraint on existing writes, so old code runs
@@ -582,13 +583,16 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
   **Markers** (each a string the change INTRODUCES): `offer_id` in gateway's
   `dist/routes/subscription-offers.js`; `status = 'completed'` adjacent to
   `stripe_payment_intent_id IS NULL` in payment's `dist/services/settlement.js`;
-  `173_notification_dedup_partial.sql` as the last row of `_migrations`. For
-  **web** use a CHANGED chunk hash, never an identifier grep. 173 additionally
-  has a *functional* marker, which is the better one because it reads the effect
-  rather than the bookkeeping:
+  `drive_id` in gateway's `dist/routes/drives.js` (the notification inserts —
+  absent before 174); `174_notifications_dedup_drive.sql` as the last row of
+  `_migrations`. For **web** use a CHANGED chunk hash, never an identifier grep.
+  173 and 174 additionally have a *functional* marker, which is the better kind
+  because it reads the effect rather than the bookkeeping — one query covers
+  both:
 
   ```sql
-  SELECT indexdef LIKE '%WHERE (read = false)%' AS partial_in_force
+  SELECT indexdef LIKE '%WHERE (read = false)%' AS partial_in_force_173,
+         indexdef LIKE '%drive_id%'             AS drive_in_index_174
     FROM pg_indexes WHERE indexname = 'idx_notifications_dedup';
   ```
 

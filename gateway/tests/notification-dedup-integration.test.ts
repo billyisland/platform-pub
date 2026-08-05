@@ -4,12 +4,14 @@ import pg from "pg";
 // =============================================================================
 // idx_notifications_dedup — what it collapses, and what it must not.
 //
-// Two migrations are pinned here. 172 widened the index with offer_id; 173 made
-// it PARTIAL (`WHERE read = false`), which is migration 019's intent finally
-// reaching a database: 019 was seeded as applied by schema.sql and so never ran
-// anywhere, leaving "repeat events silently fail to notify" live for three
-// years. Both live in one file because they are one index, and because the
-// interesting risk is that fixing either quietly stops it deduping at all.
+// Three migrations are pinned here. 172 widened the index with offer_id; 173
+// made it PARTIAL (`WHERE read = false`), which is migration 019's intent
+// finally reaching a database — 019 was seeded as applied by schema.sql and so
+// never ran anywhere, leaving "repeat events silently fail to notify" live for
+// three years; 174 added drive_id and the two missing ON CONFLICT clauses. All
+// three live in one file because they are one index, and because the
+// interesting risk is the same each time: that fixing it quietly stops it
+// deduping at all.
 //
 // Every `INSERT INTO notifications` in the codebase is a bare
 // `ON CONFLICT DO NOTHING` — 22 sites, none naming an inference target — so
@@ -35,7 +37,7 @@ import pg from "pg";
 
 const DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
-describe.skipIf(!DB_URL)("notification dedup × subscription offers", () => {
+describe.skipIf(!DB_URL)("idx_notifications_dedup", () => {
   let client: pg.Client;
   let writer: string;
   let reader: string;
@@ -214,6 +216,106 @@ describe.skipIf(!DB_URL)("notification dedup × subscription offers", () => {
 
       expect(await drive()).toBe(1);
       expect(await drive()).toBe(1);
+    });
+  });
+
+  // ===========================================================================
+  // Migration 174 — drive_id, and the two inserts that had no ON CONFLICT.
+  //
+  // `drive_funded` and `commission_request` were the only two INSERT INTO
+  // notifications in the codebase with no conflict clause at all, so a dedup
+  // collision raised 23505 instead of doing nothing — and `drive_funded`'s runs
+  // inside the pledge transaction, so it aborted the pledge. Fixing the clause
+  // alone would only have traded a crash for a silent drop, because the index
+  // carried no drive reference: to it, two DIFFERENT drives between the same
+  // two people were the same notification. Both halves are pinned here.
+  // ===========================================================================
+  describe("drive notifications (migration 174)", () => {
+    async function drive(title: string): Promise<string> {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO pledge_drives (creator_id, origin, target_writer_id, title)
+         VALUES ($1, 'commission', $2, $3) RETURNING id`,
+        [reader, writer, title],
+      );
+      return rows[0].id;
+    }
+
+    /** The pledge route's own statement, verbatim. */
+    async function funded(driveId: string): Promise<number> {
+      const res = await client.query(
+        `INSERT INTO notifications (recipient_id, actor_id, type, drive_id)
+         VALUES ($1, $2, 'drive_funded', $3)
+         ON CONFLICT DO NOTHING`,
+        [writer, reader, driveId],
+      );
+      return res.rowCount ?? 0;
+    }
+
+    it("two drives between the same two people are two notifications", async () => {
+      // Mutant: drop COALESCE(drive_id, …) from idx_notifications_dedup — the
+      // second insert returns 0, which is the silent drop that adding ON
+      // CONFLICT without the column would have shipped.
+      expect(await funded(await drive("first drive"))).toBe(1);
+      expect(await funded(await drive("second drive"))).toBe(1);
+
+      const { rows } = await client.query<{ cnt: string }>(
+        `SELECT COUNT(*) AS cnt FROM notifications
+          WHERE recipient_id = $1 AND type = 'drive_funded'`,
+        [writer],
+      );
+      expect(parseInt(rows[0].cnt, 10)).toBe(2);
+    });
+
+    it("a repeat on the SAME drive does not poison the pledge transaction", async () => {
+      // THE defect, and the reason this file is DB-backed. Without the clause
+      // the second insert raises 23505; inside `withTransaction` that aborts
+      // the pledge, so the money never moves and the pledger sees a 500 — from
+      // a notification. Postgres puts an aborted transaction into 25P02 for
+      // every later statement, so a statement that still works after the repeat
+      // IS the proof the transaction survived.
+      const only = await drive("one drive, funded twice");
+      expect(await funded(only)).toBe(1);
+      expect(await funded(only)).toBe(0); // no-op, not a throw
+
+      const after = await client.query(
+        `UPDATE pledge_drives SET current_total_pence = 500 WHERE id = $1`,
+        [only],
+      );
+      expect(after.rowCount).toBe(1); // 25P02 here would mean the pledge died
+    });
+
+    it("commission_request binds its drive too", async () => {
+      // Same shape, the other insert. Two commission requests from the same
+      // person are two requests; the route must be able to say which.
+      const send = async (driveId: string) =>
+        (
+          await client.query(
+            `INSERT INTO notifications (recipient_id, actor_id, type, drive_id)
+             VALUES ($1, $2, 'commission_request', $3)
+             ON CONFLICT DO NOTHING`,
+            [writer, reader, driveId],
+          )
+        ).rowCount ?? 0;
+
+      expect(await send(await drive("commission one"))).toBe(1);
+      expect(await send(await drive("commission two"))).toBe(1);
+    });
+
+    it("a deleted drive nulls its notification rather than removing it", async () => {
+      // ON DELETE SET NULL, deliberately NOT the offer's CASCADE: "a pledge
+      // drive you backed was published" still reads sensibly without the drive,
+      // and the destination is a list either way.
+      const doomed = await drive("about to be deleted");
+      await funded(doomed);
+      await client.query(`DELETE FROM pledge_drives WHERE id = $1`, [doomed]);
+
+      const { rows } = await client.query<{ cnt: string; drive_id: string | null }>(
+        `SELECT COUNT(*) AS cnt, MIN(drive_id::text) AS drive_id
+           FROM notifications WHERE recipient_id = $1 AND type = 'drive_funded'`,
+        [writer],
+      );
+      expect(parseInt(rows[0].cnt, 10)).toBe(1);
+      expect(rows[0].drive_id).toBeNull();
     });
   });
 

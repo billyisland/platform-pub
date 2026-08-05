@@ -128,12 +128,17 @@ export async function driveRoutes(app: FastifyInstance) {
       logger.error({ err, driveId }, 'Failed to publish drive Nostr event')
     })
 
-    // Notify target writer for commissions
+    // Notify target writer for commissions. `drive_id` is bound and the insert
+    // carries ON CONFLICT — both load-bearing, see migration 174: without the
+    // column two commission requests from the same person are one notification
+    // to idx_notifications_dedup, and without the clause the collision is a
+    // 23505 rather than a no-op.
     if (data.origin === 'commission') {
       await pool.query(
-        `INSERT INTO notifications (recipient_id, actor_id, type)
-         VALUES ($1, $2, 'commission_request')`,
-        [targetWriterId, creatorId]
+        `INSERT INTO notifications (recipient_id, actor_id, type, drive_id)
+         VALUES ($1, $2, 'commission_request', $3)
+         ON CONFLICT DO NOTHING`,
+        [targetWriterId, creatorId, driveId]
       ).catch(err => {
         logger.error({ err, targetWriterId, driveId }, 'Failed to create commission notification')
       })
@@ -366,16 +371,25 @@ export async function driveRoutes(app: FastifyInstance) {
           [newTotal, newStatus, req.params.id]
         )
 
-        // Notify creator if drive just became funded
+        // Notify creator if drive just became funded.
+        //
+        // This one runs INSIDE the pledge transaction, which is why its missing
+        // ON CONFLICT was the worst of the three: idx_notifications_dedup keyed
+        // on (recipient, actor, type) alone, so the same pledger funding a
+        // SECOND drive by the same creator raised a 23505 that aborted the
+        // pledge itself — the money never moved and the pledger saw a 500. The
+        // clause makes the collision a no-op; `drive_id` (migration 174) means
+        // there is no collision to have, because two drives are two rows.
         if (newStatus === 'funded' && drive.rows[0].status === 'open') {
           const driveInfo = await client.query<{ creator_id: string }>(
             'SELECT creator_id FROM pledge_drives WHERE id = $1',
             [req.params.id]
           )
           await client.query(
-            `INSERT INTO notifications (recipient_id, actor_id, type)
-             VALUES ($1, $2, 'drive_funded')`,
-            [driveInfo.rows[0].creator_id, pledgerId]
+            `INSERT INTO notifications (recipient_id, actor_id, type, drive_id)
+             VALUES ($1, $2, 'drive_funded', $3)
+             ON CONFLICT DO NOTHING`,
+            [driveInfo.rows[0].creator_id, pledgerId, req.params.id]
           )
         }
       })
@@ -861,13 +875,19 @@ async function fulfillDrive(driveId: string): Promise<void> {
     [driveId]
   )
 
-  // Send notifications to all pledgers (async, non-blocking)
+  // Send notifications to all pledgers (async, non-blocking). No actor, so this
+  // one cannot collide today whatever the index says — NULLs stay distinct in a
+  // unique btree, which is exactly why 173 left `actor_id` bare. It binds
+  // `drive_id` and carries the clause anyway, so all three drive notifications
+  // read the same and a later decision to name an actor here cannot resurrect
+  // the 23505.
   const pledgerIds = pledges.map(p => p.pledger_id)
   for (const pledgerId of pledgerIds) {
     await pool.query(
-      `INSERT INTO notifications (recipient_id, type)
-       VALUES ($1, 'pledge_fulfilled')`,
-      [pledgerId]
+      `INSERT INTO notifications (recipient_id, type, drive_id)
+       VALUES ($1, 'pledge_fulfilled', $2)
+       ON CONFLICT DO NOTHING`,
+      [pledgerId, driveId]
     ).catch(err => {
       logger.error({ err, pledgerId, driveId }, 'Failed to notify pledger')
     })
