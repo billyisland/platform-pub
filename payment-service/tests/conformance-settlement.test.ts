@@ -592,9 +592,52 @@ describe('settlement — crash & resume (exactly once)', () => {
     const tab = db.tabsByReader.get('reader-1')!
     expect(tab.balance_pence).toBe(0)
     expect(readerParity(db.ledger, 'reader-1', tab.balance_pence)).toBe(true)
-    // Status stays 'pending' until the resume sweep's same-key dedupe flips it
-    // — the identical eventual flip the id-stored crash window has always
-    // used; the duplicate-claim guard makes that later confirm a no-op.
+    // The adopt carries the status with it: the row is a COMPLETED settlement
+    // the moment its charge is confirmed, never a settled one still wearing the
+    // in-flight label. (This assertion read 'pending' until 2026-08-05 — see the
+    // two tests below for what that label cost.)
+    expect(only().status).toBe('completed')
+  })
+
+  it('an adopted settlement does not freeze the tab until a resume cycle', async () => {
+    // Mutant: drop `status = 'completed'` from the adopting UPDATE — fails here.
+    // reserveSettlement's in-flight guard reads `status = 'pending'`, so a
+    // settled-but-pending row blocks the reader's NEXT settlement for up to 8h
+    // (the settlement-reconcile worker runs 00/08/16 UTC).
+    seedReader('reader-1', 1000)
+    crashOn(/UPDATE tab_settlements\s+SET stripe_payment_intent_id = \$1, status = 'completed'/)
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+    await settlementService.confirmSettlement('pi_1', 'ch_1', only().id)
+
+    // The first debt is collected and the tab is back at zero. New debt accrues.
+    const tab = db.tabsByReader.get('reader-1')!
+    expect(tab.balance_pence).toBe(0)
+    tab.balance_pence = 1500
+
+    expect(await settlementService.checkAndSettle('reader-1')).not.toBeNull()
+    expect(db.settlements.size).toBe(2) // the second debt reserved, not refused
+    expect(paymentIntents.distinctKeys).toBe(2) // and charged exactly once each
+  })
+
+  it('an adopted settlement is never re-driven into a false card-action flag', async () => {
+    // Mutant: drop `status = 'completed'` from the adopting UPDATE — fails here.
+    // The re-drive is benign only while the card is still attached. With it gone
+    // the resume sweep takes the no-default-card arm and stamps 'failed' +
+    // card_action_required_at on a settlement whose charge SUCCEEDED and whose
+    // tab is already debited: the row lies about a collected charge, and the
+    // reader is asked to fix a card that was never the problem.
+    seedReader('reader-1', 1000)
+    crashOn(/UPDATE tab_settlements\s+SET stripe_payment_intent_id = \$1, status = 'completed'/)
+    await expect(settlementService.checkAndSettle('reader-1')).rejects.toThrow()
+    await settlementService.confirmSettlement('pi_1', 'ch_1', only().id)
+
+    customers.defaultPaymentMethod = null // reader detaches their card
+    await settlementService.resumePendingSettlements()
+
+    expect(only().status).toBe('completed') // not 'failed'
+    expect(only().failure_reason).toBeNull()
+    expect(db.accounts.get('reader-1')!.card_action_required_at).toBeNull()
+    expect(paymentIntents.distinctKeys).toBe(1) // and still exactly one charge
   })
 
   it('the metadata fallback never steals a row that belongs to a DIFFERENT intent', async () => {

@@ -23,6 +23,85 @@ starts.
 
 ## Progress
 
+- **2026-08-05 (§0p COMMIT AUDIT — Aug 02–04 window — three MEDIUMs found and
+  fixed same-day)** — audit of `88ed1e5a..1ce113e3` (13 commits: the §0o.1
+  idempotency recovery, §0o.2 sync double-count, §0o.3 pending-sibling flip,
+  §0o.7 LOW batch, §0o.9 free-allowance dial + migration 169, the parity test,
+  the small-money batch + migrations 170/171). Baseline re-measured at HEAD
+  before anything: payment **324/324** with the DB-backed suites genuinely
+  running, shared 117, gateway 446, drift guard 7/7, both money tripwires green.
+  Findings and dispositions:
+
+  1. **A settled settlement stayed `pending`, and could be stamped `failed`
+     with a false card prompt** (§0o.7c). `confirmSettlement`'s metadata-adopt
+     path stored the intent and charge ids but never `status`, and
+     `resumePendingSettlements` scans `status = 'pending'` with no
+     `stripe_charge_id IS NULL` guard — so a settlement whose charge had
+     succeeded, whose tab was debited and whose reads were advanced was
+     re-driven through `completeSettlement` on the next cycle. **Driven, three
+     probes:** with the card still attached it healed (`pending → completed`,
+     one charge) — which is what the shipped test's comment asserted and why
+     this looked safe; with the card **detached** it took the no-default-card
+     arm and wrote `status='failed'`, `failure_reason='no_default_payment_method'`
+     and `card_action_required_at` onto a collected settlement; and while
+     `pending` the in-flight guard **refused the reader's next settlement**
+     (reconcile runs 00/08/16 UTC, so up to 8h). §0o.7b's `no_stripe_customer`
+     arm has the identical shape, and the same commit's 8h stuck-pending alert
+     could page on an already-settled row. Money was never lost or
+     double-charged — the row-stable key and duplicate-claim guard held in every
+     probe. **Fixed:** `status = 'completed'` rides the adopting UPDATE, guarded
+     `AND status = 'pending'`. +2 tests, and the shipped test's assertion
+     inverted from `'pending'` to `'completed'`; **mutation-verified** —
+     reverting turns exactly those three red.
+  2. **The free-allowance dial's literal survived in a SECOND query in the same
+     file** (§0o.9). `my-account.ts` builds the starting-credit row twice — the
+     entry list (fixed, reads `free_allowance_granted_pence`) and the summary
+     totals (`500 AS amount_pence`, untouched) — so on the first retune of
+     `free_allowance_pence` a reader's statement would contradict its own
+     summary. The dial being retunable is the entire point of the §0o.9 ship.
+     **The test was built to catch this and could not see it:** it scoped with
+     `issued.find(sql.includes("'free_allowance' AS category"))`, which matches
+     only the entry list, so its `not.toMatch(/\b500 AS amount_pence/)` never
+     inspected the query carrying the defect — and the route was 500ing at the
+     pagination count before it ever issued the summary, because the mock's
+     catch-all answered `rows: []` and the route threw on `rows[0]`. **Fixed:**
+     the column in both; the literal ban now runs over **every** issued
+     statement; a second case pins the summary specifically; and the mock
+     answers the count and summary aggregates so the route actually completes.
+     Mutation-verified — restoring the literal turns both cases red.
+  3. **The grant notification could not be acted on, and only the first one ever
+     fired** (§1.10). `subscription_offer` was absent from `NotificationType`,
+     from `getDestUrl`'s switch (→ `default: '#'`) and from `labels` (→ "sent
+     you a notification"), and the row carried no reference to WHICH offer —
+     `notifications` has a dedicated column per linkable entity and had none for
+     an offer. So the recipient saw an unlabelled notification pointing nowhere,
+     while the redeem lookup's 401 arm exists precisely so that "the recipient
+     arriving from their notification" has a way in. That path did not exist.
+     Worse, `idx_notifications_dedup` keys on (recipient, actor, type) plus
+     three COALESCEd references that are all NULL for a grant, and every
+     notification INSERT is a bare `ON CONFLICT DO NOTHING` — so a writer's
+     **second** gift to the same reader was silently dropped, and `DO NOTHING`
+     did not reopen the already-read first. **Fixed by migration 172:**
+     `notifications.offer_id` (FK, ON DELETE CASCADE) added to the dedup index,
+     the route binds it, the list route returns the offer's **code** (withheld
+     once revoked, so the row stops linking to a page that 404s), and the web
+     gains the type, the label ("sent you a gift subscription") and a
+     `/subscribe/:code` destination with the writer's profile as the
+     revoked-offer fallback. +1 route assertion and a new **DB-backed**
+     `notification-dedup-integration.test.ts` (4 tests, always-rollback) —
+     only Postgres can evaluate a unique index over COALESCE expressions.
+     **Mutation-verified against the live index:** dropping `offer_id` from it
+     turns the two-gifts case red while the three cases pinning that dedup still
+     works stay green.
+
+  **Validation:** payment 326/326, gateway 485/485, shared 117/117 (all with
+  DB-backed suites live), drift guard **7/7** after the schema.sql regen (172
+  files, 347 objects), ledger-adjacency + read-chargeable tripwires green,
+  hairlines clean, `tsc --noEmit` clean on both services, root ESLint **0
+  errors**, and `next build` clean. Open remainder → CONSOLIDATED-TODO §0p
+  (the migration-019 index discrepancy, the 170 deploy-ordering note, the
+  convert-route local-time note).
+
 - **2026-08-04 (SMALL-MONEY BATCH SHIPPED — §1.5 calendar arithmetic,
   §1.6 provisional unlocks, §1.10 grant-mode redemption)** — attack-order item 4,
   three of its four parts (§1.9's dev reconcile-ledger run closed 2026-07-16;

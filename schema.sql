@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict kTCPSmLlwmnEcXXbUYckMbPACHALcFbZ9XKOdCRm4ZoNoFA2bmgP1e1dhhA0VZb
+\restrict v8DLHW2iGPSLvRgrl5qjkwl3tQTRCmB3HJbhwVcjdXqjYXiXnyZzTLEQOY0oLDf
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1728,8 +1728,16 @@ CREATE TABLE public.notifications (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     note_id uuid,
     conversation_id uuid,
-    drive_id uuid
+    drive_id uuid,
+    offer_id uuid
 );
+
+
+--
+-- Name: COLUMN notifications.offer_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.notifications.offer_id IS 'The subscription offer this notification is about (grant-mode gifts). Part of idx_notifications_dedup, so two offers to the same reader from the same writer are two notifications rather than one.';
 
 
 --
@@ -4771,7 +4779,7 @@ CREATE INDEX idx_notes_reply_to ON public.notes USING btree (reply_to_event_id) 
 -- Name: idx_notifications_dedup; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree (recipient_id, actor_id, type, COALESCE(article_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(note_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(comment_id, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree (recipient_id, actor_id, type, COALESCE(article_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(note_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(comment_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(offer_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 
 --
@@ -4779,6 +4787,13 @@ CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree 
 --
 
 CREATE INDEX idx_notifications_note ON public.notifications USING btree (note_id) WHERE (note_id IS NOT NULL);
+
+
+--
+-- Name: idx_notifications_offer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notifications_offer ON public.notifications USING btree (offer_id) WHERE (offer_id IS NOT NULL);
 
 
 --
@@ -6620,6 +6635,14 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: notifications notifications_offer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_offer_id_fkey FOREIGN KEY (offer_id) REFERENCES public.subscription_offers(id) ON DELETE CASCADE;
+
+
+--
 -- Name: notifications notifications_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7487,7 +7510,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict kTCPSmLlwmnEcXXbUYckMbPACHALcFbZ9XKOdCRm4ZoNoFA2bmgP1e1dhhA0VZb
+\unrestrict v8DLHW2iGPSLvRgrl5qjkwl3tQTRCmB3HJbhwVcjdXqjYXiXnyZzTLEQOY0oLDf
 
 --
 
@@ -7662,4 +7685,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('168_read_events_publication_payout_id.sql'),
     ('169_free_allowance_granted.sql'),
     ('170_subscription_period_anchor.sql'),
-    ('171_grant_offer_codes.sql');
+    ('171_grant_offer_codes.sql'),
+    ('172_notifications_offer_id.sql');

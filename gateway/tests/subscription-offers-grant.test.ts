@@ -117,13 +117,23 @@ describe('POST /subscription-offers — a grant gets a code', () => {
 
     // The recipient is told the gift exists — without it the URL only travels
     // if the writer copies it out by hand, which is what left grants unused.
-    expect(
-      mockPoolQuery.mock.calls.some(
-        (c) =>
-          /INSERT INTO notifications/.test(c[0] as string) &&
-          (c[1] as unknown[])[0] === 'reader-1',
-      ),
-    ).toBe(true)
+    const notify = mockPoolQuery.mock.calls.find(
+      (c) =>
+        /INSERT INTO notifications/.test(c[0] as string) &&
+        (c[1] as unknown[])[0] === 'reader-1',
+    )
+    expect(notify).toBeDefined()
+
+    // …and it carries WHICH offer (migration 172). Mutant: drop offer_id from
+    // the INSERT — fails here. Without it the notification cannot be rendered
+    // as a link (`notifications` has a dedicated reference column per linkable
+    // entity and no free-text field), so the recipient saw an unlabelled "sent
+    // you a notification" pointing nowhere — while the redeem lookup's 401 arm
+    // exists precisely FOR "the recipient arriving from their notification".
+    // It is also what makes a SECOND gift to the same reader a second
+    // notification rather than an ON CONFLICT DO NOTHING no-op.
+    expect(notify![0] as string).toMatch(/INSERT INTO notifications[\s\S]*offer_id/)
+    expect(notify![1] as unknown[]).toContain('offer-1')
   })
 })
 

@@ -1026,9 +1026,24 @@ class SettlementService {
         // re-check makes a lost adopt race a clean defer: whoever stored an id
         // meanwhile (the resume sweep's dedupe, a concurrent delivery) owns the
         // row, and if it is this same PI the ordinary claim below dedupes.
+        // status = 'completed' rides the SAME update, and must: it is the
+        // transition completeSettlement makes when it stores the id, and the
+        // adopt is standing in for exactly that lost write. Left 'pending' the
+        // row is a settled settlement wearing an in-flight label, and the label
+        // is load-bearing twice over — reserveSettlement's in-flight guard reads
+        // `status = 'pending'` (so the reader's NEXT debt cannot be collected
+        // until a resume cycle, up to 8h), and resumePendingSettlements scans
+        // the same predicate and re-drives the row through completeSettlement.
+        // That re-drive is harmless while the card is still attached (the stable
+        // key replays and the flip lands) but NOT otherwise: with the card gone
+        // it takes the no-default-card arm and stamps 'failed' +
+        // card_action_required_at on a settlement whose charge succeeded and
+        // whose tab is already debited. Driven, 2026-08-05.
         const adopted = await client.query(
-          `UPDATE tab_settlements SET stripe_payment_intent_id = $1
-            WHERE id = $2 AND stripe_payment_intent_id IS NULL`,
+          `UPDATE tab_settlements
+              SET stripe_payment_intent_id = $1, status = 'completed'
+            WHERE id = $2 AND stripe_payment_intent_id IS NULL
+              AND status = 'pending'`,
           [paymentIntentId, settlement.id],
         );
         if (adopted.rowCount === 0) {

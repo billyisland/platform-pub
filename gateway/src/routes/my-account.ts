@@ -302,7 +302,13 @@ export async function myAccountRoutes(app: FastifyInstance) {
         // 3. Compute summary totals (since last settlement, unfiltered)
         const summarySQL = `
           WITH statement AS (
-            SELECT 'credit' AS type, 500 AS amount_pence, a.created_at AS date
+            -- The reader's OWN grant, never the dial and never a literal: the
+            -- entry list above reads the same column, and a literal here made
+            -- the two disagree the moment free_allowance_pence was retuned —
+            -- which is the only reason that dial was made live at all.
+            SELECT 'credit' AS type,
+                   a.free_allowance_granted_pence AS amount_pence,
+                   a.created_at AS date
             FROM accounts a WHERE a.id = $1
 
             UNION ALL

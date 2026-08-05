@@ -48,6 +48,27 @@ let issued: Array<{ sql: string; params: unknown[] }> = [];
 function query(sql: string, params: unknown[] = []) {
   issued.push({ sql, params });
 
+  // FIRST, because these two are the most specific statements the route issues
+  // and every generic branch below would shadow them: both wrap the whole
+  // statement CTE, so they match `FROM tab_settlements` (and more) long before
+  // reaching a branch that could answer their actual shape. Answered
+  // structurally — an empty statement: no rows, zero totals. Shape only;
+  // neither figure is what this file asserts on.
+  //
+  // Left to the catch-all's `rows: []` the route threw on `rows[0]` and
+  // returned 500 before ever issuing the summary query — which is why the
+  // summary's own copy of the starting-credit row went uninspected, and why
+  // the case below could not have caught the literal that shipped in it.
+  if (/COUNT\(\*\) AS total/.test(sql)) {
+    return Promise.resolve({ rows: [{ total: "0" }], rowCount: 1 });
+  }
+  if (/AS credits_total/.test(sql)) {
+    return Promise.resolve({
+      rows: [{ credits_total: "0", debits_total: "0" }],
+      rowCount: 1,
+    });
+  }
+
   if (sql.includes("FROM accounts a") && sql.includes("balance_pence")) {
     // Answer only the columns this SELECT actually names.
     expect(sql).toContain("free_allowance_granted_pence");
@@ -214,7 +235,39 @@ describe("the account statement's starting credit", () => {
     expect(stmt!.sql).toContain(
       "a.free_allowance_granted_pence AS amount_pence",
     );
-    expect(stmt!.sql).not.toMatch(/\b500 AS amount_pence/);
     expect([200, 404, 500]).toContain(res.statusCode);
+
+    // EVERY statement the route issues, not just the one carrying the category
+    // marker. This route builds the starting-credit row TWICE — once in the
+    // entry list, once in the summary totals — and scoping the ban to the first
+    // is how a literal survived in the second (found 2026-08-05: the entry list
+    // read the column while the summary still read `500`, so the two halves of
+    // one statement disagreed for any account whose grant was not 500 — i.e.
+    // for every account created after the first retune, which is the whole
+    // point of the dial). A copy is the failure mode here, so the assertion is
+    // over the whole set.
+    for (const q of issued) {
+      expect(q.sql).not.toMatch(/\b500 AS amount_pence/);
+    }
+  });
+
+  it("the summary totals credit the same column as the entry list", async () => {
+    // Mutant: `500 AS amount_pence` in summarySQL — fails here (and NOT in the
+    // test above, which is exactly what let it ship).
+    const app = Fastify();
+    await app.register(myAccountRoutes);
+    await app.inject({ method: "GET", url: "/my/account-statement" });
+
+    // The summary is the query that aggregates the CTE rather than selecting
+    // the presentation columns — no `AS category`, but it does total the rows.
+    const summary = issued.find(
+      (q) =>
+        q.sql.includes("WITH statement AS") &&
+        !q.sql.includes("'free_allowance' AS category"),
+    );
+    expect(summary).toBeDefined();
+    expect(summary!.sql).toContain(
+      "a.free_allowance_granted_pence AS amount_pence",
+    );
   });
 });

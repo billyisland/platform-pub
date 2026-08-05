@@ -53,6 +53,15 @@ function getDestUrl(n: Notification): string {
       return n.article?.slug ? `/article/${n.article.slug}` : '#'
     case 'pub_invite_received':
       return '/reader?overlay=dashboard'
+    case 'subscription_offer':
+      // The gift itself. Null once revoked (the gateway withholds the code), in
+      // which case there is nowhere useful to go — the writer's profile is the
+      // honest fallback, not a /subscribe URL that 404s.
+      return n.offer?.code
+        ? `/subscribe/${n.offer.code}`
+        : n.actor?.username
+          ? `/${n.actor.username}`
+          : '#'
     case 'pub_new_subscriber':
     case 'pub_member_joined':
     case 'pub_member_left':
@@ -82,6 +91,7 @@ function NotificationRow({ n, onActivate }: { n: Notification; onActivate: (n: N
     pub_member_joined: 'joined your publication',
     pub_member_left: 'left your publication',
     tribute_offer_received: 'wants to share earnings with you',
+    subscription_offer: 'sent you a gift subscription',
   }
 
   return (

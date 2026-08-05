@@ -24,6 +24,7 @@ export type NotificationType =
   | 'pub_member_joined'
   | 'pub_member_left'
   | 'tribute_offer_received'
+  | 'subscription_offer'
 
 export interface Notification {
   id: string
@@ -36,6 +37,9 @@ export interface Notification {
   comment: { id: string; content: string | null } | null
   conversationId?: string
   driveId?: string
+  /** Grant-mode subscription offers: the code addresses /subscribe/:code. Null
+   *  once the offer is revoked, so the row stops linking to a page that 404s. */
+  offer?: { id: string; code: string } | null
 }
 
 export const notifications = {

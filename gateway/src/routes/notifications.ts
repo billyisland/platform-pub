@@ -47,6 +47,9 @@ export async function notificationRoutes(app: FastifyInstance) {
       note_nostr_event_id: string | null
       conversation_id: string | null
       drive_id: string | null
+      offer_id: string | null
+      offer_code: string | null
+      offer_revoked: boolean | null
     }>(
       `SELECT
          n.id, n.type, n.read, n.created_at,
@@ -63,13 +66,17 @@ export async function notificationRoutes(app: FastifyInstance) {
          n.note_id,
          no.nostr_event_id    AS note_nostr_event_id,
          n.conversation_id,
-         n.drive_id
+         n.drive_id,
+         n.offer_id,
+         so.code              AS offer_code,
+         (so.revoked_at IS NOT NULL) AS offer_revoked
        FROM notifications n
        LEFT JOIN accounts a   ON a.id   = n.actor_id
        LEFT JOIN articles ar  ON ar.id  = n.article_id
        LEFT JOIN accounts aw  ON aw.id  = ar.writer_id
        LEFT JOIN comments c   ON c.id   = n.comment_id
        LEFT JOIN notes no     ON no.id  = n.note_id
+       LEFT JOIN subscription_offers so ON so.id = n.offer_id
        WHERE n.recipient_id = $1 AND n.type != 'new_message'
        ${cursorClause}
        ORDER BY n.created_at DESC
@@ -112,6 +119,14 @@ export async function notificationRoutes(app: FastifyInstance) {
         : null,
       conversationId: r.conversation_id ?? undefined,
       driveId: r.drive_id ?? undefined,
+      // The CODE, not the id: /subscribe/:code is the addressing scheme, and
+      // the client has no other way to reach the offer. Withheld once revoked —
+      // the redeem page would 404 on it, so a live-looking link to a dead offer
+      // is worse than a notification that simply no longer leads anywhere.
+      offer:
+        r.offer_id && r.offer_code && !r.offer_revoked
+          ? { id: r.offer_id, code: r.offer_code }
+          : null,
     }))
 
     return reply.status(200).send({ notifications, unreadCount, nextCursor })

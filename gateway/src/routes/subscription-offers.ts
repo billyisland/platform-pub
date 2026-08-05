@@ -101,11 +101,19 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
       // must not fail the offer. `notifications.type` is free text (no CHECK),
       // so this needs no migration.
       if (mode === 'grant' && recipientId) {
+        // offer_id (migration 172) is what makes this notification actionable:
+        // the client resolves it to the offer's code and links to /subscribe/
+        // :code. Without it the row could not be rendered as a link at all, and
+        // the recipient — the one person this offer exists for — had no way to
+        // reach it. It is also in idx_notifications_dedup, so a SECOND gift to
+        // the same reader from the same writer is a second notification; keyed
+        // on (recipient, actor, type) alone the bare ON CONFLICT DO NOTHING
+        // silently dropped it.
         pool.query(
-          `INSERT INTO notifications (recipient_id, actor_id, type)
-           VALUES ($1, $2, 'subscription_offer')
+          `INSERT INTO notifications (recipient_id, actor_id, type, offer_id)
+           VALUES ($1, $2, 'subscription_offer', $3)
            ON CONFLICT DO NOTHING`,
-          [recipientId, writerId],
+          [recipientId, writerId, offer.id],
         ).catch((err) => logger.warn({ err, offerId: offer.id }, 'Failed to insert subscription_offer notification'))
       }
 

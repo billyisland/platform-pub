@@ -294,6 +294,85 @@ Four-auditor adversarial review of the window's 55 commits (~7.6k insertions: th
 9c. ~~**LOW — `loadConfig`'s money-dial fallbacks are not parity-tested.**~~ — **FIXED 2026-08-04** (FIX-PROGRAMME). `shared/tests/config-fallback-parity.test.ts` is the third of the parity trio, same `diffAgainstDefaults` shape as the feed-rank and resonance twins, driving the **real** loader against an empty table (pool stubbed at the one SELECT, so it stays a no-DB suite test). All nine dials agree with the file today. Four tests — the parity diff, a seeded row beating its fallback, the `isNaN` arm, and a **completeness pin** that greps `int(map, '…')` out of `client.ts` so a tenth dial cannot ship unchecked — and **five mutants each killed**, including a drifted value in the SQL file itself, which is what proves the test reads the real file rather than a fixture. Docblock amended in the same commit: "six dials" was stale at nine, and "keep the two in step" now names the test that holds them there.
 10. **NOTEs, no action decided:** the writer/tribute packer's funding pool is narrower than ADR §3.3b's "fall back to any charge with room" — it locks only the claimed units' *preferred* settlement ids, so a unit whose own charge lacks room falls to the residual even when unrelated charges hold budget (deliberate-looking lock-set bound; document the narrowing in the ADR or widen at the §3.3d measurement); Connect onboarding's `refresh_url` lands on settings without regenerating an account link (51b0d4f8's own "breadcrumbs" note — queued tail, strictly better than the 404 it replaced); the shared demo article's excerpt diverges from the reader pane's opening after sentence one (`OmnivoreDemo.tsx:116` vs `ReaderDemo.tsx:216` — the pairing comment says rewrite both); `page.tsx:86-87`'s SR description promises "a photograph of a city skyline" the abstract `DemoPhoto` can't depict; §0n.5's "six times, not five" Halcyon count is itself stale after fc8ca95e — re-count when that batch is picked up.
 
+## 0p. 2026-08-05 commit audit — Aug 02–04 window (§0o fix batches, free-allowance dial, small-money batch)
+
+Audit of `88ed1e5a..1ce113e3` (13 commits). Baseline re-measured at HEAD before
+anything was read: payment **324/324** with the DB-backed suites genuinely
+running, shared 117, gateway 446, drift guard 7/7, both money tripwires green.
+**Three MEDIUMs found, all FIXED 2026-08-05 (migration 172) — see the
+FIX-PROGRAMME 2026-08-05 entry** (adopted settlements left `pending` and
+re-driven into a false card flag; the free-allowance literal surviving in the
+statement's *second* query; the grant notification being unlabelled, unlinkable
+and dedup-collapsed).
+
+**Verified clean, needn't be re-audited:** `recoverIdempotencyConflict` end to
+end (the create stamps both `customer` and `metadata.settlement_id`, so the
+list-match is sound; `list` never `.search`; window bounded by the row's own
+`created_at − 1h`; `MAX_PAGES` exhaustion leaves the absence unproven;
+truncation changes nothing; the dead-PI arm mirrors the terminal disposition; a
+failed immediate confirm defers to webhook/reconcile). §0o.2's first-sync arm —
+`lockFundingSources` refuses `allocated_pence IS NULL`, which is exactly what
+makes "pre-first-sync draws are refund-kind by construction" true, so the
+unconditional NULL arm is safe; refund-only add-back and snapshot-before-retrieve
+both err to under-draw as claimed. §0o.7a — `prorateCarveReversal(fee, net, 0,
+net) === fee`, so a fully-reversed child returns principal + fee and makes its
+charge whole, and the cumulative floor telescopes so staged partials cannot
+drift; the draw is correctly negative and accumulates (vs the refund draw's
+`GREATEST`, right for Stripe's cumulative `amount_refunded`). §0o.3 —
+`REVERSAL_OUTSTANDING_SQL` covers three of the four statuses in the table's
+CHECK, `failed` excluded deliberately and correctly. `subscription-period.ts` —
+month-index arithmetic before the clamp, one `setUTCFullYear(y,m,d)` so no
+intermediate 31-Feb normalises away, `daysInUtcMonth` via day-0-of-next-month,
+anchor clamped 1..31, annual leap case does not walk; all four write paths plus
+the renewal worker and `seed.ts` supply the anchor; migration 170's
+`current_period_start` backfill matches its stated reasoning. The redeem page's
+401 arm (login link with redirect back, grant-specific copy).
+
+**Open remainder:**
+
+1. **`idx_notifications_dedup` lost migration 019's effect to `schema.sql`, and
+   nothing can see it (PRE-EXISTING, found while fixing §0p.3).** Migration 019
+   made the index **partial** — `WHERE read = false`, so a read notification
+   frees its slot and a repeat event can notify again, which is the whole point
+   of that migration. `schema.sql` carries the **non-partial** form, and every
+   database is built from `schema.sql` then migrated forward, so 019 is seeded
+   as applied and never runs: **the partial behaviour has never been in force on
+   any DB, including prod** (confirmed against the live dev index). The drift
+   guard cannot catch this class — Check 3 is a name-grep over migration-created
+   objects, and the index name is present with a different definition; Checks
+   0/1/2 all pass. Live consequence: repeat notifications of the same
+   (recipient, actor, type, targets) are dropped forever rather than until read
+   — the exact bug 019 was written to fix. Migration 172 deliberately rebuilt
+   the index from the LIVE definition plus `offer_id`, so restoring the partial
+   clause is a **separate decision** (it changes dedup semantics for every
+   notification type) and is recorded here rather than smuggled in. Two things
+   to decide: whether to restore it, and whether Check 3 should compare index
+   *definitions* rather than mere presence.
+2. **NOTE — migration 170 is not backward-compatible, and §11's deploy
+   instruction reads as though it were.** `period_anchor_day` is `NOT NULL` with
+   no default (deliberate and well argued: a default would let a new write path
+   silently inherit "the 1st"). But old gateway code INSERTs into
+   `subscriptions` without the column, so between `migrate` and the new image
+   going live, subscribe / reactivate / comp **500s**. §11's entry carries
+   "Ordering matters here and is safe in one direction only… Migrate first, then
+   build", inherited verbatim from migration 169's entry where it was true
+   *because* that column had a DEFAULT. Migrate-first is still the right order
+   for 170 — it is simply not a no-impact window. Near-zero exposure on a closed
+   beta with no subscription volume, and it has already passed; the point is to
+   stop the rule being generalised. **A NOT NULL column with no default makes
+   the deploy window breaking in BOTH directions, and the entry should say which
+   kind it is.**
+3. **NOTE — `subscription-convert.ts:140` computes its period end in local
+   time.** `new Date(now.getFullYear(), now.getMonth() + 1, 1)` is the local
+   constructor, while the comment `a94947ca` added asserts "the anchor is the
+   1st and every later renewal lands there". No `TZ` is set in
+   `docker-compose.yml` so containers run UTC and it holds today; on a non-UTC
+   TZ the stored end lands on the previous day in UTC while the anchor says 1
+   (it self-corrects at the first renewal, having run ~1 day long). The line is
+   pre-existing and the route is flag-gated off (`SUBSCRIPTION_CONVERT_ENABLED`,
+   §0e item 4). Either `Date.UTC` it or drop the claim — batch with whatever
+   revives that route.
+
 ---
 
 ## 1. Money & payments (highest stakes)
@@ -476,6 +555,49 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 - **Omnibus Phase 8** external-content rendering legal review (the `/extract` reader exists; the DMCA process item stands if that surface widens).
 
 ## 11. Verification debt (work is done, proof isn't)
+
+- **PENDING PROD DEPLOY, opened 2026-08-05 (§0p fix batch)** — *a claim to
+  check, not prod's state; measure the box first (the four cheap sources below),
+  because this entry's predecessors were stale four times.* Master has gained
+  **migration 172** (`notifications.offer_id` + the rebuilt
+  `idx_notifications_dedup`), **gateway** code (`my-account.ts`,
+  `notifications.ts`, `subscription-offers.ts`), **payment-service** code
+  (`settlement.ts`) and **web** code (the notification type, label and
+  destination). **No `shared/` change**, so this is NOT the everything-is-stale
+  shape: `gateway`, `payment` and `web` only.
+
+  **Ordering is safe in both directions here, unlike 170** (see §0p.2): the new
+  column is nullable with no constraint on existing writes, so old code runs
+  fine against a migrated DB and new code carries the column the migration
+  supplies. Migrate first by hand anyway (`npx tsx shared/src/db/migrate.ts` —
+  migrations never auto-run), then rebuild the three services with `|| break`;
+  never a bare `docker compose build` on the 4GB box.
+
+  **Markers** (each a string the change INTRODUCES): `offer_id` in gateway's
+  `dist/routes/subscription-offers.js`; `status = 'completed'` adjacent to
+  `stripe_payment_intent_id IS NULL` in payment's `dist/services/settlement.js`;
+  `172_notifications_offer_id.sql` as the last row of `_migrations`. For **web**
+  use a CHANGED chunk hash, never an identifier grep.
+
+  **One data check worth running once after the deploy**, since the settlement
+  fix corrects a state that could already exist on prod: any settlement left
+  `pending` with a charge id against it was collected but mislabelled, and the
+  resume sweep will now heal it rather than re-drive it — but a row already
+  stamped `failed` by the old path needs an eye.
+
+  ```sql
+  SELECT id, status, failure_reason, created_at
+    FROM tab_settlements
+   WHERE stripe_charge_id IS NOT NULL
+     AND status <> 'completed'
+   ORDER BY created_at DESC;
+  ```
+
+  Expected empty on a platform with this little settlement volume; a `failed`
+  row with a charge id is a collected settlement wearing the wrong label and
+  should be corrected to `completed` by hand (the money and the tab are already
+  right — only the row's status and any `card_action_required_at` it raised are
+  wrong).
 
 - **PENDING PROD DEPLOY, opened 2026-08-04 (small-money batch)** — *a claim to check, not prod's state; measure the box first, per the lesson two entries down.* Master has gained the small-money batch: **migrations 170 and 171**, a **`shared/` change** (`shared/src/lib/subscription-period.ts`, new), **gateway** code (the four subscription write paths, the renewal worker, `subscription-offers.ts`) and **web** code (the redeem page + the offer API types). A `shared/` change makes **every** backend image stale regardless of whether its own directory moved, so the deploy shape is the standard full one: **run `npx tsx shared/src/db/migrate.ts` by hand first** (migrations never auto-run), then rebuild each service in a loop with `|| break` — **never a bare `docker compose build`** on the 4GB box.
 
