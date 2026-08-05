@@ -132,6 +132,7 @@ Partial indexes (with WHERE clauses) encode the query patterns the application a
 | `idx_ext_sources_next_fetch`   | `external_sources`    | `(last_fetched_at)`        | `is_active = true`                               | Poll scheduler picks next source to fetch           |
 | `idx_ext_sources_protocol`     | `external_sources`    | `(protocol)`               | `is_active = true`                               | Protocol-filtered source listing                    |
 | `idx_ext_sources_orphaned`     | `external_sources`    | `(orphaned_at)`            | `orphaned_at IS NOT NULL`                        | Orphan cleanup cron                                 |
+| `idx_notifications_dedup`      | `notifications`       | UNIQUE `(recipient_id, actor_id, type, COALESCE(article_id/note_id/comment_id/offer_id, sentinel))` | `read = false` | **At most one UNREAD notification per tuple** — reading one frees its slot so a repeat event notifies again. Every `INSERT INTO notifications` is a bare `ON CONFLICT DO NOTHING`, so this index alone decides what collapses. Partial only from **migration 173 (2026-08-05)**: migration 019 wrote the clause in 2023 but was seeded as applied by `schema.sql`, which carried the non-partial form, so it never ran on any DB. `actor_id` is deliberately **not** COALESCEd (NULL actors must never collide — `pledge_fulfilled`) |
 
 ### Sparse/nullable column indexes
 

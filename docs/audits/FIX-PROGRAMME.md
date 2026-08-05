@@ -23,6 +23,91 @@ starts.
 
 ## Progress
 
+- **2026-08-05 (§0p.1 — the dedup index that has been wrong on every database
+  for three years, and the guard that could not see it)** — migration 019 made
+  `idx_notifications_dedup` PARTIAL (`WHERE read = false`) so that reading a
+  notification frees its unique slot and the next occurrence of the same event
+  can notify again. `schema.sql` carries the non-partial form, and every DB is
+  built from `schema.sql` — which also seeds `_migrations` with every filename,
+  so `migrate.ts` skips 019 forever. **019's effect has never been in force
+  anywhere, including production**, and the bug it was written to fix has been
+  live the whole time. Found while auditing migration 172, which deliberately
+  rebuilt the index from the LIVE definition so that restoring the clause would
+  be its own decision rather than something smuggled in.
+
+  **The fix — migration 173, the partial clause only.** Measured against all
+  twenty `INSERT INTO notifications` sites (every one a bare `ON CONFLICT DO
+  NOTHING` with no inference target, so this index alone decides what
+  collapses): **no change** for the six types carrying a reference column unique
+  to the event (`new_reply`'s own `comment_id`, `new_quote` and note-borne
+  `new_mention`, `subscription_offer`, `tribute_offer_received`,
+  `pledge_fulfilled`); **fixed** for the eight deduping on `(recipient, actor,
+  type)` alone, each of which was ONE NOTIFICATION EVER — `new_follower`,
+  `new_subscriber` (three sites), `pub_new_subscriber`, `comp_subscription`,
+  `pub_invite_received`, `pub_member_joined`, `pub_member_left`, plus
+  `new_mention` raised from `replies.ts` (which keys on the target being replied
+  to, not the reply, so a second mention of you in one thread was dropped). A
+  reader who subscribed, cancelled and resubscribed was announced to the writer
+  once, for all time; a writer re-inviting someone who declined could never tell
+  them. The ceiling is bounded and is the property worth having: **at most one
+  UNREAD notification per tuple**. Safe on existing data by construction — a
+  partial unique index constrains a subset of what the full one already did, so
+  no de-duplication pass was needed.
+
+  **019 was not wholly right, and is superseded rather than restored.** It also
+  wrapped `actor_id` in `COALESCE(actor_id, sentinel)`. The live index leaves it
+  bare, so NULL actors never collide — and `pledge_fulfilled` is the one
+  actor-less type, meaning 019's COALESCE would tell a reader ONCE EVER that any
+  drive they backed was fulfilled, across every drive. The live definition is
+  right about that; only the `WHERE` clause came back.
+
+  **Drift-guard Check 3b — index definition equivalence** (`check-schema-drift.sh`,
+  now seven checks). Check 3 proves an index's NAME is in `schema.sql`; 3b proves
+  it MEANS the same thing. No SQL parsing — Postgres canonicalises both sides:
+  execute the migration's own CREATE under a probe name inside an always-rolled-
+  back transaction against the Check-1 database, then compare `pg_get_indexdef()`
+  of probe and real with the two names stripped. **Indexes only, and that is a
+  property of indexes rather than a shortcut**: an index is created whole and
+  never ALTERed (only renamed, which the survivor fold already resolves), so its
+  migration CREATE is still its whole definition today — a table's is not, and
+  the same comparison would false-positive on every table the chain has touched.
+  It compares the LAST surviving CREATE per name, which is also why it cannot
+  retro-detect 019 at HEAD (172 rebuilt the index, making the live form the
+  chain's own answer); it would have been red for the whole 019..172 window.
+  213 indexes probed, none unevaluated.
+
+  **Validation — mutated, not merely run.** Guard: hand-editing `schema.sql`
+  back to the non-partial form reproduces the 019 signature exactly — Checks
+  0/1/3 green, **Check 2 green too (verified by running the round-trip against
+  the mutated file, not assumed)**, and only 3b red, naming the clause.
+  Behaviour: four new cases in the DB-backed `notification-dedup-integration`
+  suite (repeat-after-read notifies; repeat-while-unread still collapses, so the
+  fix cannot read as "dedup off"; `read` is per row, not a global switch; an
+  actor-less notification never collapses). Mutant 1 — drop `WHERE read = false`
+  from the live index — fails exactly the first and third and nothing else.
+  Mutant 2 — restore 019's `COALESCE(actor_id, …)` — fails exactly the fourth.
+  Full suites after: gateway **489/489**, payment **326/326**, shared
+  **117/117**, drift guard **8/8**, both money tripwires green.
+
+  **Two live defects found in passing, NOT fixed here** (queued, CONSOLIDATED-TODO
+  §10): `drives.ts`'s `drive_funded` and `commission_request` inserts carry no
+  `ON CONFLICT` at all, so a collision raises 23505 — and `drive_funded`'s sits
+  inside the pledge `withTransaction`, aborting the pledge. Both behind
+  `PLEDGES_ENABLED`. The partial clause narrows the window; it does not close it.
+
+  **The docs asserted the bug as a feature, which is how it survived.**
+  `DEPLOYMENT.md`'s migration table read "019 | Fix notification dedup (partial
+  unique `WHERE read = false`)" — a flat statement of a behaviour that had never
+  once been in force. Anyone checking whether repeat notifications worked would
+  have read that row and stopped. Corrected, along with 014's "superseded by
+  019" (014's form is what every database actually ran). The table also **stops
+  at 101 while the chain is at 173**, so it now carries a header saying so, and
+  saying the sharper thing: *a present row is not a behaviour in force*. Same
+  correction logged in `SCHEMA-REFERENCE-2026-05.md` §2, which had no row for
+  this index at all and now records both the clause and why `actor_id` is
+  deliberately not COALESCEd. This is the "a comment is not a state" class again
+  (cf. the orphaned traffology containers, 2026-08-04).
+
 - **2026-08-05 (§0p COMMIT AUDIT — Aug 02–04 window — three MEDIUMs found and
   fixed same-day)** — audit of `88ed1e5a..1ce113e3` (13 commits: the §0o.1
   idempotency recovery, §0o.2 sync double-count, §0o.3 pending-sibling flip,

@@ -2,7 +2,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import pg from "pg";
 
 // =============================================================================
-// idx_notifications_dedup × grant-mode subscription offers (migration 172).
+// idx_notifications_dedup — what it collapses, and what it must not.
+//
+// Two migrations are pinned here. 172 widened the index with offer_id; 173 made
+// it PARTIAL (`WHERE read = false`), which is migration 019's intent finally
+// reaching a database: 019 was seeded as applied by schema.sql and so never ran
+// anywhere, leaving "repeat events silently fail to notify" live for three
+// years. Both live in one file because they are one index, and because the
+// interesting risk is that fixing either quietly stops it deduping at all.
 //
 // Every `INSERT INTO notifications` in the codebase is a bare
 // `ON CONFLICT DO NOTHING` — 22 sites, none naming an inference target — so
@@ -109,6 +116,105 @@ describe.skipIf(!DB_URL)("notification dedup × subscription offers", () => {
     // Widening the index must not quietly stop deduping everything else.
     expect(await notify(null)).toBe(1);
     expect(await notify(null)).toBe(0);
+  });
+
+  // ===========================================================================
+  // Migration 173 — the partial clause.
+  //
+  // Eight notification types dedup on (recipient, actor, type) alone, carrying
+  // no reference column at all: new_follower, new_subscriber, comp_subscription,
+  // pub_invite_received, pub_member_joined/left, pub_new_subscriber. Without the
+  // partial clause each is ONE NOTIFICATION EVER — a reader who subscribes,
+  // cancels and resubscribes is announced to the writer once, for all time.
+  // new_follower stands for the set; the index cannot tell them apart.
+  // ===========================================================================
+  describe("the partial clause (migration 173)", () => {
+    /** An actor-only notification, exactly as follows.ts raises it. */
+    async function follow(): Promise<number> {
+      const res = await client.query(
+        `INSERT INTO notifications (recipient_id, actor_id, type)
+         VALUES ($1, $2, 'new_follower')
+         ON CONFLICT DO NOTHING`,
+        [writer, reader],
+      );
+      return res.rowCount ?? 0;
+    }
+
+    async function markAllRead(): Promise<void> {
+      await client.query(
+        `UPDATE notifications SET read = true WHERE recipient_id = $1 AND read = false`,
+        [writer],
+      );
+    }
+
+    it("a repeat event notifies again once the first is read", async () => {
+      // Mutant: drop `WHERE read = false` from the index — the second insert
+      // returns rowCount 0 and this fails, which is the behaviour that shipped
+      // from migration 014 until 173.
+      expect(await follow()).toBe(1);
+      await markAllRead();
+      expect(await follow()).toBe(1);
+
+      const { rows } = await client.query<{ cnt: string }>(
+        `SELECT COUNT(*) AS cnt FROM notifications
+          WHERE recipient_id = $1 AND type = 'new_follower'`,
+        [writer],
+      );
+      expect(parseInt(rows[0].cnt, 10)).toBe(2);
+    });
+
+    it("but a repeat while the first is still UNREAD collapses", async () => {
+      // The ceiling the partial clause buys is "at most one UNREAD per tuple",
+      // not "dedup off". A test that only asserted the case above would pass
+      // just as well against a dropped index.
+      expect(await follow()).toBe(1);
+      expect(await follow()).toBe(0);
+      expect(await follow()).toBe(0);
+    });
+
+    it("reading only the recipient's own rows frees only their slot", async () => {
+      // `read` is per row, so the clause must not be readable as a global
+      // switch: another recipient's unread notification from the same actor is
+      // untouched by this one being read.
+      const other = await account("notif-dedup-other");
+      await client.query(
+        `INSERT INTO notifications (recipient_id, actor_id, type)
+         VALUES ($1, $2, 'new_follower') ON CONFLICT DO NOTHING`,
+        [other, reader],
+      );
+      expect(await follow()).toBe(1);
+      await markAllRead(); // marks `writer`'s rows only
+
+      expect(await follow()).toBe(1); // freed
+      const res = await client.query(
+        `INSERT INTO notifications (recipient_id, actor_id, type)
+         VALUES ($1, $2, 'new_follower') ON CONFLICT DO NOTHING`,
+        [other, reader],
+      );
+      expect(res.rowCount).toBe(0); // still unread, still held
+    });
+
+    it("an actor-less notification never collapses, in either read state", async () => {
+      // 173 deliberately did NOT restore migration 019's other change,
+      // COALESCE(actor_id, sentinel). `pledge_fulfilled` is the one actor-less
+      // type; under that COALESCE a reader would be told ONCE EVER that any
+      // drive they backed was fulfilled, across every drive. Bare actor_id
+      // leaves NULLs distinct in a unique index, which is what keeps it working.
+      //
+      // Mutant: wrap actor_id in COALESCE(actor_id, '0000…'::uuid) — the second
+      // insert returns 0 and this fails.
+      const drive = async () =>
+        (
+          await client.query(
+            `INSERT INTO notifications (recipient_id, type)
+             VALUES ($1, 'pledge_fulfilled') ON CONFLICT DO NOTHING`,
+            [reader],
+          )
+        ).rowCount ?? 0;
+
+      expect(await drive()).toBe(1);
+      expect(await drive()).toBe(1);
+    });
   });
 
   it("a hard-deleted offer takes its notification with it", async () => {

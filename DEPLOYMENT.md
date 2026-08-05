@@ -403,6 +403,8 @@ Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviou
 
 ### Migrations
 
+**This table stops at 101 and the chain is at 173** (noted 2026-08-05) — it is a partial index, not a manifest. `ls migrations/` is the authority on what exists, and a migration's own header is the authority on what it does. Two things follow, both of which have already bitten: do not read an absent row as an absent migration, and **do not read a present row as a behaviour in force** — a migration `schema.sql` seeds as applied never runs (see 019 below, and the drift guard's Checks 3/3b, which exist for exactly that gap).
+
 | Migration | Purpose |
 | --------- | ------- |
 | 001 | Email column on accounts; `magic_links` |
@@ -418,12 +420,12 @@ Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviou
 | 011 | `ciphertext` on `vault_keys` |
 | 012 | `note_id` on notifications |
 | 013 | Quoted-note excerpt fields on `notes` |
-| 014 | Notification dedup index (superseded by 019) |
+| 014 | Notification dedup index — the form every DB actually ran, until 173 |
 | 015 | `access_mode` on articles; unlock_type expansion |
 | 016 | `direct_messages` (NIP-17 DMs) |
 | 017 | `pledge_drives`, `pledges` |
 | 018 | ON DELETE clauses for FKs in 016–017 |
-| 019 | Fix notification dedup (partial unique `WHERE read = false`) |
+| 019 | Fix notification dedup (partial unique `WHERE read = false`) — **written, but NEVER RAN on any database**: `schema.sql` seeds it as applied while carrying the non-partial form, so migrate.ts skipped it for three years. Its effect finally arrives in **173** (2026-08-05) |
 | 020 | Notification routing columns |
 | 021 | Missing ON DELETE clauses |
 | 022 | Composite index on read_events |

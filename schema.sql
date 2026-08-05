@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict v8DLHW2iGPSLvRgrl5qjkwl3tQTRCmB3HJbhwVcjdXqjYXiXnyZzTLEQOY0oLDf
+\restrict YFcbuXU3pnPmJWzCiWNBPdsfm6eDyatiAMVQebLygZ0e5gWgSi8EeYSriPMMS0q
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -4779,7 +4779,14 @@ CREATE INDEX idx_notes_reply_to ON public.notes USING btree (reply_to_event_id) 
 -- Name: idx_notifications_dedup; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree (recipient_id, actor_id, type, COALESCE(article_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(note_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(comment_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(offer_id, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree (recipient_id, actor_id, type, COALESCE(article_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(note_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(comment_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(offer_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE (read = false);
+
+
+--
+-- Name: INDEX idx_notifications_dedup; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON INDEX public.idx_notifications_dedup IS 'At most one UNREAD notification per (recipient, actor, type, targets). Reading a notification frees its slot so the next occurrence of the same event notifies again — migration 019''s intent, in force from 173. Every INSERT INTO notifications is a bare ON CONFLICT DO NOTHING, so this index alone decides what collapses.';
 
 
 --
@@ -7510,7 +7517,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict v8DLHW2iGPSLvRgrl5qjkwl3tQTRCmB3HJbhwVcjdXqjYXiXnyZzTLEQOY0oLDf
+\unrestrict YFcbuXU3pnPmJWzCiWNBPdsfm6eDyatiAMVQebLygZ0e5gWgSi8EeYSriPMMS0q
 
 --
 
@@ -7686,4 +7693,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('169_free_allowance_granted.sql'),
     ('170_subscription_period_anchor.sql'),
     ('171_grant_offer_codes.sql'),
-    ('172_notifications_offer_id.sql');
+    ('172_notifications_offer_id.sql'),
+    ('173_notification_dedup_partial.sql');

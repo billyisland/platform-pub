@@ -330,24 +330,26 @@ the renewal worker and `seed.ts` supply the anchor; migration 170's
 
 **Open remainder:**
 
-1. **`idx_notifications_dedup` lost migration 019's effect to `schema.sql`, and
-   nothing can see it (PRE-EXISTING, found while fixing §0p.3).** Migration 019
-   made the index **partial** — `WHERE read = false`, so a read notification
-   frees its slot and a repeat event can notify again, which is the whole point
-   of that migration. `schema.sql` carries the **non-partial** form, and every
-   database is built from `schema.sql` then migrated forward, so 019 is seeded
-   as applied and never runs: **the partial behaviour has never been in force on
-   any DB, including prod** (confirmed against the live dev index). The drift
-   guard cannot catch this class — Check 3 is a name-grep over migration-created
-   objects, and the index name is present with a different definition; Checks
-   0/1/2 all pass. Live consequence: repeat notifications of the same
-   (recipient, actor, type, targets) are dropped forever rather than until read
-   — the exact bug 019 was written to fix. Migration 172 deliberately rebuilt
-   the index from the LIVE definition plus `offer_id`, so restoring the partial
-   clause is a **separate decision** (it changes dedup semantics for every
-   notification type) and is recorded here rather than smuggled in. Two things
-   to decide: whether to restore it, and whether Check 3 should compare index
-   *definitions* rather than mere presence.
+1. ~~**`idx_notifications_dedup` lost migration 019's effect to `schema.sql`,
+   and nothing can see it**~~ — **DONE 2026-08-05, both halves** (migration 173
+   + drift-guard Check 3b; full record in FIX-PROGRAMME). The partial clause is
+   restored, 019's *other* change (`COALESCE(actor_id, …)`) deliberately is not
+   — it would collapse `pledge_fulfilled` to one notification ever across every
+   drive — and Check 3b now compares index **definitions** by executing the
+   migration's own CREATE under a probe name and diffing `pg_get_indexdef()`.
+   Both mutation-verified. **Migration 173 is pending prod deploy** (§11).
+
+   Two things worth carrying forward. **(a) The guard's new check cannot see the
+   bug that motivated it, and that is correct** — 3b compares the LAST surviving
+   CREATE, and migration 172 rebuilt the index from the live definition, making
+   the live form the chain's own answer. It would have been red for the whole
+   019..172 window; it guards the next one. **(b) Definition drift stays
+   indexes-only on purpose.** An index is created whole and never ALTERed, so
+   its migration CREATE is still its whole definition today. A table's is not —
+   `CREATE TABLE` accumulates later ADD COLUMN / ALTER TYPE / ADD CONSTRAINT —
+   so the same comparison would false-positive on every table the chain has ever
+   touched. Column-level drift therefore remains the guard's residual gap,
+   backed only by the pg_dump-and-re-append discipline.
 2. **NOTE — migration 170 is not backward-compatible, and §11's deploy
    instruction reads as though it were.** `period_anchor_day` is `NOT NULL` with
    no default (deliberate and well argued: a default would let a new write path
@@ -547,7 +549,7 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 - **Trust graph** (behind `TRUST_SYSTEM_ENABLED`; Phases 5–6 gated on scale) and the dormant PipPanel/PipTrigger. Known spec gaps parked with it: Layer 4 "valued set" signals hand-waved; Layer 1 signals for external authors not persisted by adapters.
 - **Traffology** (containers down, beacon off; Phases 2–4 with it). Its untested aggregation math (Payments ADR §1.3(4), archived) rides with it — write those tests only if traffology comes back.
-- **Pledge drives + commissioning** (behind `PLEDGES_ENABLED`, parked 2026-07-13; not deleted, revivable). Its ledger/tab fulfilment tests (Payments ADR §1.3(2), archived) ride with it — write them only on resurrection.
+- **Pledge drives + commissioning** (behind `PLEDGES_ENABLED`, parked 2026-07-13; not deleted, revivable). Its ledger/tab fulfilment tests (Payments ADR §1.3(2), archived) ride with it — write them only on resurrection. **Two defects found 2026-08-05 (§0p.1 work) that must be fixed BEFORE it is unparked, not after:** `drives.ts`'s `drive_funded` (~:376) and `commission_request` (~:134) are the only two `INSERT INTO notifications` in the codebase with **no `ON CONFLICT` clause at all**, so a dedup collision raises 23505 — and `drive_funded`'s sits inside the pledge `withTransaction`, so the unique violation **aborts the pledge itself** (the same pledger funding a second drive by the same creator). Migration 173's partial clause narrows the window to "while the first is unread"; it does not close it. Fix is one clause each, but it changes a money path's failure mode, so it belongs with the resurrection.
 - **Network-concierge Phase 4** (see §2.3).
 - **Content spine / federation** (item 2 Plan C) — deferred to the self-host effort with the genesis migration.
 - **Feed-ingest Slices 4–7**: Telegram (demand-gated), Farcaster + Matrix (infrastructure-gated), AP inbox (posture-gated).
@@ -560,24 +562,35 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
   check, not prod's state; measure the box first (the four cheap sources below),
   because this entry's predecessors were stale four times.* Master has gained
   **migration 172** (`notifications.offer_id` + the rebuilt
-  `idx_notifications_dedup`), **gateway** code (`my-account.ts`,
-  `notifications.ts`, `subscription-offers.ts`), **payment-service** code
-  (`settlement.ts`) and **web** code (the notification type, label and
-  destination). **No `shared/` change**, so this is NOT the everything-is-stale
-  shape: `gateway`, `payment` and `web` only.
+  `idx_notifications_dedup`), **migration 173** (that index made partial —
+  §0p.1), **gateway** code (`my-account.ts`, `notifications.ts`,
+  `subscription-offers.ts`), **payment-service** code (`settlement.ts`) and
+  **web** code (the notification type, label and destination). **No `shared/`
+  change**, so this is NOT the everything-is-stale shape: `gateway`, `payment`
+  and `web` only.
 
-  **Ordering is safe in both directions here, unlike 170** (see §0p.2): the new
-  column is nullable with no constraint on existing writes, so old code runs
+  **Ordering is safe in both directions here, unlike 170** (see §0p.2): 172's
+  new column is nullable with no constraint on existing writes, so old code runs
   fine against a migrated DB and new code carries the column the migration
-  supplies. Migrate first by hand anyway (`npx tsx shared/src/db/migrate.ts` —
-  migrations never auto-run), then rebuild the three services with `|| break`;
-  never a bare `docker compose build` on the 4GB box.
+  supplies; **173 is DDL only and needs no code at all** — every notification
+  insert is a bare `ON CONFLICT DO NOTHING`, which a partial unique index serves
+  unchanged, so it takes effect the moment it is applied and no service rebuild
+  is owed for it. Migrate first by hand anyway (`npx tsx
+  shared/src/db/migrate.ts` — migrations never auto-run), then rebuild the three
+  services with `|| break`; never a bare `docker compose build` on the 4GB box.
 
   **Markers** (each a string the change INTRODUCES): `offer_id` in gateway's
   `dist/routes/subscription-offers.js`; `status = 'completed'` adjacent to
   `stripe_payment_intent_id IS NULL` in payment's `dist/services/settlement.js`;
-  `172_notifications_offer_id.sql` as the last row of `_migrations`. For **web**
-  use a CHANGED chunk hash, never an identifier grep.
+  `173_notification_dedup_partial.sql` as the last row of `_migrations`. For
+  **web** use a CHANGED chunk hash, never an identifier grep. 173 additionally
+  has a *functional* marker, which is the better one because it reads the effect
+  rather than the bookkeeping:
+
+  ```sql
+  SELECT indexdef LIKE '%WHERE (read = false)%' AS partial_in_force
+    FROM pg_indexes WHERE indexname = 'idx_notifications_dedup';
+  ```
 
   **One data check worth running once after the deploy**, since the settlement
   fix corrects a state that could already exist on prod: any settlement left

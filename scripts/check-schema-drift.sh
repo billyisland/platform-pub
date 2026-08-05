@@ -13,7 +13,7 @@
 # re-runs old migrations against the already-built schema and dies. This guard
 # turns "remember to regenerate schema.sql" into a checkable invariant.
 #
-# It runs six checks, cheapest first:
+# It runs seven checks, cheapest first:
 #   0. SEED COMPLETENESS (no DB): schema.sql's _migrations seed lists exactly
 #      the files in migrations/.
 #   4a. NO CONFIG SEEDS IN MIGRATIONS (no DB): only the closed historical
@@ -35,6 +35,14 @@
 #      against the (consistent-but-incomplete) schema.sql. Runs alongside Check 0.
 #   1. NO-OP MIGRATE (DB): a fresh DB built from schema.sql, then run through the
 #      real migrate.ts, reports "All migrations already applied."
+#   3b. INDEX DEFINITION (DB): Check 3 proves an index's NAME is in schema.sql;
+#      3b proves it MEANS the same thing, by executing the migration's own CREATE
+#      under a probe name and comparing pg_get_indexdef() with the real one. This
+#      is the residual gap Check 3 leaves — a seeded migration whose object is
+#      present under the same name with a DIFFERENT definition, which 0/1/2/3 all
+#      pass green on (migration 019's partial `idx_notifications_dedup` was never
+#      in force on any DB, for three years). See the block above the check for
+#      why the scope is indexes and only indexes.
 #   2. CANONICAL DUMP (DB): loading schema.sql and dumping it back reproduces
 #      schema.sql exactly. This enforces that schema.sql is a clean pg_dump and
 #      not hand-edited into a non-canonical state (the failure mode behind the
@@ -52,6 +60,11 @@
 #   - COLUMN-level drift (ALTER TABLE … ADD COLUMN whose column is missing from
 #     schema.sql) is NOT covered — a possible Phase 2. The mechanical
 #     pg_dump-and-re-append discipline still backs that gap.
+#   - DEFINITION drift is covered for INDEXES only, by Check 3b (below). TABLE /
+#     TYPE / FUNCTION / TRIGGER / VIEW definitions are still presence-only:
+#     unlike an index, their CREATE is not their whole definition (later ALTERs
+#     and CREATE OR REPLACE accumulate), so the same comparison would
+#     false-positive on every object the chain has ever touched.
 #   - FUNCTION bodies are checked for PRESENCE by name only, not for content.
 #   - Presence is a name-grep in schema.sql; a genuinely-reviewed exotic CREATE
 #     form can be excused with a trailing `drift-ok` marker on the line.
@@ -82,7 +95,9 @@
 #         POSTGRES_PASSWORD  DB password; falls back to .env if unset (CI sets it)
 #         PG_HOST_PORT       host port the container's 5432 is published on (default 5432)
 # Exit:   0 = consistent, 1 = drift (with a diff), 2 = environment not ready,
-#         3 = a migration-created object is missing from schema.sql (Check 3)
+#         3 = schema.sql disagrees with the migration chain about an object —
+#             missing by name (Check 3) or present with a different definition
+#             (Check 3b)
 # =============================================================================
 set -euo pipefail
 
@@ -275,6 +290,134 @@ if ! printf '%s\n' "$migrate_out" | grep -q "All migrations already applied"; th
   die "migrate.ts found pending migrations on a schema.sql-built DB — schema.sql is stale relative to migrations/"
 fi
 grn "✓ Check 1: migrate.ts is a no-op on a schema.sql-built DB"
+
+# =============================================================================
+# Check 3b — index DEFINITION equivalence: for every surviving migration-created
+# index, the migration's own CREATE and schema.sql's must mean the same thing.
+#
+# THE BUG THIS CLOSES, which every other check passes green on. Migration 019
+# rebuilt `idx_notifications_dedup` as a PARTIAL index (`WHERE read = false`);
+# schema.sql carried the non-partial form. Because schema.sql seeds _migrations
+# with every filename, 019 never ran on any database, so the partial behaviour
+# was never in force anywhere — for three years, including production. Check 3
+# is a name-grep and the name was present; Check 0 matched; Check 1's migrate
+# was a no-op precisely BECAUSE 019 was seeded; Check 2 round-tripped the wrong
+# definition faithfully. Nothing could see it (found by hand, 2026-08-05;
+# migration 173 restored the clause).
+#
+# THE MECHANISM. No SQL parsing: Postgres canonicalises both sides. Execute the
+# migration's CREATE under a probe name inside a transaction that always rolls
+# back, then compare `pg_get_indexdef()` of the probe against that of the real
+# index, with the two names stripped. Exact, and free of the normalisation
+# guesswork a text diff would need (`WHERE read = false` vs `WHERE (read =
+# false)`, casts, `USING btree`).
+#
+# SCOPE — indexes ONLY, and that is a property of indexes rather than a
+# shortcut. An index is created whole and is never ALTERed (only renamed, which
+# the survivor fold already resolves), so its migration CREATE is still its
+# whole definition today. A table's is not: `CREATE TABLE` accumulates later
+# ADD COLUMN / ALTER TYPE / ADD CONSTRAINT, so comparing it against schema.sql
+# would false-positive on every table the chain has ever touched. Same for
+# functions and views (CREATE OR REPLACE) and triggers (whose definition
+# depends on a function's).
+#
+# It compares the LAST surviving CREATE per name, so a later migration that
+# legitimately rebuilds an index defines it. That is also why this cannot
+# retro-detect the 019 case at HEAD: migration 172 rebuilt the index from the
+# live definition, making the live form the chain's own answer. It would have
+# been red for the whole 019..172 window, and it guards the next one.
+#
+# Runs against the Check 1 database (schema.sql-built, empty), so a UNIQUE probe
+# can never trip on data and the real table always exists.
+#
+# COST, measured 2026-08-05: one psql round-trip per index, 213 today, which
+# takes the whole guard from ~8s to ~32s. That is the price of the check and it
+# is worth paying, but it is also the obvious thing to optimise if the chain
+# grows — batching every probe into one psql session would do it, at the cost of
+# per-index error attribution (each probe is already its own BEGIN/ROLLBACK).
+# =============================================================================
+PROBE_IDX="zz_drift_probe_idx"
+
+# name<TAB>statement for the LAST CREATE INDEX of each name, chronologically.
+# Same statement splitting and `drift-ok` excusal as Check 3, so an index the
+# fold never saw is never probed either.
+idx_stmts="$(
+  for f in $(find migrations -maxdepth 1 -name '*.sql' -printf '%f\n' | sort -n | sed 's|^|migrations/|'); do
+    sed -E '/drift-ok/d; s/--.*$//' "$f" | awk 'BEGIN{RS=";"}
+    {
+      s=$0; gsub(/[\n\t]/," ",s); gsub(/  +/," ",s); sub(/^ +/,"",s); sub(/ +$/,"",s)
+      n=split(s, w, /[ (]+/); if(n<2) next
+      for(i=1;i<=n;i++) W[i]=toupper(w[i])
+      if(W[1]!="CREATE") next
+      i=2; while(W[i]=="UNIQUE") i++
+      if(W[i]!="INDEX") next
+      i++
+      while(W[i]=="CONCURRENTLY") i++
+      if(W[i]=="IF"){i++; if(W[i]=="NOT")i++; if(W[i]=="EXISTS")i++}
+      name=tolower(w[i]); sub(/^public\./,"",name)
+      if(name!="") print name "\t" s
+    }'
+  done | awk -F'\t' '{last[$1]=$2} END{for(k in last) print k "\t" last[k]}'
+)"
+
+mismatched=""; unevaluated=""; probed=0
+while read -r kind name; do
+  [ "$kind" = "index" ] || continue
+  stmt="$(printf '%s\n' "$idx_stmts" | awk -F'\t' -v n="$name" '$1==n{print $2; exit}')"
+  [ -n "$stmt" ] || continue        # created by an excused/unparsed form — Check 3 owns presence
+
+  # Re-head the statement under the probe name, dropping CONCURRENTLY (pointless
+  # in a transaction) and IF NOT EXISTS (which would silently no-op the probe).
+  probe_stmt="$(printf '%s' "$stmt" | sed -E \
+    "s/^CREATE( +UNIQUE)? +INDEX( +CONCURRENTLY)?( +IF +NOT +EXISTS)? +(public\.)?${name}\b/CREATE\1 INDEX ${PROBE_IDX}/I")"
+  case "$probe_stmt" in *"$PROBE_IDX"*) ;; *)
+    unevaluated="${unevaluated}    ${name} — could not re-head the CREATE under a probe name"$'\n'
+    continue ;;
+  esac
+
+  defs="$(docker exec -i "$CONTAINER" psql -U "$PGUSER" -d "$DB_SCHEMA" -tAq -v ON_ERROR_STOP=1 2>&1 <<SQL
+BEGIN;
+${probe_stmt};
+SELECT 'PROBE|' || pg_get_indexdef(oid) FROM pg_class WHERE relname = '${PROBE_IDX}';
+SELECT 'REAL|'  || pg_get_indexdef(oid) FROM pg_class WHERE relname = '${name}';
+ROLLBACK;
+SQL
+  )" || {
+    unevaluated="${unevaluated}    ${name} — the migration's CREATE would not execute against schema.sql:"$'\n'"$(printf '%s' "$defs" | sed 's/^/        /')"$'\n'
+    continue
+  }
+
+  from_mig="$(printf '%s\n' "$defs" | sed -n 's/^PROBE|//p' | sed -E "s/ INDEX ${PROBE_IDX} ON / INDEX ON /")"
+  from_sch="$(printf '%s\n' "$defs" | sed -n 's/^REAL|//p'  | sed -E "s/ INDEX ${name} ON / INDEX ON /")"
+  if [ -z "$from_mig" ] || [ -z "$from_sch" ]; then
+    unevaluated="${unevaluated}    ${name} — no definition read back (probe or live index absent)"$'\n'
+    continue
+  fi
+  probed=$((probed + 1))
+  [ "$from_mig" = "$from_sch" ] && continue
+  mismatched="${mismatched}    ${name}"$'\n'"        migrations say: ${from_mig}"$'\n'"        schema.sql has: ${from_sch}"$'\n'
+done <<< "$survivors"
+
+if [ -n "$unevaluated" ]; then
+  # An index the check cannot evaluate is a coverage hole, and a hole that only
+  # warns is a hole nobody reads — so it fails like a mismatch. 213/213 evaluate
+  # today, so this costs nothing until an exotic CREATE form arrives, and that
+  # form should be looked at rather than absorbed.
+  red "Check 3b FAILED: index(es) could not be evaluated — coverage hole, not a pass"
+  echo "  Fix the form, or excuse the CREATE with a reviewed \`drift-ok\` marker" >&2
+  echo "  (which drops it from Check 3's survivor set, so 3b never sees it either):" >&2
+  printf '%s' "$unevaluated" >&2
+  miss "index definition check incomplete (see above)."
+fi
+if [ -n "$mismatched" ]; then
+  red "Check 3b FAILED: index definition(s) differ between migrations/ and schema.sql"
+  echo "  The migration is seeded as applied, so it never runs and schema.sql's form is" >&2
+  echo "  what every database actually has. Decide which is right, then either regenerate" >&2
+  echo "  schema.sql or write a NEW migration restoring the intended definition:" >&2
+  printf '%s' "$mismatched" >&2
+  miss "index definition drift (see above)."
+fi
+grn "✓ Check 3b: all $probed migration-created indexes match schema.sql by definition"
 
 # =============================================================================
 # Check 4b — a fresh DB ends up with EVERY config dial
