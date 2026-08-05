@@ -1,8 +1,13 @@
 # Payment Perimeter — Platform Stance (not Merchant of Record)
 
-**Status:** Accepted, 2026-08-05 (rev. 3 — rev. 2 plus feasibility corrections
-from scoping W1/W4/W5 against the code, same day; supersedes the Proposed
-draft of the same date). Sits alongside `FUNDS-SEGREGATION-INTEGRATION.md` (mechanism) and
+**Status:** Accepted, 2026-08-05 (rev. 4 — rev. 3 plus corrections from a full
+W1–W8 code-verification pass, same day: W1's second detection option struck,
+W2's metric source and destination corrected, W3's dead publication dial
+found, W4 re-scoped around attribution/truncation/the publication cycle, the
+W7 audit RUN with findings recorded in place, and the pooled-fee remainder
+disclosure folded into W0(c). Rev. 3 was rev. 2 plus W1/W4/W5 scoping;
+supersedes the Proposed draft of the same date). Sits alongside
+`FUNDS-SEGREGATION-INTEGRATION.md` (mechanism) and
 `UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md` (tribute).
 **Counsel:** Harper James draft advice note, 8 May 2026 (VNL platform & payment
 services). Paragraph references (`HJ ¶x.y`) are to that note. It is a DRAFT,
@@ -66,12 +71,13 @@ Work items are not equal. The strategy is one comprehensive counsel package
 things that package asserts*, then sending it.
 
 - **Critical path — do first, this gates W0 going out:**
-  **W1 detection + runbook** (negative tab = incident, discharged outward) and
-  the **W7 audit** (nothing treats the Writer-owed pool as VNL's). Small, and
-  the package asserts both. The W1 **admin refund action does not gate W0** —
-  it is a full new Stripe money path (see W1) and sits in the parallel lane;
-  the detection plus the documented runbook is what makes the package's
-  assertion true on the day it goes.
+  **W1 detection + runbook** (negative tab = incident, discharged outward).
+  The **W7 audit is DONE** (2026-08-05, findings recorded in W7): what still
+  gates W0 from it is carrying the pooled-fee-remainder disclosure into the
+  letter (now in W0(c)); the W7 renames are parallel-lane. The W1 **admin
+  refund action does not gate W0** — it is a full new Stripe money path (see
+  W1) and sits in the parallel lane; the detection plus the documented runbook
+  is what makes the package's assertion true on the day it goes.
 - **Parallel — start any time, none gates approval:**
   W2, W4, W5, W6, W8, the W3 threshold/cadence work, and the W1 admin refund
   action.
@@ -192,6 +198,13 @@ invite hedged drafts and a second cycle):
   discharge-on-receipt, and a declaration that VNL holds settled-but-unpaid
   Writer earnings on trust, with Stripe allocated funds as the mechanism of
   performance. Counsel drafts; we do not send our own drafts for review.
+  **The trust must be drafted around one disclosed retention beyond the 8%**
+  (W7 audit finding, 2026-08-05): where a publication's standing shares sum
+  below 10000 bps the platform retains the remainder
+  (`publication_payouts.remaining_pool_pence`). It is member-mandated — the
+  members set the bps — but it leaves the Writer-owed pool, so the letter
+  must disclose it or the "8% and nothing else" assertion is untrue on send
+  day. Disclosure, not code change (see W7).
 - **(d)** The consumer credit question (HJ ¶11, ¶13.2) scoped into the same
   letter: deferred collection to £8 / £2-at-30-days, subscriptions accrued to
   the tab, disputed debt restored with collection paused. Running-account,
@@ -205,7 +218,10 @@ invite hedged drafts and a second cycle):
   nothing in this repo moves toward either without it.
 - **(f)** Enclosures: `docs/HOW-MONEY-MOVES.md` (checked against code
   2026-08-05) and this ADR. Ask for a **final** note on this flow, not a revision of the
-  draft.
+  draft. (Rev. 4 note: that doc describes the shared tab and the separate
+  charges-and-transfers mechanics accurately but never uses either term — the
+  covering letter should name them once so counsel can map the doc onto
+  Stripe's taxonomy without inferring it.)
 - **(g)** Also enclose the W3 question below: does a Writer-settable payout
   instruction plus an on-demand payout strengthen the "payment account"
   characterisation of the Writer-owed balance (reg. 2(1) PSRs), and if so
@@ -223,7 +239,15 @@ means the reader is in credit. Under Leg A/Leg B this is the wrong default: a
 reader-redeemable balance created on receipt of funds is a claim on VNL,
 redeemable against reads, i.e. exactly the shape HJ §6 concludes we do *not*
 have — on the assumption it cannot arise. The August 2026 double-charge went
-unalerted precisely because the state was treated as legal.
+unalerted precisely because the state was treated as legal. (Rev. 4: the code
+itself already narrates that incident — the comment block above
+`resumePendingSettlements` records the −£14 tab and closes "which is why
+nothing alerted". Two further unclamped negative-capable write sites exist
+outside settlement.ts — the dispute-stake debit in
+`gateway/src/routes/upstream-edges.ts` and the credit-back in
+`gateway/src/routes/articles/subscription-convert.ts`. Detection watches the
+*column*, so both are covered automatically, but the runbook should name all
+three paths.)
 
 **Change.**
 - Keep the arithmetic. Do **not** clamp at zero inside the reversal path — a
@@ -237,24 +261,37 @@ unalerted precisely because the state was treated as legal.
   halt, and the file cannot express that today**: every `CRITICAL_CHECKS`
   entry halts all payouts on any violation. A negative tab that agrees with
   its ledger is an incident, not books-divergence — freezing every Writer's
-  payout for one Reader's credit would itself be a ¶7.14.6 discretion. Either
-  the `Check` type gains a severity tier, or the check rides
-  `allocation-reconcile.ts`, whose alert-never-halt posture already exists.
+  payout for one Reader's credit would itself be a ¶7.14.6 discretion. **The
+  severity tier is the only real option — the alternative is struck**
+  (rev. 4): `runAllocationReconcile` short-circuits whenever
+  `allocatedFundsEnabled()` is false, so a check riding
+  `allocation-reconcile.ts` is a silent no-op exactly while
+  `STRIPE_ALLOCATED_FUNDS` ships dark — i.e. on the day the package goes.
+  The tier is small: `Check` is `{name, description, sql}`, and the change
+  touches the interface, the five check literals, the violation loop, and the
+  halt gate — one file, ~30 lines.
 - Add a defined response: the runbook resolution is **refund the credit to the
   reader's card**, never "let it be spent down against future reads". The
   runbook — detection plus the documented manual Stripe refund — is the part
   that gates W0.
 - **The wired admin action is a full new Stripe money path, not a button**
-  (parallel lane, does not gate W0). No `stripe.refunds.create` exists in the
-  codebase — refunds today are inbound webhook events only. Building it takes
+  (parallel lane, does not gate W0). No refund-issuing path exists in any
+  service — production refunds today are inbound webhook events only (the
+  only `refunds.create` calls in the repo are the sandbox segregation probe
+  scripts). Building it takes
   the whole money-moving-create discipline (`CLAUDE.md` Stripe invariant):
   three-phase reserve → create → confirm with a row-stable idempotency key and
   the terminal/ambiguous split (`charge-errors.ts`), resume-sweep coverage, a
   new ledger trigger type (e.g. `credit_refund`) posted via `applyLedgerDelta`
   to bring the tab from negative to zero, that trigger type added to the
   `ledger_reader_balance` view (migration + `schema.sql` regen — omit it and
-  B1 parity halts payouts on the action's first use), a `ledger_orphans`
-  branch, and `check-ledger-adjacency` registration. The plumbing home exists
+  B1 parity halts payouts on the action's first use; parity compares the view
+  itself, so the halt is guaranteed and platform-wide, recurring every run —
+  the view migration lands WITH the action, never after), a `ledger_orphans`
+  branch, and `check-ledger-adjacency` registration (convention, not
+  enforcement — Guard 1 is per-file floors and Guard 3 keys on payout-table
+  INSERTs, so an unregistered pure-ledger site stays green; register it
+  anyway). The plumbing home exists
   (gateway admin proxy → payment-service internal `x-internal-token`
   endpoint), and the `charge.refunded` webhook already posts the
   `allocated_draws` refund draw, so segregation accounting comes free.
@@ -293,21 +330,47 @@ with the Mastercard bug outstanding it is materially below 100%.
 
 **Change.**
 - Surface a rolling coverage metric — allocated pence ÷ settled pence over 30
-  days, and the count of unallocated settlements — from the existing
-  `syncAllocations` / residual data. Expose it in the ledger admin view
-  alongside the reconciliation state.
+  days, and the count of unallocated settlements. **This is a NEW charge-side
+  query over `tab_settlements`, not a re-surfacing of `measureResidualShare`**
+  (rev. 4): the existing residual metric is payout-side (transfer funding mix
+  over `payout_transfers`) — a different number, not derivable from this one.
+  The charge-side columns exist and are indexed (no migration). The crux is
+  `allocated_pence`'s tri-state — NULL = never synced, 0 = measured-zero — so
+  the unallocated predicate is `allocation_synced_at IS NOT NULL AND
+  allocated_pence = 0`, never a bare `IS NULL`. Two more facts: the metric is
+  **implementable now but measurable only post-flip** (`syncAllocations`
+  no-ops while `STRIPE_ALLOCATED_FUNDS=0`, so every row is NULL today — an
+  empty denominator, not "low coverage"; the panel must say "no measured
+  settlements yet", never a fake 0%); and **no card brand is stored in the
+  DB**, so uncovered settlements cannot be attributed to Mastercard
+  retrospectively.
+- **There is no admin ledger view to put it in** (rev. 4): the dashboard has
+  four stage panels and a passive `payouts_halted` banner; allocation-reconcile
+  reports to logs alone (its own header calls itself "the only visibility
+  funds segregation has"). W2 builds a small coverage/segregation panel on
+  `/admin/dashboard/overview` — gateway proxy → payment-service internal
+  endpoint, the existing pattern.
 - Record the intended end state here so it isn't rediscovered: **once Stripe
-  fixes the Mastercard allocation 500** (`FUNDS-SEGREGATION-INTEGRATION.md`
-  attack order 0b), the decision to take is whether to gate ineligible brands
-  at *card-add* time — `auth.ts` `setupIntents.create` / `connect-card` —
-  rather than charging them unallocated. Gating at add-time is the only way to
-  reach full coverage without wedging tabs, because the failure must be
+  fixes the Mastercard allocation 500** (attack order 0b — tracked live in
+  `CONSOLIDATED-TODO.md`; fullest statement in
+  `FUNDS-SEGREGATION-INTEGRATION.md`), the decision to take is whether to gate
+  ineligible brands at *card-add* time rather than charging them unallocated.
+  Mechanics (rev. 4): the gate can only live at gateway `connect-card` — at
+  `setupIntents.create` no card exists yet; at the `setupIntents.retrieve` an
+  `{expand: ["payment_method"]}` yields the brand at no extra API call (the
+  same trick settlement's `resolveDefaultPaymentMethod` uses), and the reader
+  is present. Two prerequisites: `ALLOCATION_ELIGIBLE_CARD_BRANDS` moves to
+  `shared/` (the gateway has no payment-service dependency), and the gateway's
+  Stripe client stays off the preview API version (its exclusion is
+  deliberate — the gate must not drag it on). Gating at add-time is the only
+  way to reach full coverage without wedging tabs, because the failure must be
   surfaced while the reader is present. It is blocked on Stripe, not on
   appetite. Refusing Mastercard today is not commercially survivable and we are
   not pretending otherwise.
 
-**Acceptance.** The coverage figure is queryable and appears in the admin
-ledger view. No code comment, doc, or UI string asserts ring-fencing without it.
+**Acceptance.** The coverage figure is queryable and appears in the new admin
+coverage panel, reading honestly pre-flip ("no measured settlements yet",
+never 0%). No code comment, doc, or UI string asserts ring-fencing without it.
 
 ### W3 — Payout timing becomes the Writer's standing instruction (HJ ¶7.14.5)
 
@@ -315,6 +378,13 @@ ledger view. No code comment, doc, or UI string asserts ring-fencing without it.
 `publication_payout_threshold_pence` live in `platform_config`; cadence is the
 02:30 worker (`workers/payout.ts`). Both are VNL's choice about when a Writer's
 money moves — squarely ¶7.14.5.
+
+**Rev. 4 finding: the publication key is a DEAD DIAL** — seeded and editable
+in the admin config UI, loaded by nothing; the publication cycle's eligibility
+binds `writerPayoutThresholdPence`. Editing it changes nothing — exactly the
+"dial with no reader" class `CLAUDE.md` bans. W3 either revives it as the
+publication default or drops it; revive is the natural move, since this item
+touches every read site anyway.
 
 **Trade-off, recorded before the change.** Converting timing into the
 Writer's instruction helps ¶7.14.5 but pulls against the money-remittance
@@ -331,6 +401,23 @@ the sharper edge. So:
   `publications`.
 - `services/payout.ts` reads the per-account value, falling back to
   `platform_config`. The config value becomes a **default, never an override**.
+- Site inventory (rev. 4 — three production sites, all in
+  `services/payout.ts`): writer **eligibility** (already joins `accounts`; a
+  one-line `COALESCE`); the writer **pack floor** in
+  `reserveWriterPayout`/`packWriterPayout` (thread the per-account value into
+  the pack config — the account row is already locked `FOR UPDATE` there, so
+  select the column under that lock); publication **eligibility** (no join to
+  hang a value on — add `JOIN publications`). **The eligibility query and the
+  pack floor must read the SAME per-account value**: if they disagree, a
+  writer is claimed and rolled back every cycle, forever, and nothing errors.
+- Cadence needs **no scheduling work** (rev. 4): the worker already fires
+  daily and calls all three cycles; per-account `daily|weekly|monthly` is a
+  predicate in the eligibility queries — "is today a due day". The real cost
+  is a last-paid anchor, which no table carries: per the recurring-boundary
+  invariant it is a **stored anchor column**, never `previous + step` and not
+  re-derived per cycle from `MAX(triggered_at)`. Note also the manual
+  `POST /payout-cycle` runs the writer cycle only — publication/tribute have
+  no manual trigger.
 - Writer-settable in the editorial dashboard, with the setting worded as an
   instruction ("Pay me when I'm owed at least £X") rather than a platform
   policy notice.
@@ -367,25 +454,55 @@ on the strength of a divergence that may implicate one — the clearest survivin
   payout side was excluded as expected-nonzero), so `reader_balance_parity` —
   the commonest class — names a Reader, not a Writer whose payouts should
   halt, and mapping it to Writers via `read_events` would be over-broad by
-  design. Only `ledger_orphans` (writer_payout / publication_split / tribute
-  rows carry the Writer) and `dispute_stake` attribute to payout-side accounts
-  today. So: per-account halt for the attributable classes; the global flag
+  design. **Rev. 4 correction: the only attributable class is
+  `ledger_orphans`, and only its payout-side branches.** `dispute_stake` comes
+  OFF the list — it is a reader-side trigger (counted by
+  `ledger_reader_balance`; the stake debits the disputant's reading tab), so
+  halting that account's payouts is the same reader→Writer category error this
+  item refuses for `reader_balance_parity`. And `ledger_orphans` mixes
+  reader-side triggers into the same check, so attribution branches on
+  `trigger_type` (writer_payout / publication_split / tribute_*), never on the
+  check name; its SELECT must gain `le.account_id` — the only recoverable
+  handle, since the orphan's source row is by definition gone. So: per-account
+  halt for the attributable branches; the global flag
   keeps catching parity breaks and the halt record says so. If ¶7.14.6 needs
   more, the follow-on is writer-side *attributable* checks (alert-only, per
   the reconcile file's own expected-nonzero warning), never a reader→Writer
   taint walk.
+- **Attribution runs uncapped** (rev. 4). Every check's SQL carries
+  `SAMPLE_LIMIT` (20) and the runner stores a 5-row sample — deliberately,
+  because *existence* is all a global halt needs. Per-account halting from a
+  truncated payload silently pays the 21st diverging account. Rule: the
+  attribution query for a halting class runs without the cap; if a bound is
+  ever kept, a truncated result falls back to the global halt, never a
+  partial per-account one.
 - Storage: `payouts_halted_accounts` is a small **table** (account_id,
   mismatch_class, reason, created_at) — a set does not fit `platform_config`'s
   one-key/one-value shape, and the table is the natural home for the
   mismatch-class-not-free-text requirement. The global flag stays where it is.
-  The three cycle-start gates become per-account exclusions in the eligibility
-  queries, with the global check retained.
+  The **writer and tribute** cycle-start gates become per-account exclusions
+  in their eligibility queries (both already join `accounts`); the global
+  check is retained. **The publication cycle cannot do this** (rev. 4): its
+  eligibility query never touches an account — recipients resolve per split
+  at transfer time — so the exclusion lands beside the existing not-payable
+  `continue` in `processPublicationSplits` (which the resume path also routes
+  through). That changes the semantics, and one interaction must be resolved
+  before building: an excluded member's split stays `pending` inside an
+  otherwise-completed pool, and the parent completes on "no split PENDING" —
+  **a permanently halted member would wedge the parent forever**. Either a
+  halted split counts like a failed one for parent completion (keeping its
+  claim for manual re-pay, the existing failed-split shape), or the exclusion
+  flips the split to a distinct non-pending state.
 - Bound it: a halt older than a configured age escalates. A halt that is never
-  cleared is indistinguishable from a policy of not paying.
+  cleared is indistinguishable from a policy of not paying. Nothing acts on
+  halt age today (the banner displays it; no job compares it), and the failure
+  is already on the record: dev sat halted for a fortnight, silently, from
+  2026-07-17 — every payout cycle a no-op with nothing wrong with the payout
+  code (`scripts/backfill-seed-opening-balances.ts` header).
 
 **Acceptance.** A divergence in an attributable class (an orphaned
-writer_payout row, a dispute-stake violation) halts that account's payouts and
-nobody else's; a global halt names the class that could not be attributed.
+writer_payout / publication_split / tribute row) halts that account's payouts
+and nobody else's; a global halt names the class that could not be attributed.
 (Recorded honestly: "a divergence confined to one Writer's ledger" is not yet
 an observable event — no `CRITICAL_CHECKS` entry examines a Writer's ledger at
 all. That stronger acceptance becomes testable only if the writer-side checks
@@ -414,6 +531,24 @@ the acknowledgement is evidence of mandate, not a payment gate; blocking a
 member's money on their own inaction would itself be a ¶7.14.6 discretion.
 Surface unacknowledged versions in the admin view instead.
 
+**Rev. 4 scoping — four facts to design around.** (1) **The mandate is bigger
+than the standing bps map**: per-article overrides in
+`publication_article_shares` (flat fees + bps) are first-class split inputs,
+and their *ordering* is load-bearing when the pool is short — a version
+capturing only member bps is half the evidence; the version must fix both
+halves, order included, to be reproducible. (2) **A second write path
+bypasses the finance permission**: `PATCH /publications/:id/members/:memberId`
+(gated `can_manage_members`) writes `revenue_share_bps` via its fieldMap — it
+takes the same `pub_shares` lock and Σ ≤ 10000 guard, so concurrency holds,
+but the *mandate* story doesn't. Tighten it (move the field behind
+`can_manage_finances`) or a version's `set_by` can name someone with no
+finance mandate. (3) The parent `publication_payouts` row is INSERTed before
+the splits are computed and DELETEd when nothing was claimed — the version
+stamp is nullable-then-patched, or minted only after the claim survives.
+(4) Executed `share_bps` legitimately diverges from the mandated bps (the
+10000 clamps clip whoever sorts last) — the admin view expects a non-zero
+version-vs-executed diff and never "repairs" it.
+
 **Acceptance.** Every publication payout row names a split version, and that
 version names the members who assented to it (or shows assent outstanding).
 
@@ -424,9 +559,14 @@ relationship with the paying Reader is the clearest money-remittance shape in
 the tree (HJ ¶3.32–3.35). Under a Platform stance it does not ship without its
 own advice.
 
-**Change.** A guard comment at the tribute cycle entry point and on the flag,
-stating that the block is a **perimeter** decision, not an incomplete feature —
-so a future session doesn't switch it on during a flag cleanup. Cross-reference
+**Change.** A guard comment at the tribute cycle entry point
+(`runTributePayoutCycle`) and the worker call, stating that the block is a
+**perimeter** decision, not an incomplete feature — so a future session
+doesn't switch it on during a flag cleanup. **At the flag itself this is a
+REWRITE, not an addition** (rev. 4): `shared/src/lib/env.ts`'s comment still
+gives the pre-Phase-3 settlement-apportionment question as the reason — a
+gate that resolved in June — which would mislead exactly the cleanup session
+this item defends against. Cross-reference
 `UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md`.
 
 ### W7 — Don't contradict the trust counsel will declare (HJ ¶7.10.3)
@@ -445,8 +585,34 @@ package**.
 - Confirm that nothing treats the Writer-owed balance as available working
   capital — including in any future cash-flow, reserve, or fee-netting logic.
 
+**Audit run 2026-08-05 (rev. 4) — findings recorded, fixes scoped:**
+- **There is no residual pool object.** The residual is a funding mode
+  (`payout_transfers.funding = 'platform_balance'`) plus a derived metric
+  (`measureResidualShare`) — no table, no balance. **No site spends it, nets
+  against it, or treats it as working capital**: a residual child still pays
+  the Writer, fee implicit. The prose comments are already careful ("the
+  money is not wrong; the coverage is"); the *identifiers* are what read as
+  platform money — the enum literal `platform_balance`, "the unsegregated
+  residual", a "funded from platform balance" log line. Rename decision:
+  code identifiers and comments are cheap; the DB enum literal itself is a
+  migration + `schema.sql` regen. The proportionate cut is renaming the code
+  names and letting the enum stand under a corrected column comment.
+- **One true retention beyond the 8% exists**: the publication pooled-fee
+  remainder (`remaining_pool_pence`) — disclosure now lives in W0(c). The
+  grep acceptance below fails on it until the letter carries it; that is a
+  disclosure fix, not a code fix.
+- **Chargeback netting, recorded for the trail**: on a chargeback of a
+  settlement carrying subscription charges the platform absorbs the writer
+  leg rather than clawing it back, and keeps float it never disbursed
+  (`chargeback.ts`). Platform-unfavourable direction — not a take — but it is
+  a platform-vs-Writer netting decision the trust audit records.
+- **User copy is clean**: a money-context sweep of `web/` for "segregated /
+  ring-fenced / protected / on trust / safeguard / escrow" found nothing (the
+  trust-*graph* UI is the only lexical neighbour). §4.3 currently holds.
+
 **Acceptance.** A grep for the pool's identifiers turns up no site where it is
-treated as VNL's.
+treated as VNL's — after the rename, with the pooled-fee remainder carved out
+as disclosed in W0(c).
 
 ### W8 — Fee mechanics: prefer the explicit form
 
@@ -461,7 +627,12 @@ claim taken at a defined moment, which is the posture the trust declaration
 forwarding in a destination-charge flow, and reading it as blessing our
 SC&T fee mechanics is the §1.3 misreading.) Record here that the flag-on form
 is the target and the implicit form is a transitional state, not a design
-preference.
+preference. Two rev. 4 precisions for any copy this feeds: the 8% is
+`platform_fee_bps` (800), a live-editable operator dial — copy states "the
+disclosed platform fee", never a hard-coded percentage as an invariant; and
+what is implicit today is the fee's *movement*, not its amount —
+`tab_settlements.platform_fee_pence` records it per settlement and the admin
+revenue panel sums it.
 
 ### W9 — The only code Leg A needs (gated on W0)
 
