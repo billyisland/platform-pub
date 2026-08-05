@@ -55,7 +55,10 @@ for money.
 Everyone starts with a **£5 free allowance** (`free_allowance_pence: 500`). If
 you have **not** added a card, your reads are marked **"provisional"** — pretend
 money. The cost is just subtracted from your £5; nothing is chalked on a real
-tab and the ledger stays silent (`classifyRead` in `accrual.ts`).
+tab and the ledger stays silent (`classifyRead` in `accrual.ts`). And when the
+£5 runs out, card-less reading **stops**: a read the remaining allowance can't
+cover is refused outright (`AllowanceExhaustedError`), rather than quietly run
+up as debt nobody could ever collect.
 
 The £5 is a **dial**, not a constant: an operator can retune it without a code
 change. What that means for you is that the figure is **stamped on your account
@@ -102,12 +105,16 @@ later, the first time it tried to charge it.
 
 ### When you read a paid article
 
-The key service confirms you're allowed in and calls `POST /gate-pass`. The code
+The **gateway** confirms you're allowed in (it's the gateway, not the key
+service, that orchestrates this — `performGatePass`) and calls the payment
+service's `POST /gate-pass`; only after the read is recorded does it go to the
+key service for the article's decryption key. The payment code
 (`recordGatePass`) then:
 
 1. Looks at your account and decides: do you have a card?
 2. **No card** → the read is "provisional," cost comes off your £5 allowance, no
-   ledger line.
+   ledger line. (A read the remaining allowance can't cover is refused — see
+   above.)
 3. **Card on file** → the read is **"accrued."** Your tab balance goes **up** by
    the article's price (`reading_tabs.balance_pence += amount`), and a ledger
    line is written: *"reader owes this much"* (a **debit**, `read_accrual`).
@@ -268,7 +275,9 @@ message). Only then (`confirmSettlement`):
   **credit** (`tab_settlement`).
 - The reads that this charge paid for are stamped **"platform_settled."**
 - A ledger line is written for each writer recording what they've now **earned**
-  — their share is the read price **minus the 8% fee** (`writer_accrual`). The
+  — their share is the read's **chargeable** amount (what you actually owed on
+  it, per the gift rule — never the list price) **minus the 8% fee**
+  (`writer_accrual`). The
   8% gap is all.haus's cut, and the code never stores the platform as an
   "account" — its fee is simply *the difference* between what you paid and what
   writers get.
@@ -352,8 +361,9 @@ Each day, for every writer who is **payable** and has at least **£20** owed
 
 1. **Reserve**: write a `writer_payouts` row marked "pending" and tag all the
    reads being paid, so two cycles can't pay the same read twice.
-2. **Transfer** (`transfers.create`): move the writer's **net** earnings (price
-   minus 8%, already taken at settlement) from all.haus's Stripe balance to the
+2. **Transfer** (`transfers.create`): move the writer's **net** earnings (the
+   chargeable amount minus 8%, the fee already taken at settlement) from
+   all.haus's Stripe balance to the
    writer's connected account — again with a **stable idempotency key**
    (`payout-<id>`) so a retry can't double-pay.
 3. **Confirm**: flip the payout to **"completed,"** mark those reads
