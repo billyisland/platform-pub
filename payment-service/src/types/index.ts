@@ -14,6 +14,7 @@ export interface PlatformConfig {
   tabSettlementThresholdPence: number  // default 800  (£8.00)
   monthlyFallbackMinimumPence: number  // default 200  (£2.00)
   writerPayoutThresholdPence: number   // default 2000 (£20.00)
+  publicationPayoutThresholdPence: number // default 2000 (£20.00) — the publication pool's own threshold
   platformFeeBps: number               // default 800  (8.00%)
   monthlyFallbackDays: number          // default 30   (days since last read before monthly settlement)
   // Funds segregation (migration 165) — inert while STRIPE_ALLOCATED_FUNDS is

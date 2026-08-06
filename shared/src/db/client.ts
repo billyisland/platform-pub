@@ -108,6 +108,7 @@ export async function loadConfig(forceRefresh = false): Promise<PlatformConfig> 
     tabSettlementThresholdPence: int(map, 'tab_settlement_threshold_pence', 800),
     monthlyFallbackMinimumPence: int(map, 'monthly_fallback_minimum_pence', 200),
     writerPayoutThresholdPence: int(map, 'writer_payout_threshold_pence', 2000),
+    publicationPayoutThresholdPence: int(map, 'publication_payout_threshold_pence', 2000),
     platformFeeBps: int(map, 'platform_fee_bps', 800),
     monthlyFallbackDays: int(map, 'monthly_fallback_days', 30),
     payoutMaxSlices: int(map, 'payout_max_slices', 20),

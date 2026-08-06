@@ -10,6 +10,12 @@ export interface PlatformConfig {
   tabSettlementThresholdPence: number  // default 800  (£8.00)
   monthlyFallbackMinimumPence: number  // default 200  (£2.00)
   writerPayoutThresholdPence: number   // default 2000 (£20.00)
+  // The publication pool's own threshold. Separate from the writer one because
+  // the two cycles are exact complements over disjoint revenue and an operator
+  // must be able to move one without the other — it was seeded by migration 038
+  // and read by NOTHING until 2026-08-06, with the publication cycle silently
+  // binding writerPayoutThresholdPence (CONSOLIDATED-TODO §1.14).
+  publicationPayoutThresholdPence: number // default 2000 (£20.00)
   platformFeeBps: number               // default 800  (8.00%)
   monthlyFallbackDays: number          // default 30   (days since last read before monthly settlement)
   // Funds segregation (migration 165) — inert while STRIPE_ALLOCATED_FUNDS is

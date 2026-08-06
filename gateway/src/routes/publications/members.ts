@@ -31,7 +31,6 @@ const UpdateMemberSchema = z.object({
   role: z.enum(['editor_in_chief', 'editor', 'contributor']).optional(),
   contributorType: z.enum(['permanent', 'one_off']).optional(),
   title: z.string().max(100).nullable().optional(),
-  revenueShareBps: z.number().int().min(0).max(10000).nullable().optional(),
   canPublish: z.boolean().optional(),
   canEditOthers: z.boolean().optional(),
   canManageMembers: z.boolean().optional(),
@@ -329,7 +328,7 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
 
       const fieldMap: Record<string, string> = {
         role: 'role', contributorType: 'contributor_type', title: 'title',
-        revenueShareBps: 'revenue_share_bps', canPublish: 'can_publish',
+        canPublish: 'can_publish',
         canEditOthers: 'can_edit_others', canManageMembers: 'can_manage_members',
         canManageFinances: 'can_manage_finances', canManageSettings: 'can_manage_settings',
       }
@@ -347,39 +346,24 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'No fields to update' })
       }
 
-      // F10: standing revenue_share_bps is a FIXED share of publication revenue —
-      // the sum across all members cannot exceed 10,000 bps (100%). Guard + write
-      // run in one transaction under the shared pub_shares advisory lock (same
-      // key as PATCH /payroll) so two concurrent edits can't both pass the
-      // read-then-write check (2026-07-06 audit P1).
-      return withTransaction(async (client) => {
-        if (data.revenueShareBps !== undefined && data.revenueShareBps !== null) {
-          await client.query(
-            `SELECT pg_advisory_xact_lock(hashtext('pub_shares:' || $1::text))`,
-            [id]
-          )
-          const { rows: [otherBps] } = await client.query<{ sum: string }>(
-            `SELECT COALESCE(SUM(revenue_share_bps), 0) AS sum
-               FROM publication_members
-              WHERE publication_id = $1 AND removed_at IS NULL AND id <> $2`,
-            [id, memberId]
-          )
-          if (parseInt(otherBps.sum, 10) + data.revenueShareBps > 10000) {
-            return reply.status(400).send({
-              error: 'Total standing shares cannot exceed 10,000 bps (100%)',
-            })
-          }
-        }
+      // revenue_share_bps is deliberately NOT writable here, and must not be
+      // re-added (CONSOLIDATED-TODO §1.15, closed 2026-08-06). This route is
+      // gated on can_manage_members; a standing revenue share is FINANCE, not
+      // membership, so its sole writer is the can_manage_finances-gated
+      // PATCH /publications/:id/payroll — which owns the pub_shares advisory
+      // lock and the Σ ≤ 10000 guard that used to be duplicated here. Writing
+      // it from a members mandate is a mandate hole the M9 escalation guard
+      // cannot see (it guards permission GRANTS, and revenue_share_bps is not
+      // a permission), and it would stop a split version's set_by being
+      // mandate evidence — PAYMENT-PERIMETER-ADR §3.W5.
+      values.push(memberId, id)
+      await pool.query(
+        `UPDATE publication_members SET ${setClauses.join(', ')}
+         WHERE id = $${idx} AND publication_id = $${idx + 1}`,
+        values
+      )
 
-        values.push(memberId, id)
-        await client.query(
-          `UPDATE publication_members SET ${setClauses.join(', ')}
-           WHERE id = $${idx} AND publication_id = $${idx + 1}`,
-          values
-        )
-
-        return reply.send({ ok: true })
-      })
+      return reply.send({ ok: true })
     }
   )
 

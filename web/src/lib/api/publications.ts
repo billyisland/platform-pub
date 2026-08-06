@@ -106,9 +106,13 @@ export const publications = {
       body: JSON.stringify({ token }),
     }),
 
+  // No revenueShareBps: the members route stopped accepting it 2026-08-06
+  // (CONSOLIDATED-TODO §1.15) — a standing share is finance, not membership, and
+  // its one writer is updatePayroll below. Kept off this type so a call site
+  // that tries fails to compile rather than posting a silent no-op.
   updateMember: (publicationId: string, memberId: string, data: Partial<{
     role: string; contributorType: string; title: string | null;
-    revenueShareBps: number | null; canPublish: boolean; canEditOthers: boolean;
+    canPublish: boolean; canEditOthers: boolean;
     canManageMembers: boolean; canManageFinances: boolean; canManageSettings: boolean;
   }>) =>
     request<{ ok: boolean }>(`/publications/${publicationId}/members/${memberId}`, {

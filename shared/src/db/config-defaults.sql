@@ -56,6 +56,14 @@ INSERT INTO platform_config (key, value, description) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- from 038_publications.sql  -- ON CONFLICT added here: the original migration had none
+--
+-- Read by the publication payout cycle's eligibility query only (payout.ts,
+-- runPublicationPayoutCycle). It had NO reader from migration 038 until
+-- 2026-08-06 — that query bound writer_payout_threshold_pence, so an operator
+-- edit here succeeded and changed nothing (CONSOLIDATED-TODO §1.14, the "dial
+-- with no reader" class). It matches the writer threshold by default because
+-- the two cycles are exact complements over disjoint revenue; they are separate
+-- dials so a publication pool can be moved without moving every writer.
 INSERT INTO platform_config (key, value, description) VALUES
   ('publication_payout_threshold_pence', '2000', 'Publication payout threshold (£20.00)')
 ON CONFLICT (key) DO NOTHING;

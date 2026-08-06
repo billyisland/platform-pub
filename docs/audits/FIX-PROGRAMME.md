@@ -23,6 +23,87 @@ starts.
 
 ## Progress
 
+- **2026-08-06 (the rev. 4 scoping's two standalone defects — a dial nobody
+  read, a share anybody could move — and the blocker that wasn't)** —
+  CONSOLIDATED-TODO §1.14, §1.15, §1.16. All three came out of the
+  PAYMENT-PERIMETER rev. 4 scoping pass but stand independent of the programme.
+
+  **§1.14 — `publication_payout_threshold_pence` had no reader.** Seeded by
+  migration 038, listed in the admin config UI's Money group, and read by
+  nothing: `runPublicationPayoutCycle`'s eligibility query bound
+  `config.writerPayoutThresholdPence`. An operator moving the publication
+  threshold got a successful save, no error and no change — the `CLAUDE.md`
+  "dial with no reader" class in its most silent form. Now on `PlatformConfig`
+  (both copies), read by `loadConfig` as `publicationPayoutThresholdPence`,
+  covered by the parity suite's `FALLBACK_KEYS`, and bound by the publication
+  cycle.
+
+  **The stated alternative did not exist.** The queue item offered "wire it or
+  drop the seed"; dropping it fails CI by construction, because migration 038
+  seeds the key and drift-guard **Check 4c** replays every migration seed onto
+  the defaulted DB and fails if a row appears. A dial a migration has ever
+  seeded can be re-pointed or re-described, but it cannot be un-seeded.
+
+  **The test had to disagree with itself to be worth anything.** Both dials
+  default to 2000, so a test seeding the defaults passes against the bug exactly
+  as it passes against the fix — which is precisely why this survived every
+  green suite since 038. `payout-threshold-dials.test.ts` drives both cycles
+  against a scripted client with the two dials set to **different** values and
+  asserts on which value reached Postgres; the writer cycle is asserted
+  alongside as the paired control, so a fix that crossed the wires the other way
+  is caught too. Mutated (bind reverted): publication test red on the value,
+  `expected [800, 1500] to include 7300`.
+
+  **§1.15 — `revenue_share_bps` was writable from a members mandate.** `PATCH
+  /publications/:id/members/:memberId` is gated on `can_manage_members` and
+  carried `revenueShareBps` in its fieldMap, so a members-manager holding no
+  finance mandate could move a member's standing share of every future
+  publication payout. M9 could not see it: M9 guards permission GRANTS, and
+  `revenue_share_bps` is not a permission. A mandate hole, not a money-math bug
+  — the Σ ≤ 10000 clamp and the `pub_shares` lock both held.
+
+  **Taken by deletion, not by a guard.** The field is gone from
+  `UpdateMemberSchema` and the fieldMap, and with it the duplicated advisory
+  lock + Σ guard the route was carrying (~20 lines). Nothing called it: the web's
+  only writer is `updatePayroll` → the finance-gated `PATCH /payroll`, which
+  already owns the lock and the clamp. Adding a `can_manage_finances` check
+  would have left two writers of a money column and a second place for the
+  invariant to drift; there is now one. That also hands W5 the stronger result
+  for free — a split version's `set_by` is mandate evidence **by construction**,
+  because the only writer holds the mandate, rather than by a check W5 would
+  have had to add and maintain.
+  `gateway/tests/publication-member-finance-mandate.test.ts` asserts over the
+  UPDATE production really issues (no `revenue_share_bps` in the SET list, the
+  value never in the bound params, no Σ read, no `pub_shares` lock), with a
+  paired control that the fields the route does own still write. Mutated (field
+  restored to schema + fieldMap): two of three red.
+
+  **§1.16 — the blocker that wasn't, corrected the same day it was written.**
+  The rev. 4 scoping found that the spend→subscription conversion credits spend
+  back to the tab with no offsetting debit over an unfiltered spend SUM, minting
+  a Reader-funded negative tab, and filed it as an urgent owner decision gating
+  the W0 letter and firing the new `negative_reader_tab` alert on ordinary
+  business. **The mechanism is real; the urgency was not.** The route has been
+  503-gated behind `SUBSCRIPTION_CONVERT_ENABLED` since 2026-07-16, default off,
+  with `DEPLOYMENT.md` carrying an explicit "Do NOT flip to `1`". It cannot fire
+  the alert, and W0 describes what ships. The fix it demanded — a real
+  `logSubscriptionCharge` leg — has also been a stated precondition of revival
+  in §0b item 4 since the route was disabled, so the "three options" were one
+  option that had already been chosen a year earlier.
+
+  **What the finding was actually worth** is the *reason* (c) is right, now
+  recorded where the revival decision lives: netting the first month to zero is
+  the only shape that ends the redeemable claim without quietly shrinking the
+  offer the reader was made — which is what makes leg 3 a product call. Attack
+  order 0e struck; §1.16 rewritten to carry both the diagnosis and the
+  correction, because **a defect found by reading a route is not yet a defect in
+  production** — the route's own header carried the flag and the do-not-flip,
+  and the scoping pass read the body and not the guard. Establish reachability
+  in the deployment before writing a finding up as blocking. One residue, a
+  check and not a decision: run the negative-tab query against prod once, since
+  pre-2026-07-16 history could have left a real credit for the new alert to
+  surface with no live cause to explain it.
+
 - **2026-08-06 (payment perimeter W1 critical path + W6 — a reader in credit is
   an incident, and it must not freeze anyone else)** — the item that gates the
   W0 counsel package, plus the cheap parallel-lane one.

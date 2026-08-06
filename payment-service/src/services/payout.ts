@@ -1856,7 +1856,13 @@ class PayoutService {
        LEFT JOIN reads ON reads.publication_id = c.publication_id
        LEFT JOIN subs  ON subs.publication_id  = c.publication_id
        WHERE COALESCE(reads.net_pence, 0) + COALESCE(subs.sub_net_pence, 0) >= $2`,
-      [config.platformFeeBps, config.writerPayoutThresholdPence]
+      // publicationPayoutThresholdPence, NOT the writer one (§1.14, 2026-08-06).
+      // publication_payout_threshold_pence has been seeded since migration 038
+      // and editable in the admin config UI the whole time, while this query
+      // bound the writer dial — so an operator moving the publication threshold
+      // succeeded, reported nothing, and changed nothing. Both default to 2000,
+      // which is why it went unnoticed and why the fix moves no money today.
+      [config.platformFeeBps, config.publicationPayoutThresholdPence]
     )
 
     let processed = 0
