@@ -15,6 +15,7 @@ vi.mock('../src/lib/logger.js', () => ({
 }))
 vi.mock('@platform-pub/shared/db/client.js', () => ({ pool: {} }))
 
+import logger from '../src/lib/logger.js'
 import {
   isPayoutsHalted,
   haltPayouts,
@@ -119,6 +120,26 @@ function reconcileClient(violatingChecks: Set<string>): Queryable & { halted(): 
       if (/le\.trigger_type IN \('read_accrual', 'pledge_fulfil'\)\s+AND NOT EXISTS/.test(sql)) {
         return { rows: violatingChecks.has('ledger_orphans') ? [{ ledger_id: 'l' }] : [] }
       }
+      if (/WHERE rt\.balance_pence < 0/.test(sql)) {
+        // Derive the row count from the SQL's own LIMIT where the scenario asks
+        // for a truncated sample — the mock must answer from the SQL it is
+        // handed, not from a fixture that ignores it.
+        const limit = Number(/LIMIT (\d+)\s*$/.exec(sql.trim())?.[1] ?? 1)
+        if (violatingChecks.has('negative_reader_tab:truncated')) {
+          return {
+            rows: Array.from({ length: limit }, (_, i) => ({
+              account_id: `reader-${i}`,
+              credit_pence: -100 - i,
+              last_settlement_id: `stl-${i}`,
+            })),
+          }
+        }
+        return {
+          rows: violatingChecks.has('negative_reader_tab')
+            ? [{ account_id: 'reader-1', credit_pence: -1400, last_settlement_id: 'stl-1' }]
+            : [],
+        }
+      }
       throw new Error(`unhandled reconcile sql: ${sql}`)
     },
   }
@@ -130,7 +151,8 @@ describe('reconcileLedger', () => {
     const result = await reconcileLedger(db)
     expect(result.ok).toBe(true)
     expect(result.violations).toHaveLength(0)
-    expect(result.checksRun).toBe(5)
+    expect(result.haltRequired).toBe(false)
+    expect(result.checksRun).toBe(6)
 
     const enforced = await runLedgerReconcileAndEnforce(db)
     expect(enforced.ok).toBe(true)
@@ -165,6 +187,66 @@ describe('reconcileLedger', () => {
     const db = reconcileClient(new Set(['reader_balance_parity', 'ledger_orphans']))
     const result = await reconcileLedger(db)
     expect(result.violations.map((v) => v.check).sort()).toEqual(['ledger_orphans', 'reader_balance_parity'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PAYMENT-PERIMETER-ADR W1 — a negative reading tab is an INCIDENT, not a legal
+// state, and its response is an alert that freezes nobody's payouts. Freezing
+// every Writer's money over one Reader's credit would itself be the ¶7.14.6
+// discretion the perimeter work exists to narrow.
+// ---------------------------------------------------------------------------
+describe('negative reading tab (alert tier)', () => {
+  it('alerts, names the account and the settlement, and does NOT halt payouts', async () => {
+    const db = reconcileClient(new Set(['negative_reader_tab']))
+    const result = await runLedgerReconcileAndEnforce(db)
+
+    expect(result.ok).toBe(false)
+    expect(result.haltRequired).toBe(false)
+    expect(db.halted()).toBe(false) // ← the whole point of the tier
+
+    const violation = result.violations.find((v) => v.check === 'negative_reader_tab')
+    expect(violation?.severity).toBe('alert')
+    expect(violation?.sample[0]).toMatchObject({
+      account_id: 'reader-1',
+      credit_pence: -1400,
+      last_settlement_id: 'stl-1',
+    })
+
+    // Alerted under its OWN marker, not the halt's.
+    expect(logger.fatal).toHaveBeenCalledTimes(1)
+    const [fields, message] = vi.mocked(logger.fatal).mock.calls[0] as [Record<string, unknown>, string]
+    expect(fields.alert).toBe('negative_reader_tab')
+    expect(message).toContain('payouts NOT halted')
+  })
+
+  it('a divergence in the SAME run still halts, and both alerts are emitted', async () => {
+    const db = reconcileClient(new Set(['negative_reader_tab', 'reader_balance_parity']))
+    const result = await runLedgerReconcileAndEnforce(db)
+
+    expect(result.haltRequired).toBe(true)
+    expect(db.halted()).toBe(true)
+    // The halt reason names ONLY the halting class — an alert-tier incident must
+    // never appear as a reason payouts are frozen.
+    expect(db.haltReason()).toContain('reader_balance_parity')
+    expect(db.haltReason()).not.toContain('negative_reader_tab')
+
+    const markers = vi.mocked(logger.fatal).mock.calls.map((c) => (c[0] as Record<string, unknown>).alert)
+    expect(markers).toEqual(['payouts_halted', 'negative_reader_tab'])
+  })
+
+  it('a capped sample reports as a floor, never as a total', async () => {
+    const db = reconcileClient(new Set(['negative_reader_tab:truncated']))
+    const result = await runLedgerReconcileAndEnforce(db)
+
+    const violation = result.violations.find((v) => v.check === 'negative_reader_tab')
+    expect(violation?.truncated).toBe(true)
+    // 20 rows returned because the SQL asked for 20 — the mock reads the LIMIT
+    // out of the query rather than pinning a fixture.
+    expect(violation?.count).toBe(20)
+
+    const [, message] = vi.mocked(logger.fatal).mock.calls[0] as [unknown, string]
+    expect(message).toContain('negative_reader_tab(20+)')
   })
 })
 

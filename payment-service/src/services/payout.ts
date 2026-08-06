@@ -2796,6 +2796,14 @@ class PayoutService {
   // writer + publication cycles (the author's carve is handled inside
   // runPayoutCycle). Dark behind TRIBUTES_ENABLED.
   //
+  // THAT BRAKE IS A PERIMETER DECISION, NOT AN UNFINISHED FEATURE. This cycle is
+  // complete and tested; it stays off because paying a third party out of the
+  // Writer-owed pool is the clearest money-remittance shape we have (HJ
+  // ¶3.32–3.35) and needs its own legal advice first. Do not enable it while
+  // tidying flags — see PAYMENT-PERIMETER-ADR W6 (and §4 rule 5, which bans the
+  // path outright until then) and the reason recorded at `tributesEnabled()` in
+  // `shared/src/lib/env.ts`.
+  //
   // Per-tribute, mirroring the writer-payout three-phase durability:
   //   1. reserveTributePayout (Txn 1) — insert 'pending' tribute_payouts row and
   //      claim the tribute's released accruals under it (tribute_payout_id), so

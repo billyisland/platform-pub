@@ -33,12 +33,22 @@ export function trustSystemEnabled(): boolean {
   return process.env.TRUST_SYSTEM_ENABLED === "1"
 }
 
-// Tribute authoring (Upstream Edges Phase 2). Default OFF — the money edge
-// ships dark while the third-party-funds compliance question (ADR Edge cases ›
-// Holding third-party funds) is resolved before Phase 3 enables settlement
-// apportionment. When off, the tribute routes 404 and the lifecycle sweep is not
-// scheduled; the credit/citation/dispute edges (Phase 1) are unaffected. Same
-// shape as TRUST_SYSTEM_ENABLED. Client counterpart: NEXT_PUBLIC_TRIBUTES_ENABLED.
+// Tribute authoring (Upstream Edges Phase 2). Default OFF.
+//
+// THE REASON IS THE PAYMENT PERIMETER — NOT AN INCOMPLETE FEATURE. Do not flip
+// this in a flag cleanup. Redirecting a slice of one Writer's earnings to third
+// parties who have no relationship with the paying Reader is the clearest
+// money-remittance shape in the tree (Harper James ¶3.32–3.35), and under the
+// Platform stance it does not ship without its own advice. Specs:
+// `docs/adr/PAYMENT-PERIMETER-ADR.md` W6 · `UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md`.
+//
+// (This comment previously gave the pre-Phase-3 settlement-apportionment
+// question as the reason — a gate that resolved in June 2026. Rewritten
+// 2026-08-06: a stale reason on a live brake is how a brake gets released.)
+//
+// When off, the tribute routes 404 and the lifecycle sweep is not scheduled; the
+// credit/citation/dispute edges (Phase 1) are unaffected. Same shape as
+// TRUST_SYSTEM_ENABLED. Client counterpart: NEXT_PUBLIC_TRIBUTES_ENABLED.
 export function tributesEnabled(): boolean {
   return process.env.TRIBUTES_ENABLED === "1"
 }

@@ -46,7 +46,9 @@ export function startPayoutWorker(): void {
 
         // Inspirer payouts (Upstream Edges Phase 3) run after the author/pub
         // cycles, since runPayoutCycle already handled the author's carve and
-        // swept-return. No-op unless TRIBUTES_ENABLED.
+        // swept-return. No-op unless TRIBUTES_ENABLED — a brake held for the
+        // PAYMENT PERIMETER, not for an unfinished feature (PAYMENT-PERIMETER-ADR
+        // W6). Leave this call in place and leave the flag off.
         const tributeResult = await payoutService.runTributePayoutCycle();
         logger.info(tributeResult, "Tribute payout cycle complete");
       } catch (err) {

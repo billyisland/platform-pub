@@ -72,6 +72,10 @@ things that package asserts*, then sending it.
 
 - **Critical path — do first, this gates W0 going out:**
   **W1 detection + runbook** (negative tab = incident, discharged outward).
+  **DONE 2026-08-06** — but it surfaced a blocker on the letter itself: the
+  spend→subscription conversion route produces a Reader-funded negative tab *by
+  design*, so W0 cannot assert that a negative tab is always an incident until
+  that is resolved. See W1's dilemma note; it is an owner decision.
   The **W7 audit is DONE** (2026-08-05, findings recorded in W7): what still
   gates W0 from it is carrying the pooled-fee-remainder disclosure into the
   letter (now in W0(c)); the W7 renames are parallel-lane. The W1 **admin
@@ -297,6 +301,62 @@ three paths.)
   `allocated_draws` refund draw, so segregation accounting comes free.
 - Do **not** add a DB `CHECK` constraint — it would abort a legitimate
   multi-leg reversal mid-transaction.
+
+**SHIPPED 2026-08-06 — detection + runbook (the part that gates W0).**
+`reconcile-ledger.ts` gained the severity tier (`Check.severity: 'halt' |
+'alert'`, `ReconcileResult.haltRequired`, and an enforcement path that halts
+only on halting classes while alert-tier violations log under their **own**
+marker, `alert: <check name>`), plus the `negative_reader_tab` check
+(`NEGATIVE_READER_TAB_SQL`, exported as its one home). Violations now carry
+`truncated`, so a capped sample reports `20+` rather than reading as a total —
+the alert payload IS the response for an alert-tier check, and a silent
+truncation would read as "that's all of them". Behaviour is pinned twice:
+severity/marker/truncation against a scripted client
+(`tests/ledger-reconcile.test.ts`), and the detector itself against real
+Postgres (`tests/negative-reader-tab-integration.test.ts`) — the DB test's
+control is the shipped `reader_balance_parity` predicate run over the same
+synthetic double-settlement and asserted **clean**, which is the silence the
+August incident happened in. Every assertion was mutation-checked. Runbook:
+`docs/runbooks/reader-tab-credit.md`; alert marker documented in
+`DEPLOYMENT.md`.
+
+**Two findings from building it, both material to W0:**
+
+- **The double-charge cause resolves through the EXISTING webhook, not the
+  unbuilt admin action.** A **full** Stripe refund of the duplicate charge fires
+  `charge.refunded` → `reverseSettlement`, which restores the debt via
+  `applyLedgerDelta` and rolls the reads back to `accrued`. So the commonest
+  cause has a complete manual resolution today, and the runbook documents it.
+  The admin action is still needed for a *residual* credit (no single full
+  charge to refund) — a **partial** refund is not a resolution, because the
+  webhook logs `manual_review_required` and skips the unwind, leaving the reader
+  with the credit *and* the money. Side effect to expect: `reverseSettlement`
+  sets `card_action_required_at`, so a platform-initiated correction asks the
+  reader to re-attach their card.
+- **DILEMMA — one negative-tab producer is by design, and it is a Reader-funded
+  credit.** `gateway/src/routes/articles/subscription-convert.ts` credits the
+  reader's month-to-date spend back to the tab (`min(spend, subscription
+  price)`) with **no offsetting tab debit** — the subscription's first month is
+  logged to `subscription_events` only — and its spend query sums
+  `read_events.amount_pence` **regardless of state**, so it counts reads the
+  reader has already *settled*. A reader who settles mid-month and then converts
+  is taken below zero by construction, holding a credit they funded, redeemable
+  against future reads. That is the instrument §4 rule 4 bans, reached through a
+  route nobody classed as one, and it makes W1's premise — a negative tab
+  "cannot arise" legitimately — **untrue as built**. It is not an operator
+  error and the runbook explicitly refuses to "fix" it. Two consequences: the
+  alert will fire on ordinary business until this is resolved (so the resolution
+  cannot wait for a quiet week), and **W0's letter must not assert that a
+  negative tab is always an incident** while this route ships. Options, in
+  ascending cost: (i) cap the credit at the tab's outstanding balance (kills the
+  credit, keeps the conversion, one line — but silently shrinks the benefit the
+  reader was offered); (ii) restrict the spend query to unsettled reads (means
+  what it says: convert only what you still owe); (iii) debit the first month's
+  `subPrice` to the tab as `subscription_charge` so the conversion nets to zero
+  (the shape the renewal path already uses via `logSubscriptionCharge`). (iii)
+  looks right and is the only one that leaves the reader's offer intact, but it
+  changes what conversion *means* commercially — an owner decision, not a code
+  cleanup. Until then the runbook escalates cause B rather than refunding it.
 
 **Acceptance.** For W0: a synthetic double-settlement produces (a) a negative
 tab and (b) an alert naming the account and settlement, **with no other
@@ -568,6 +628,15 @@ gives the pre-Phase-3 settlement-apportionment question as the reason — a
 gate that resolved in June — which would mislead exactly the cleanup session
 this item defends against. Cross-reference
 `UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md`.
+
+**SHIPPED 2026-08-06.** All three sites carry the perimeter reason:
+`shared/src/lib/env.ts::tributesEnabled` (rewritten — the stale
+settlement-apportionment reason removed, with a note saying so, because a stale
+reason on a live brake is how a brake gets released), the cycle entry point
+`runTributePayoutCycle` in `payment-service/src/services/payout.ts`, and the
+worker call in `payment-service/src/workers/payout.ts`. Each says the same
+thing: the cycle is complete and tested, and it is off for a legal reason, not
+an engineering one.
 
 ### W7 — Don't contradict the trust counsel will declare (HJ ¶7.10.3)
 
