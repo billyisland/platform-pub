@@ -23,6 +23,95 @@ starts.
 
 ## Progress
 
+- **2026-08-06 (payment perimeter W1 critical path + W6 — a reader in credit is
+  an incident, and it must not freeze anyone else)** — the item that gates the
+  W0 counsel package, plus the cheap parallel-lane one.
+
+  **W1 detection.** `reconcile-ledger.ts` gained a **severity tier**
+  (`Check.severity: 'halt' | 'alert'`, `ReconcileResult.haltRequired`), and the
+  new `negative_reader_tab` check is the first `'alert'`. The ADR left the tier
+  as the only real option and it proved right for a reason worth keeping: every
+  check in that file halted **all three payout cycles**, and a reading tab in
+  credit is not a books-divergence — the column and the ledger agree to the
+  penny while it sits there, which is precisely why `reader_balance_parity`
+  passed over the August 2026 double-charge in silence. Halting on it would
+  freeze every Writer's payout over one Reader's credit, i.e. commit the
+  ¶7.14.6 principal-like-control marker the whole exercise exists to narrow. So
+  `'alert'` violations log under their **own** marker (`alert` = the check name,
+  a separate `DEPLOYMENT.md` alert from `payouts_halted`) and touch nothing.
+  The halt reason names only halting classes, so an incident can never appear as
+  a reason payouts stopped.
+
+  Two design points beyond the ADR's sketch. The check watches the **column**,
+  not any writer of it, so it covers all three negative-capable paths
+  (settlement's confirm/reverse legs, the dispute stake in gateway
+  `upstream-edges.ts`, the credit-back in gateway `subscription-convert.ts`)
+  without enumerating them — `applyLedgerDelta` is the column's only writer, so
+  watching the column is exhaustive by construction. And violations now carry
+  **`truncated`**: for a halting check a capped sample is fine (existence trips
+  it), but for an alert-tier check the payload IS the response, and twenty rows
+  reading as a total when there were five hundred is the same silence the check
+  exists to end. The summary says `20+`. (W4's per-account halting attribution
+  needs the stronger form — uncapped — and the comment says so at the constant.)
+
+  **Pinned twice, and every assertion mutation-checked.** Severity / marker /
+  truncation against a scripted client (`tests/ledger-reconcile.test.ts`, +4
+  tests): collapsing the tier back to `'halt'` fails 2, killing `truncated`
+  fails 1, and the mock reads the `LIMIT` out of the SQL rather than pinning a
+  fixture — dropping it to 1 fails. Then the detector itself against real
+  Postgres (`tests/negative-reader-tab-integration.test.ts`, 4 tests, always
+  rolled back, `NEGATIVE_READER_TAB_SQL` exported as its one home so the test
+  runs production's own statement). **The control is the point there**: the
+  shipped `reader_balance_parity` predicate is run over the same synthetic
+  double-settlement and asserted **clean**. Without that pair, "the new check
+  fires" says nothing about whether the old one already did — and the whole case
+  for W1 is that it didn't. Three SQL mutations each caught (LATERAL ordering,
+  deepest-credit-first, `LEFT JOIN`→inner).
+
+  **Runbook** `docs/runbooks/reader-tab-credit.md`, and here the build changed
+  the plan. The ADR prescribed one resolution — refund outward — and treated the
+  wired admin action as the way to reach it. Reading the webhook path showed the
+  commonest cause needs neither: a **full** Stripe refund of the duplicate
+  charge fires `charge.refunded` → `reverseSettlement`, which restores the debt
+  through `applyLedgerDelta` and rolls the reads back to `accrued`. A **partial**
+  refund does not — the handler logs `manual_review_required` and skips the
+  unwind, so the reader keeps the credit *and* the money, which is why the
+  runbook forbids it as a resolution. So the manual path is complete for cause A
+  today, and the admin action is needed only for a residual credit. Two side
+  effects documented because a reader will notice them: `reverseSettlement` sets
+  `card_action_required_at` (a platform-initiated correction asks the reader to
+  re-attach their card), and the restored reads settle again later.
+
+  **The finding that matters most is a blocker on the letter, not on the code.**
+  `gateway/src/routes/articles/subscription-convert.ts` credits the reader's
+  month-to-date spend back to the tab (`min(spend, subPrice)`) with **no
+  offsetting debit** — the first month goes to `subscription_events` only,
+  unlike the renewal path's `logSubscriptionCharge` — and its spend query sums
+  `read_events.amount_pence` **regardless of state**, so it counts reads already
+  settled. A reader who settles mid-month and then converts is taken below zero
+  **by design**, holding a Reader-funded credit redeemable against future reads:
+  the instrument PAYMENT-PERIMETER-ADR §4 rule 4 bans, reached through a route
+  nobody classed as one. So W1's premise — that a negative tab cannot arise
+  legitimately — **is untrue as built**, W0 cannot assert it, and the alert will
+  fire on ordinary business until it is resolved. Three options recorded in the
+  ADR (cap the credit at the outstanding balance / restrict the query to
+  unsettled reads / debit `subPrice` so the conversion nets to zero). The third
+  is the only one that leaves the reader's offer intact but changes what
+  conversion means commercially — an **owner decision**, and the runbook
+  escalates that cause rather than refunding it.
+
+  **W6.** All three tribute-brake sites now carry the perimeter reason:
+  `shared/src/lib/env.ts::tributesEnabled` (a rewrite — its comment gave the
+  pre-Phase-3 settlement-apportionment question, a gate that resolved in June,
+  and a stale reason on a live brake is how a brake gets released; the
+  correction says so in place), `runTributePayoutCycle`, and the worker call.
+  Each says the same thing: the cycle is complete and tested, and it is off for
+  a legal reason, not an engineering one.
+
+  Payment-service 258 tests green (+8), root lint 0 errors, ledger-adjacency
+  green. `CLAUDE.md`'s money-ledger section gained the severity rule (and its
+  "five halting checks" count, now stale, was corrected).
+
 - **2026-08-05 (the two `drives.ts` notification defects — fixed ahead of
   resurrection, not with it; migration 174)** — queued the same day as
   must-fix-before-unparking (§10), then done on request. `drive_funded` and
