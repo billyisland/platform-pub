@@ -140,6 +140,58 @@ starts.
   month; the copy names the handle and points at Settings instead), and the
   first-login ceremony stays commented out, untouched and still its own call.
 
+  **Second follow-up, 2026-08-07 — the interactions driven, on an account
+  provisioned the real way.** The gap the entry above recorded is closed. A
+  fresh address was put through the ACTUAL production journey rather than
+  simulated: `POST /waitlist` → `POST /admin/dashboard/waitlist/admit` as the
+  admin account → `provisionAccount(email, email.split('@')[0])` → dev-login →
+  `/reader`. The admit answered `{"admitted":true,"accountCreated":true,
+  "username":"wrenfallow","invited":true}` and the row landed
+  `display_name = 'wrenfallow'`, `onboarded_at NULL` — so the display name really
+  is the email's local part, which is the defect step 1 exists to repair, now
+  observed rather than inferred from `provisionAccount`'s signature. (Dev's
+  `EMAIL_PROVIDER=console`, so "invited" sent nothing.)
+
+  **`looksDerived` has now rendered.** The sentence the whole step is built
+  around — "We had to call you something, so we used your email address. You can
+  do better than that." — was on screen, with the other fork absent, and the
+  handle line reading `@wrenfallow`. It had never once rendered before today: every
+  seeded dev account carries a real display name, so every earlier drive took the
+  other branch. Screenshot `int-1-derived.png`. Noted in passing: after Save the
+  fork correctly flips to the generic copy mid-session, since the name is no
+  longer derived.
+
+  **Each write confirmed against the `accounts` row at the moment it happened,
+  not once at the end** — the harness shells out to `psql` between steps, so the
+  order is evidence too:
+  - **photo upload** — real multipart through `POST /media/upload`: gateway
+    crunched it to WebP, signed the BUD-02, verified the returned hash, inserted
+    `media_uploads` (292 bytes, `image/webp`), and the blob fetches **200** from
+    dev Blossom at `BLOSSOM_URL`. The row was still `avatar=<null>` at this point,
+    which is right — upload sets local state, only Save persists it.
+  - **profile Save** → `display_name`, `bio` and `avatar_blossom_url` all moved
+    in one write, "Saved" confirmation shown, no error.
+  - **Back** — absent on step 1 (not disabled, as the comment claims), returns
+    from `2/4 Bring your world` to `1/4`, and the step's remount re-reads the
+    SAVED values from the refetched user (`"Wren Fallow"`, the bio, the avatar) —
+    which is the round-trip through `fetchMe` proving itself.
+  - **`Set my prices` → `Save prices`** → `subscription_price_pence 500 → 300`,
+    `annual_discount_pct 15 → 10`, `default_article_price_pence NULL → 20` via
+    the Fixed-price chip; the derived line read "Readers pay £3.00/mo or
+    £32.40/year (save 10%)", which is the arithmetic, correct.
+  - **"Write something now →"** — the one path where the stamp rides a Glasshouse
+    **supersede** rather than a direct close: the welcome pane went, the editor
+    pane (`aria-label="Write an article"`) opened, exactly **one** `role="dialog"`
+    remained on the page (one-Glasshouse-at-a-time holding across the handover),
+    and `onboarded_at` went NULL → a timestamp. A reload then showed no sheet.
+  - zero page errors across the whole journey.
+
+  **One dev-environment artifact worth recording so a future reader of the
+  screenshots is not misled:** the saved avatar renders as a BROKEN image in dev.
+  `PUBLIC_MEDIA_URL` is `https://all.haus/media` in `docker-compose.yml`, so the
+  `<img>` points at prod while the blob lives in dev's Blossom. The upload leg is
+  proven by the 200 above; only the display fetch fails, and only locally.
+
 - **2026-08-07 (W2 — segregation stops being an adjective)** —
   CONSOLIDATED-TODO §1.18, `PAYMENT-PERIMETER-ADR` §3.W2. No migration.
 
