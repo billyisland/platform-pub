@@ -23,6 +23,65 @@ starts.
 
 ## Progress
 
+- **2026-08-07 (W2 — segregation stops being an adjective)** —
+  CONSOLIDATED-TODO §1.18, `PAYMENT-PERIMETER-ADR` §3.W2. No migration.
+
+  **The number nobody could see.** `allocation-reconcile.ts`'s own header calls
+  itself "the only visibility funds segregation has", and it reports to logs
+  alone. So the platform's answer to HJ ¶7.10.4 — how much of the reader money
+  we hold is actually held in allocated state — existed nowhere an operator
+  could read it, which is precisely the condition under which "ring-fenced"
+  becomes something one says rather than something one checks. It is now a
+  panel on `/admin/overview`, fed by a new charge-side query over
+  `tab_settlements` (`payment-service/src/services/allocation-coverage.ts` →
+  internal `GET /allocation-coverage` → gateway proxy → `AdminAllocationCoverage`).
+
+  **The window splits THREE ways, and that is the whole design.** "Allocated ÷
+  settled" sounds binary and `allocated_pence` is not: NULL means "never
+  synced", 0 means "synced, and Stripe held nothing" — opposite facts. So the
+  unallocated predicate is `allocation_synced_at IS NOT NULL AND allocated_pence
+  = 0` and never a bare `IS NULL`, and the never-synced rows are reported as a
+  third figure, "awaiting a read", folded into neither side. Counting them
+  uncovered would make the flip look like a collapse; counting them covered
+  would be the assertion the item exists to stop; and reporting a share computed
+  over the measured subset without saying how big the unmeasured one is would be
+  the same silence W4's uncapped attribution refuses.
+
+  **Pre-flip it says so in words.** `syncAllocations` no-ops while
+  `STRIPE_ALLOCATED_FUNDS` is off, so today every row is NULL — an empty
+  denominator, not low coverage. `summariseCoverage` returns null there (the
+  `summariseResidual` rule, for a sharper reason: a fake 0% asserts that none of
+  the platform's reader money is segregated, and would assert it every day the
+  flag ships dark), and the panel renders the absence as prose. Same for an
+  unreachable payment service: "this is not a coverage figure of zero".
+
+  **Both figures, labelled as different measurements.** Coverage is charge-side,
+  the residual is payout-side, and rev. 4's finding was that neither is
+  derivable from the other. Showing one alone invites it being quoted as the
+  other, so the endpoint returns both and the panel's residual line says so
+  outright. It also ends the residual's log-only existence.
+
+  **What it does NOT ride:** `runAllocationReconcile`, which short-circuits on
+  `allocatedFundsEnabled()` — that would silence the metric for exactly as long
+  as the flag ships dark — and issues a `paymentIntents.retrieve` per charge,
+  which is not a thing to do on a page load. Hence a separate module, a 10s
+  read-proxy timeout against the trigger proxies' 60s, and its own fetch on the
+  page so an unreachable payment service costs the panel and not the dashboard.
+
+  **Mutation-verified.** `allocation-coverage-integration.test.ts` runs the
+  exported statement against Postgres and pairs every assertion with the naive
+  `IS NULL` predicate as a control: over the same three rows both answer "one
+  unallocated" and mean opposite settlements, and in the pre-flip state the
+  naive one calls the entire platform unsegregated. Reverting the shipped
+  predicate to `IS NULL` fails two of the four tests; the pure-arithmetic
+  `allocation-coverage.test.ts` covers the empty-denominator rule.
+
+  Verified end to end against the dev stack (admin cookie → gateway → payment
+  service → DB, 200 with a live 43.99% coverage figure; anon 401, missing
+  internal token 403). The panel itself was not rendered in a browser — no
+  browser tooling in that session — though `next build` is clean and it is built
+  from the page's existing `Stat*` primitives.
+
 - **2026-08-07 (W4 — the payout halt stops being one switch for everybody)** —
   CONSOLIDATED-TODO §1.18, `PAYMENT-PERIMETER-ADR` §3.W4, migration 175.
 

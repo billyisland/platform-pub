@@ -7,6 +7,7 @@ import { accrualService, AllowanceExhaustedError } from '../services/accrual.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
 import { runLedgerReconcileAndEnforce } from '../services/reconcile-ledger.js'
+import { measureAllocationCoverage } from '../services/allocation-coverage.js'
 import {
   getPayoutHaltState,
   resumePayouts,
@@ -15,9 +16,13 @@ import {
 } from '../lib/payout-halt.js'
 import logger from '../lib/logger.js'
 
-// requireInternalToken — the single guard for the mutating internal routes
-// (gate-pass, card-connected, payout-cycle, settlement-check/monthly). The two
-// read-only /earnings GETs are intentionally unguarded and don't register it.
+// requireInternalToken — the single guard for the internal routes: every
+// mutating one (gate-pass, card-connected, payout-cycle, reconcile-ledger, the
+// payout resumes, settlement-check/monthly) AND the operator READS that expose
+// platform-wide state (payouts/halt-status, allocation-coverage), which are
+// nobody's business but the dashboard's. The two /earnings GETs are the
+// deliberate exception — a writer's own figures, already scoped by the id in
+// the path and authorised at the gateway.
 // Compare in constant time: a plain `!==` on the secret leaks a timing oracle.
 function constantTimeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a)
@@ -231,6 +236,20 @@ export async function paymentRoutes(app: FastifyInstance) {
       return reply.status(200).send({ resumed: true, accountId })
     },
   )
+
+  // ---------------------------------------------------------------------------
+  // GET /allocation-coverage (internal — the owner dashboard's segregation panel)
+  //
+  // PAYMENT-PERIMETER-ADR W2. Read-only and cheap: two indexed aggregates and no
+  // Stripe call, so it is safe on a page load. Deliberately NOT
+  // `runAllocationReconcile` — that sweep short-circuits while the flag is dark
+  // (this must read honestly there) and re-reads charges from Stripe one by one.
+  // ---------------------------------------------------------------------------
+
+  app.get('/allocation-coverage', { preHandler: requireInternalToken }, async (req, reply) => {
+    const report = await measureAllocationCoverage()
+    return reply.status(200).send(report)
+  })
 
   // ---------------------------------------------------------------------------
   // POST /settlement-check/monthly (internal — called by monthly fallback cron)

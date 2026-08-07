@@ -83,8 +83,8 @@ things that package asserts*, then sending it.
   W1) and sits in the parallel lane; the detection plus the documented runbook
   is what makes the package's assertion true on the day it goes.
 - **Parallel — start any time, none gates approval:**
-  W2, W4, W5, W6, W8, the W3 threshold/cadence work, and the W1 admin refund
-  action.
+  ~~W2~~ (shipped 2026-08-07), ~~W4~~ and ~~W6~~ (shipped 2026-08-06/07),
+  W5, W8, the W3 threshold/cadence work, and the W1 admin refund action.
 - **Gated — do not start until W0's response is back:**
   W9 (agent copy), the W3 "pay me now" endpoint, and any renaming or copy
   that presupposes the trust (W7 second bullet is safe to do now; the *Terms*
@@ -376,6 +376,12 @@ point here.
 
 ### W2 — Allocation coverage becomes a measured number, never an adjective
 
+**SHIPPED 2026-08-07.** `payment-service/src/services/allocation-coverage.ts`
+(the charge-side query + `summariseCoverage`), internal
+`GET /allocation-coverage`, gateway proxy
+`GET /admin/dashboard/allocation-coverage`, and the "Funds segregation" panel on
+`/admin/overview`. No migration. As-built notes are at the end of this item.
+
 **Today.** `lib/stripe-client.ts` `ALLOCATION_ELIGIBLE_CARD_BRANDS` is
 default-deny (visa, amex, discover, diners), and `allocatedFundsParam()`
 returns `{}` for an ineligible or unreadable brand, so the charge succeeds
@@ -431,6 +437,43 @@ with the Mastercard bug outstanding it is materially below 100%.
 **Acceptance.** The coverage figure is queryable and appears in the new admin
 coverage panel, reading honestly pre-flip ("no measured settlements yet",
 never 0%). No code comment, doc, or UI string asserts ring-fencing without it.
+
+**As built (2026-08-07).** Four notes the spec did not anticipate, each of them
+a decision someone would otherwise re-take:
+
+- **The window is split THREE ways, not two.** "Allocated ÷ settled" implies a
+  binary, and the tri-state does not give one: a never-synced row is neither
+  covered nor uncovered, it is unanswered. Counting it uncovered makes the flip
+  look like a collapse; counting it covered is the assertion the item exists to
+  stop. So `unmeasured` is its own reported number beside the metric — the same
+  reasoning as W4's refusal to report a truncated payload as a total, and the
+  panel shows it as "Awaiting a read". `summariseCoverage` returns null on an
+  empty denominator and the panel renders that absence in **words**.
+- **The panel carries BOTH figures, labelled as different measurements.**
+  Rev. 4's point was that coverage is not derivable from the residual; the
+  operator-facing consequence is that showing only one invites it being quoted
+  as the other. The endpoint returns both, and the panel's residual line ends
+  "a different number from coverage, and not derivable from it". This also ends
+  the residual's log-only existence.
+- **The metric must NOT ride `runAllocationReconcile`** — that sweep
+  short-circuits on `allocatedFundsEnabled()` (which would silence the metric
+  for exactly as long as the flag ships dark, i.e. its whole life so far) and
+  makes a `paymentIntents.retrieve` per charge, which is not a thing to do on a
+  page load. Hence a separate module, and a read endpoint with a 10s proxy
+  timeout rather than the trigger proxies' 60s.
+- **Expect a dip for 30 days after the flip, and do not "fix" it.**
+  `SYNC_ALLOCATION_CANDIDATES_SQL` has no date floor, so the sweep stamps
+  historical pre-flip charges 0. Those settlements really were unsegregated;
+  the figure is right and only the intuition that it should open at 100% is
+  wrong.
+
+Proof: `allocation-coverage.test.ts` (the empty-denominator rule as arithmetic)
+and the DB-backed `allocation-coverage-integration.test.ts`, which runs the
+exported statement and pairs every assertion with the naive `IS NULL` predicate
+as a **control** — over the same three rows both answer "one unallocated" and
+mean opposite settlements, and pre-flip the naive one calls the whole platform
+unsegregated. Mutation-verified: reverting the predicate to `IS NULL` fails two
+of the four.
 
 ### W3 — Payout timing becomes the Writer's standing instruction (HJ ¶7.14.5)
 

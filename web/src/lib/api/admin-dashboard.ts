@@ -215,6 +215,39 @@ export interface AdminWaitlist {
   }>
 }
 
+/**
+ * Funds segregation, measured (PAYMENT-PERIMETER-ADR W2).
+ *
+ * Two DIFFERENT numbers, never to be merged into one "segregation %":
+ * `coverage` is charge-side (of what readers paid, how much Stripe held in
+ * allocated state); `residual` is payout-side (of what we paid out, how much
+ * moved from platform balance). Both are null when the window holds nothing
+ * measurable — which is not 0%, and the panel must say so in words.
+ */
+export interface AdminAllocationCoverage {
+  /** The operator brake. False ⇒ nothing is allocated at all, by design. */
+  allocatedFundsEnabled: boolean
+  coverage: {
+    windowDays: number
+    measuredCount: number
+    measuredPence: number
+    allocatedPence: number
+    coverageBps: number
+    unallocatedCount: number
+    unallocatedPence: number
+  } | null
+  /** Settlements we have not read an allocation for — neither covered nor not. */
+  unmeasured: { count: number; pence: number }
+  residual: {
+    windowDays: number
+    totalPence: number
+    residualPence: number
+    residualBps: number
+    thresholdBps: number
+    breached: boolean
+  } | null
+}
+
 /** The outcome of one Admit click — what the operator needs told back. */
 export interface AdminWaitlistAdmitResult {
   email: string
@@ -237,6 +270,8 @@ export const adminDashboard = {
       body: JSON.stringify({ updates }),
     }),
   regulatory: () => request<AdminRegulatory>('/admin/dashboard/regulatory'),
+  allocationCoverage: () =>
+    request<AdminAllocationCoverage>('/admin/dashboard/allocation-coverage'),
   waitlist: () => request<AdminWaitlist>('/admin/dashboard/waitlist'),
   admitWaitlister: (email: string) =>
     request<AdminWaitlistAdmitResult>('/admin/dashboard/waitlist/admit', {

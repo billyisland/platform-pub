@@ -22,6 +22,7 @@ import { sendWaitlistInviteEmail } from '@platform-pub/shared/lib/email.js'
 // PATCH /admin/dashboard/config     — update existing keys (never insert)
 // GET  /admin/dashboard/regulatory  — revenue vs UK tax thresholds, custody
 // GET  /admin/dashboard/waitlist    — the closed-beta waiting list
+// GET  /admin/dashboard/allocation-coverage — funds segregation, measured (W2)
 // POST /admin/dashboard/waitlist/admit — admit one waitlister (creates their
 //                                        account, sends the invitation)
 // POST /admin/dashboard/trigger-settlements — proxy to payment-service
@@ -83,15 +84,28 @@ export function ukFinancialYear(now: Date): { start: string; end: string; daysRe
   }
 }
 
-async function callPaymentService(path: string): Promise<{ status: number; body: unknown }> {
+// The trigger proxies run a whole cron cycle, so they wait a minute. A read
+// proxy is on a page load and must fail fast instead — an unreachable payment
+// service should cost the panel a moment, not the operator a minute of blank
+// dashboard.
+const PAYMENT_SERVICE_WRITE_TIMEOUT_MS = 60_000
+const PAYMENT_SERVICE_READ_TIMEOUT_MS = 10_000
+
+async function callPaymentService(
+  path: string,
+  method: 'GET' | 'POST' = 'POST'
+): Promise<{ status: number; body: unknown }> {
+  const isRead = method === 'GET'
   const res = await fetch(`${PAYMENT_SERVICE_URL}/api/v1${path}`, {
-    method: 'POST',
+    method,
     headers: {
-      'Content-Type': 'application/json',
       'x-internal-token': INTERNAL_SERVICE_TOKEN,
+      ...(isRead ? {} : { 'Content-Type': 'application/json' }),
     },
-    signal: AbortSignal.timeout(60_000),
-    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(
+      isRead ? PAYMENT_SERVICE_READ_TIMEOUT_MS : PAYMENT_SERVICE_WRITE_TIMEOUT_MS
+    ),
+    ...(isRead ? {} : { body: JSON.stringify({}) }),
   })
   let body: unknown = null
   try {
@@ -1046,6 +1060,34 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
       return reply.status(500).send({ error: 'Failed to admit' })
     }
   })
+
+  // ---------------------------------------------------------------------------
+  // GET /admin/dashboard/allocation-coverage — funds segregation, measured
+  //
+  // PAYMENT-PERIMETER-ADR W2. A PROXY rather than a query here, unlike the W4
+  // halt set above: the numbers are the allocation model's own (the tri-state
+  // `allocated_pence`, the empty-denominator rule, the payout-side residual and
+  // the dial it judges against), and a second copy of that reasoning in the
+  // gateway is how the two segregation figures start disagreeing.
+  //
+  // Its own endpoint, not folded into /overview: allocation-reconcile reports to
+  // logs alone today, so this is a new hop across a service boundary, and one
+  // unreachable payment service must cost the operator this panel — not the
+  // whole money dashboard.
+  // ---------------------------------------------------------------------------
+  app.get(
+    '/admin/dashboard/allocation-coverage',
+    { preHandler: requireAdmin },
+    async (req, reply) => {
+      try {
+        const { status, body } = await callPaymentService('/allocation-coverage', 'GET')
+        return reply.status(status).send(body)
+      } catch (err) {
+        req.log.error({ err }, 'allocation-coverage proxy failed')
+        return reply.status(502).send({ error: 'Payment service unreachable' })
+      }
+    }
+  )
 
   // ---------------------------------------------------------------------------
   // Trigger proxies — payment-service internal endpoints (x-internal-token)

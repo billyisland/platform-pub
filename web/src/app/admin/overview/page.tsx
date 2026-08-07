@@ -1,16 +1,30 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { adminDashboard, type AdminOverview } from '../../../lib/api'
+import {
+  adminDashboard,
+  type AdminOverview,
+  type AdminAllocationCoverage,
+} from '../../../lib/api'
 import { formatPence, timeAgo } from '../../../lib/format'
 import { AdminShell } from '../../../components/admin/AdminShell'
 import { StatCard, StatGrid, StatSection } from '../../../components/admin/Stat'
+
+/** Basis points as a percentage. 10000 bps = 100%. */
+function pct(bps: number): string {
+  return `${(bps / 100).toFixed(1)}%`
+}
 
 export default function AdminOverviewPage() {
   const [data, setData] = useState<AdminOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState<string | null>(null)
   const [actionResult, setActionResult] = useState<string | null>(null)
+  // Segregation is its own fetch across a service boundary (gateway → payment
+  // service). Kept out of the overview's state so an unreachable payment
+  // service costs this panel and not the whole money dashboard.
+  const [segregation, setSegregation] = useState<AdminAllocationCoverage | null>(null)
+  const [segregationError, setSegregationError] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -18,6 +32,12 @@ export default function AdminOverviewPage() {
       setError(null)
     } catch {
       setError('Failed to load the overview.')
+    }
+    try {
+      setSegregation(await adminDashboard.allocationCoverage())
+      setSegregationError(false)
+    } catch {
+      setSegregationError(true)
     }
   }, [])
 
@@ -217,6 +237,91 @@ export default function AdminOverviewPage() {
                 warn={data.custody.holdingDurationDays > data.custody.holdingWarningDays}
               />
             </StatGrid>
+          </StatSection>
+
+          {/* W2 — funds segregation as a measured number. The two figures here
+              are DIFFERENT measurements and are never to be merged into one
+              "segregation %": coverage is charge-side (of what readers paid,
+              how much Stripe held allocated), residual is payout-side (of what
+              we paid out, how much came from platform balance). Neither is
+              derivable from the other. Every absent measurement is rendered in
+              WORDS — a fake 0% would assert that none of the platform's reader
+              money is segregated, which is the most alarming thing this panel
+              can say, and it would say it every day the flag ships dark. */}
+          <StatSection
+            label="Funds segregation"
+            helper="How the settled money is held, measured over 30 days — never asserted."
+          >
+            {segregationError && (
+              <p className="text-ui-xs text-grey-600">
+                Unavailable — the payment service did not answer. This is not a coverage figure of
+                zero.
+              </p>
+            )}
+            {/* The overview lands one round trip before this does, so the
+                section would otherwise stand empty under its own heading for a
+                moment — which reads as "nothing to report". */}
+            {!segregation && !segregationError && (
+              <p className="text-ui-xs text-grey-600">Measuring…</p>
+            )}
+            {segregation && !segregation.allocatedFundsEnabled && (
+              <p className="text-ui-xs text-grey-600">
+                Allocated funds are switched off, so no charge is being segregated and there is
+                nothing to measure. Coverage becomes measurable once STRIPE_ALLOCATED_FUNDS is on
+                and the allocation sweep has read the charges back.
+              </p>
+            )}
+            {segregation && segregation.allocatedFundsEnabled && (
+              <>
+                {segregation.coverage === null ? (
+                  <p className="text-ui-xs text-grey-600">
+                    No measured settlements in the last 30 days
+                    {segregation.unmeasured.count > 0
+                      ? ` — ${segregation.unmeasured.count} settlement(s) are still awaiting an allocation read.`
+                      : '.'}{' '}
+                    Not a coverage figure of zero.
+                  </p>
+                ) : (
+                  <StatGrid>
+                    <StatCard
+                      label="Charge-side coverage"
+                      value={pct(segregation.coverage.coverageBps)}
+                      detail={`${formatPence(segregation.coverage.allocatedPence)} allocated of ${formatPence(segregation.coverage.measuredPence)} charged`}
+                      warn={segregation.coverage.coverageBps < 10000}
+                    />
+                    <StatCard
+                      label="Measured settlements"
+                      value={segregation.coverage.measuredCount}
+                      detail={`Last ${segregation.coverage.windowDays} days`}
+                    />
+                    <StatCard
+                      label="Unallocated"
+                      value={segregation.coverage.unallocatedCount}
+                      detail={`${formatPence(segregation.coverage.unallocatedPence)} charged with no allocation`}
+                      warn={segregation.coverage.unallocatedCount > 0}
+                    />
+                    {/* Neither covered nor uncovered — charges we have not read
+                        yet. Shown so a coverage figure computed over a partial
+                        sample can never read as a figure over all of it. */}
+                    <StatCard
+                      label="Awaiting a read"
+                      value={segregation.unmeasured.count}
+                      detail={
+                        segregation.unmeasured.count > 0
+                          ? `${formatPence(segregation.unmeasured.pence)} not counted either way`
+                          : 'Every settlement in the window is measured'
+                      }
+                      warn={segregation.unmeasured.count > 0}
+                    />
+                  </StatGrid>
+                )}
+                <p className="text-ui-xs text-grey-600 mt-3">
+                  {segregation.residual === null
+                    ? 'Payout-side residual: no payouts in the window, so no measurement — a different number from coverage, and not derivable from it.'
+                    : `Payout-side residual: ${pct(segregation.residual.residualBps)} of ${formatPence(segregation.residual.totalPence)} paid out moved from platform balance rather than a charge's allocation (alerts above ${pct(segregation.residual.thresholdBps)}). A different number from coverage, and not derivable from it.`}
+                </p>
+              </>
+            )}
           </StatSection>
 
           <StatSection label="Counts">
