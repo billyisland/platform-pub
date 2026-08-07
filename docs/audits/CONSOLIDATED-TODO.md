@@ -598,6 +598,12 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 ## 11. Verification debt (work is done, proof isn't)
 
+> **STOP WRITING "PENDING PROD DEPLOY" ENTRIES. The developer pulls and deploys whatever was pushed, at the end of every session** (stated 2026-08-07, and it explains all five staleness incidents in this section as ONE wrong assumption rather than five lapses). The default state of anything pushed in a previous session is therefore **live**, not queued — an entry written at the end of a session is describing a deploy that will have happened before anyone reads it, which is precisely how one came to be stale thirty-four minutes before it was written.
+>
+> What to write instead, when a batch needs something beyond pull-migrate-build-up: a **DEPLOY REQUIREMENTS** note — the env var, the migration ordering, the secret pre-check, the flag flip — stated in the session's own response FIRST (that is what the developer actually reads), and mirrored here only so it survives the conversation. Requirements are durable; "pending" is a claim about the world that rots on contact with it.
+>
+> And the corollary that matters more: **a push is a ship.** Nothing goes to master expecting to be finished next session — by then it is in front of members. If something is genuinely not ready to be live, say so in the response and do not push it.
+
 - ~~**PENDING PROD DEPLOY, opened 2026-08-07 (W2 + internal parity + the welcome)**~~ — **DISCHARGED 2026-08-07 18:15, and it had never been pending: the deploy ran at 17:12, THIRTY-FOUR MINUTES BEFORE this entry was written at 17:46.** Not stale by days, as the four occasions below were — stale before the ink dried, because it was composed from the repo's commit list rather than from the box. Measured, in this order, and the first three commands of the pre-check surfaced it:
 
   - `All migrations already applied`, `_migrations` = **176** against 176 files on disk;
