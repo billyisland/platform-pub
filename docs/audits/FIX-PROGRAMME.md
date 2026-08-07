@@ -102,12 +102,38 @@ starts.
     real work rather than being decorative;
   - zero page errors in either drive.
 
+  **What the drives did NOT exercise, recorded because a walk-through reads like
+  a full test and is not one:** Back was never clicked; no photo was uploaded;
+  the profile step's Save was never pressed and confirmed against the row; the
+  pricing form was never opened and saved; and "Write something now →" was never
+  followed into the editor — which is the single most interesting untested path,
+  being the only one where the `onboarded_at` stamp rides a Glasshouse SUPERSEDE
+  rather than a direct close. Nor was a genuinely fresh account driven through
+  `provisionAccount` → first login, which is the only way the `looksDerived`
+  copy fork can actually fire (every seeded dev account has a real display name,
+  so every drive took the other branch). CONSOLIDATED-TODO §3.3 carries this as
+  where to resume.
+
   One honest correction from the run: the first drive reported "first-run copy on
   screen: false" and the tour *had* opened — the assertion string was wrong (it
   matched the `fromStarter` copy fork, not the one that rendered). The screenshot
   is what settled it. Worth keeping as the shape of a false negative: a failing
   assertion about a working feature reads exactly like a working assertion about
   a broken one until you look.
+
+  **Follow-up the same day — the capabilities gate driven in BOTH directions.**
+  The "absent, not empty" claim had been written into CLAUDE.md, both ADR
+  amendments and the commit message on the strength of reading the code; the
+  mobile run did not prove it (that dropped the TOUR step, not the world step).
+  So `FOLLOW_IMPORT_ENABLED` was flipped to `0` in dev, the gateway recreated,
+  and the sheet re-driven: capabilities returned neither `followImportProtocols`
+  nor `followImportOpml`, and the sheet rendered **three steps with the counter
+  reading `/3`** — the step genuinely recomputed away rather than its content
+  hidden inside a blank fourth. Flipped back, four steps returned; `.env`
+  restored and diffed byte-identical against a backup. Incidental finding worth
+  recording: **the flag was already on in dev**, set during the 2026-07-12
+  run-through, which is why every earlier drive showed four steps — so "flip it
+  in dev" was a no-op and the useful work was the negative control instead.
 
   **Not done, deliberately:** the handle is not editable in the sheet (30-day
   cooldown — a hasty choice there would lock a member out of correcting it for a
