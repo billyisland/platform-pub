@@ -187,6 +187,106 @@ export async function verifyPeerParity(
   }
 }
 
+// -----------------------------------------------------------------------------
+// Slice 2 — the runtime re-probe
+//
+// The boot check only fires when the GATEWAY restarts. `docker compose up -d
+// payment` on its own recreates a peer with whatever secret its .env now holds,
+// while this process keeps running against a peer it no longer matches — the
+// original silent failure, reachable without ever touching the gateway.
+//
+// WHY THIS ONE IS NOT FATAL, WHERE THE BOOT CHECK IS. The asymmetry is
+// deliberate, not an oversight. A boot mismatch can only be introduced by a
+// deploy, i.e. with an operator present and watching, so exiting costs a minute
+// and cannot be missed. A RUNTIME mismatch can appear at three in the morning
+// when a peer is redeployed alone — and a gateway that kills itself then would
+// take down all free reading, auth and feeds, converting a partial money outage
+// into a total site outage with nobody there to fix it. So runtime drift is made
+// LOUD in three places and fatal in none.
+// -----------------------------------------------------------------------------
+
+/** How often the runtime re-probe runs. Three cheap requests; rare condition. */
+const REPROBE_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * The last DEFINITIVE verdict per peer — `true` proven match, `false` proven
+ * mismatch, `null` never proven either way.
+ *
+ * Ambiguity does not overwrite it. A peer that is briefly down must not erase a
+ * proven match (that would make the health signal flap with peer restarts), and
+ * a proven mismatch stays until a later probe proves otherwise, because it is
+ * sticky until someone fixes the env.
+ */
+const parityState = new Map<string, boolean | null>();
+
+export interface ParityReport {
+  /** False only when a secret PROVABLY differs. Never false for unreachable. */
+  ok: boolean;
+  /** Peers that answered 401/403 to a probe carrying our secret. */
+  mismatched: string[];
+  /** Peers parity was never proven for, either way. Not the same as fine. */
+  unverified: string[];
+}
+
+export function getParityReport(): ParityReport {
+  const mismatched: string[] = [];
+  const unverified: string[] = [];
+  for (const peer of PARITY_PEERS) {
+    const verdict = parityState.get(peer.name) ?? null;
+    if (verdict === false) mismatched.push(peer.name);
+    else if (verdict === null) unverified.push(peer.name);
+  }
+  return { ok: mismatched.length === 0, mismatched, unverified };
+}
+
+/** Test seam — reset the module's memory between cases. */
+export function __resetParityState(): void {
+  parityState.clear();
+}
+
+/**
+ * One re-probe round. A single attempt per peer, no retry loop: this runs every
+ * few minutes anyway, so a retry here would only blur which probe saw what.
+ *
+ * Logs on TRANSITION only. Warning on every round would turn the one signal that
+ * matters into noise an operator learns to scroll past, which is how the
+ * original incident stayed invisible.
+ */
+export async function reprobeParity(): Promise<void> {
+  await Promise.all(
+    PARITY_PEERS.map(async (peer) => {
+      const baseUrl = process.env[peer.urlEnv];
+      const secret = process.env[peer.secretEnv];
+      if (!baseUrl || !secret) return;
+
+      const verdict = await probeOnce(peer, baseUrl, secret);
+      // Ambiguous: keep whatever we last PROVED. See parityState's note.
+      if (verdict === "no_endpoint" || verdict === "unreachable") return;
+
+      const now = verdict === "match";
+      const before = parityState.get(peer.name) ?? null;
+      parityState.set(peer.name, now);
+      if (now === before) return;
+
+      if (now) {
+        logger.warn(
+          { peer: peer.name, secretEnv: peer.secretEnv },
+          "Internal parity RESTORED — this peer's shared secret matches again",
+        );
+      } else {
+        logger.error(
+          { peer: peer.name, secretEnv: peer.secretEnv },
+          "SHARED SECRET MISMATCH APPEARED AT RUNTIME — this peer was redeployed with a different secret, so every call to it now fails silently. NOT exiting: that would take the whole site down for a fault in one peer. The gateway's /health is now failing, so `docker compose ps` shows it unhealthy. Fix the env var in both .env files and recreate both containers",
+        );
+      }
+    }),
+  );
+}
+
+export function startParityReprobe(): NodeJS.Timeout {
+  return setInterval(() => void reprobeParity(), REPROBE_INTERVAL_MS);
+}
+
 /**
  * Verify every peer, and REFUSE TO RUN if any secret provably differs.
  *
@@ -206,8 +306,18 @@ export async function assertInternalParity(): Promise<void> {
     PARITY_PEERS.map(async (peer) => ({ peer, ok: await verifyPeerParity(peer) })),
   );
 
+  // Seed the state the health endpoint and the re-probe read from, so an
+  // unverified peer at boot is reported as unverified rather than as fine.
+  for (const { peer, ok } of results) parityState.set(peer.name, ok);
+
   const broken = results.filter((r) => r.ok === false).map((r) => r.peer);
-  if (broken.length === 0) return;
+  if (broken.length === 0) {
+    // Only once the boot check has cleared: the re-probe exists to catch drift
+    // introduced AFTER this point, and starting it earlier would race the
+    // retry loop above and log a transition for a peer that was merely slow.
+    startParityReprobe();
+    return;
+  }
 
   logger.fatal(
     {

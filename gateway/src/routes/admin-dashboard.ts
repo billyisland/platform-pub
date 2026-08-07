@@ -5,6 +5,7 @@ import { zodValidationError } from '@platform-pub/shared/lib/validation.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { requireEnv } from '@platform-pub/shared/lib/env.js'
 import { requireAdmin } from '../middleware/admin.js'
+import { getParityReport } from '../lib/internal-parity.js'
 import { provisionAccount } from '../lib/account-provision.js'
 import { sendWaitlistInviteEmail } from '@platform-pub/shared/lib/email.js'
 
@@ -339,6 +340,13 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
               : REGULATORY_DIAL_DEFAULTS.regulatory_holding_warning_days
           })(),
         },
+        // Shared-secret parity (slice 2). Served here because the healthcheck
+        // and the log are both passive — `docker compose ps` and a log tail are
+        // things an operator does when already suspicious, and the fault this
+        // reports is precisely the one that gives you nothing to be suspicious
+        // ABOUT. This page is where money state is checked, so it is where a
+        // silently broken paywall belongs. Read from process memory, no query.
+        parity: getParityReport(),
         counts: {
           totalAccounts: num(c.total_accounts),
           activeAccounts: num(c.active_accounts),

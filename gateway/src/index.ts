@@ -5,7 +5,7 @@ import {
   tributesEnabled,
 } from "@platform-pub/shared/lib/env.js";
 import { ADVISORY_LOCKS } from "@platform-pub/shared/lib/advisory-locks.js";
-import { assertInternalParity } from "./lib/internal-parity.js";
+import { assertInternalParity, getParityReport } from "./lib/internal-parity.js";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import cookie from "@fastify/cookie";
@@ -364,8 +364,27 @@ async function start() {
   // ---------------------------------------------------------------------------
 
   // Health check
-  app.get("/health", async () => {
+  //
+  // Also reports shared-secret parity, which is what makes a peer redeployed
+  // with a drifted secret show up as `unhealthy` in `docker compose ps` instead
+  // of as nothing at all. Safe to fail here: `web` and `nginx` depend on the
+  // gateway with the plain list form, NOT `condition: service_healthy`, so an
+  // unhealthy gateway blocks neither, and `restart: unless-stopped` does not
+  // restart on a failed healthcheck — it stays up, serving, and visibly wrong.
+  //
+  // Fails ONLY on a PROVEN mismatch. An unreachable peer must never flip this,
+  // or an ordinary peer restart would make the gateway flap.
+  app.get("/health", async (_req, reply) => {
     await pool.query("SELECT 1");
+    const parity = getParityReport();
+    if (!parity.ok) {
+      return reply.status(503).send({
+        status: "degraded",
+        service: "gateway",
+        error: "shared_secret_mismatch",
+        peers: parity.mismatched,
+      });
+    }
     return { status: "ok", service: "gateway" };
   });
 

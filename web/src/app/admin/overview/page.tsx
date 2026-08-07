@@ -83,6 +83,27 @@ export default function AdminOverviewPage() {
       )}
       {data && (
         <>
+          {/* Shared-secret mismatch. FIRST banner on the page, above even the
+              payout halt: a halt is a deliberate control working as designed,
+              this is the platform silently not working at all — on prod it meant
+              every paywalled unlock failing while every number here looked
+              healthy. Rendered from the gateway's live probe state, so it also
+              covers a peer redeployed after the gateway last booted. */}
+          {!data.parity.ok && (
+            <div className="bg-glasshouse-well px-4 py-3 mb-8">
+              <p className="label-ui text-crimson mb-1">
+                Shared secret mismatch — {data.parity.mismatched.join(', ')}
+              </p>
+              <p className="text-ui-xs text-black">
+                This gateway holds a different internal secret from the service
+                {data.parity.mismatched.length === 1 ? '' : 's'} named, so every call to
+                {data.parity.mismatched.length === 1 ? ' it' : ' them'} is failing — paywalled
+                unlocks and article publishing among them. Make the env var identical in both
+                {' '}<span className="font-mono">.env</span> files and recreate both containers.
+              </p>
+            </div>
+          )}
+
           {data.payout.halted && (
             <div className="bg-glasshouse-well px-4 py-3 mb-8">
               <p className="label-ui text-crimson mb-1">Payouts halted</p>

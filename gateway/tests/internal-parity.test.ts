@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   classifyParityStatus,
   verifyPeerParity,
+  reprobeParity,
+  getParityReport,
+  __resetParityState,
   PARITY_PEERS,
   type ParityPeer,
 } from '../src/lib/internal-parity.js'
@@ -152,5 +155,112 @@ describe('verifyPeerParity', () => {
     delete process.env.TEST_PEER_URL
     stubFetch(200)
     expect(await verifyPeerParity(peer, noSleep)).toBe(null)
+  })
+})
+
+// =============================================================================
+// Slice 2 — the runtime re-probe.
+//
+// Catches the case the boot check structurally cannot: a peer redeployed on its
+// own, while this process keeps running against a secret it no longer matches.
+// What is worth pinning is the STATE rule, because every way this misbehaves is
+// a state bug — flap the health signal on an ordinary peer restart, or let a
+// proven mismatch be erased by a peer that simply went away.
+// =============================================================================
+
+describe('reprobeParity — runtime drift', () => {
+  const REAL_ENV = { ...process.env }
+
+  beforeEach(() => {
+    __resetParityState()
+    for (const p of PARITY_PEERS) {
+      process.env[p.urlEnv] = `http://${p.name}:1234`
+      process.env[p.secretEnv] = 'shared-secret'
+    }
+  })
+  afterEach(() => {
+    process.env = { ...REAL_ENV }
+    __resetParityState()
+    vi.unstubAllGlobals()
+  })
+
+  /** Stub fetch with a per-peer status, keyed by the hostname in the URL. */
+  const stubByPeer = (statuses: Record<string, number | 'throw'>) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const peer = PARITY_PEERS.find((p) => url.includes(p.name))!
+        const s = statuses[peer.name]
+        if (s === 'throw') throw new Error('ECONNREFUSED')
+        return { status: s } as Response
+      })
+    )
+  }
+
+  const allPeers = (status: number | 'throw') =>
+    Object.fromEntries(PARITY_PEERS.map((p) => [p.name, status]))
+
+  it('starts as unverified — never as ok-by-default', async () => {
+    // Before any probe has run, nothing has been PROVEN. Reporting ok:true here
+    // would mean a gateway that had never successfully checked anything looked
+    // identical to one that had checked everything.
+    const r = getParityReport()
+    expect(r.unverified.sort()).toEqual(PARITY_PEERS.map((p) => p.name).sort())
+  })
+
+  it('reports ok once every peer proves a match', async () => {
+    stubByPeer(allPeers(200))
+    await reprobeParity()
+    expect(getParityReport()).toMatchObject({ ok: true, mismatched: [], unverified: [] })
+  })
+
+  it('flags exactly the peer that drifted, and no other', async () => {
+    stubByPeer({ 'payment-service': 200, 'key-custody': 401, 'key-service': 200 })
+    await reprobeParity()
+    const r = getParityReport()
+    expect(r.ok).toBe(false)
+    expect(r.mismatched).toEqual(['key-custody'])
+  })
+
+  it('an unreachable peer does NOT erase a proven match', async () => {
+    // The flap guard. Peers restart routinely; if absence overwrote a proven
+    // match the gateway would go unhealthy every time one bounced, and an
+    // operator would learn to ignore the signal — which is how the original
+    // incident stayed invisible.
+    stubByPeer(allPeers(200))
+    await reprobeParity()
+    stubByPeer(allPeers('throw'))
+    await reprobeParity()
+    expect(getParityReport()).toMatchObject({ ok: true, unverified: [] })
+  })
+
+  it('an unreachable peer does NOT clear a proven mismatch either', async () => {
+    // Sticky in both directions, and this is the safety-critical one: a broken
+    // peer that then goes down must not read as repaired. Only a proven match
+    // clears a proven mismatch.
+    stubByPeer(allPeers(403))
+    await reprobeParity()
+    expect(getParityReport().ok).toBe(false)
+    stubByPeer(allPeers('throw'))
+    await reprobeParity()
+    expect(getParityReport().ok).toBe(false)
+  })
+
+  it('clears once the secret is actually fixed', async () => {
+    stubByPeer(allPeers(403))
+    await reprobeParity()
+    expect(getParityReport().ok).toBe(false)
+    stubByPeer(allPeers(200))
+    await reprobeParity()
+    expect(getParityReport()).toMatchObject({ ok: true, mismatched: [] })
+  })
+
+  it('treats a peer with no /auth-check as ambiguous, not as a mismatch', async () => {
+    // An older image is a version skew, not a drifted secret. Calling it a
+    // mismatch would put the gateway permanently unhealthy through a partial
+    // deploy and cry wolf about a fault that is not there.
+    stubByPeer(allPeers(404))
+    await reprobeParity()
+    expect(getParityReport().ok).toBe(true)
   })
 })

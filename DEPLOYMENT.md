@@ -401,6 +401,28 @@ It exits only on a proven 401/403. An unreachable peer, or one on an older image
 with no `/api/v1/auth-check`, is logged and retried, never fatal — so a partial
 deploy cannot take the gateway down.
 
+### If a secret drifts while the gateway is already running
+
+Redeploying a peer on its own (`docker compose up -d payment`) with a changed
+secret cannot be caught at boot, because the gateway never boots. A re-probe
+runs every 5 minutes and, unlike the boot check, **never exits** — a peer
+recreated at three in the morning must not take down free reading, auth and
+feeds. It reports in three places instead:
+
+- `docker compose ps` shows the gateway **unhealthy** (`/health` returns 503
+  with the offending peers). Nothing cascades: `web` and `nginx` depend on the
+  gateway with the plain list form, not `condition: service_healthy`, and
+  `restart: unless-stopped` does not restart on a failed healthcheck — it stays
+  up, serving, and visibly wrong.
+- A single `SHARED SECRET MISMATCH APPEARED AT RUNTIME` error in the gateway
+  log, on the transition only, not once per probe.
+- A crimson banner at the top of `/admin/overview`, above the payout-halt
+  banner.
+
+The state is **sticky in both directions**: only a proven match clears a proven
+mismatch, so a broken peer that then goes down does not read as repaired, and a
+peer that merely restarts does not erase a proven match.
+
 ## Troubleshooting: feature not appearing after a rebuild
 
 Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviour doesn't show.

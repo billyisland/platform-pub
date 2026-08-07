@@ -68,6 +68,17 @@ export interface AdminOverview {
     holdingDurationDays: number
     holdingWarningDays: number
   }
+  /**
+   * Shared-secret parity with payment / key-custody / key-service.
+   * `ok: false` means a peer PROVABLY holds a different secret, so every call
+   * to it is failing silently. `unverified` is neither proven nor disproven —
+   * distinct from fine, and never to be rendered as fine.
+   */
+  parity: {
+    ok: boolean
+    mismatched: string[]
+    unverified: string[]
+  }
   counts: {
     totalAccounts: number
     activeAccounts: number
