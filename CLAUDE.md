@@ -28,6 +28,8 @@ All backend services share a single PostgreSQL database. `shared/` contains the 
 
 This is a local dev directory on the developer's laptop. Test features at `localhost:3010` (web) and `localhost:3000` (API). To deploy to production: push to git, then the developer SSHs to a remote server and rebuilds there. Claude Code has no direct access to the production server.
 
+**A push is a ship, and the beta is closed.** The developer pulls and deploys whatever was pushed at the end of **every** session, so master is live by the next one — never write a "pending prod deploy" tracker item (that claim is stale before anyone reads it; write the deploy *requirements* in the session's closing response instead), and never push work meaning to finish it next session. And with **essentially no real active members yet**, a bad deploy costs a fix-forward commit rather than an incident: ship on `tsc` + root ESLint + `next build` + a smoke, keep exhaustive browser/DB verification for **money and data** paths, and stop paying for deploy-window safety (both-orderings migrations, dark-ship brakes) except where a real external system — Stripe above all — is on the other side. **Unchanged by beta size:** the money/ledger invariants below, anything that can destroy data, and Stripe. All of this inverts the day the beta opens.
+
 ## Commands
 
 ### Local dev stack
