@@ -252,10 +252,16 @@ export default function AdminOverviewPage() {
             label="Funds segregation"
             helper="How the settled money is held, measured over 30 days — never asserted."
           >
+            {/* Names no culprit on purpose. This read crosses web → gateway →
+                payment service, and the browser cannot tell which hop failed —
+                the first version said "the payment service did not answer" and
+                sent a prod diagnosis chasing the wrong container when the fault
+                was a token mismatch at the gateway. The gateway logs the
+                upstream status on any non-2xx, so point there instead. */}
             {segregationError && (
               <p className="text-ui-xs text-grey-600">
-                Unavailable — the payment service did not answer. This is not a coverage figure of
-                zero.
+                Unavailable — the segregation figures could not be read. This is not a coverage
+                figure of zero; check the gateway log for the upstream status.
               </p>
             )}
             {/* The overview lands one round trip before this does, so the

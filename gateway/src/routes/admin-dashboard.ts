@@ -113,6 +113,24 @@ async function callPaymentService(
   } catch {
     body = { error: 'Upstream returned a non-JSON response' }
   }
+
+  // AN UPSTREAM REFUSAL MUST LEAVE A FOOTPRINT. Every caller passes the status
+  // and body straight to the browser, and the per-route try/catch only fires
+  // when `fetch` itself throws — so before this, a 403 or 500 from the payment
+  // service reached the operator's screen having written NOTHING to the gateway
+  // log. That is precisely how an `INTERNAL_SERVICE_TOKEN` mismatch survived on
+  // prod (2026-08-07): payment-service answered 403 to every proxied call
+  // — including `/gate-pass`, so paywalled unlocks were failing — and the only
+  // visible symptom was one admin panel saying "unavailable", with no log line
+  // anywhere naming the status. Logged here rather than per route so all three
+  // proxies get it from one place.
+  if (res.status < 200 || res.status >= 300) {
+    logger.warn(
+      { path, method, status: res.status, body },
+      'payment-service proxy returned non-2xx — check INTERNAL_SERVICE_TOKEN parity between gateway/.env and payment-service/.env if this is a 403'
+    )
+  }
+
   return { status: res.status, body }
 }
 
