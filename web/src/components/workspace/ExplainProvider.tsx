@@ -292,6 +292,51 @@ export function FirstRunController({
   return null;
 }
 
+// Headless launcher for the tour ACCEPTED on the welcome sheet's last step
+// (`Welcome.tsx`). Distinct from `FirstRunController` above, which is the
+// dormant AUTO-entry: this fires only on an explicit yes, which is the whole
+// difference EXPLAIN-ADR amendment 1 turned on ("landing in Explain mode on load
+// without asking for it read as a malfunction, not a welcome").
+//
+// IT EXISTS TO OWN THE ORDERING. Floor-mode Explain sits BELOW the Glasshouse
+// band by design (CLAUDE.md, Stacking order), so a tour opened while the welcome
+// pane is still mounted renders behind it — the accepted tour would look like
+// nothing happening. Mounting this only once the sheet has gone means the open
+// lands in a later commit than the unmount, rather than relying on both
+// batching. The caller renders it as `{tourPending && !welcomeOpen && <…/>}`.
+//
+// Writes the first-run seen-flag on open (D6's seen-on-open), so a revived
+// `FirstRunController` would not re-offer a tour this member has already taken.
+// Declining does NOT write it: they have not seen it, and Explain stays
+// reachable from the ∀ menu either way.
+export function FirstRunLauncher({
+  userId,
+  onLaunched,
+}: {
+  userId: string;
+  onLaunched: () => void;
+}) {
+  const openFirstRun = useOpenFirstRun();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(`${FIRSTRUN_SEEN_PREFIX}${userId}`, "true");
+      } catch {
+        // Quota / private browsing — the tour still runs; worst case a revived
+        // auto-entry offers it once more, which is harmless.
+      }
+    }
+    openFirstRun();
+    onLaunched();
+    // Fire once per mount: the caller unmounts this via `onLaunched`, and a
+    // re-run would re-open a tour the member may have just dismissed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return null;
+}
+
 // Register an explainable ROOT. Pass an existing `ref` (the vessel/floor already
 // owns one) or let the hook mint one and attach the returned ref to the DOM
 // node. Outside a provider (e.g. the loading-state Floor) this is an inert

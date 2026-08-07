@@ -50,11 +50,26 @@ Two headline lines, a slab rule, one paragraph, two buttons. No social proof, no
 
 `HomepageMagazine` is a featured card plus a two-column grid, all `bg-grey-100`, no images, no hero, no visual customisation beyond layout choice. For the feature meant to differentiate all.haus as "a publishing house you can run," these feel like wireframes. A magazine homepage needs to look like a magazine.
 
-### 6. Writer onboarding flow
+### 6. ~~Writer onboarding flow~~ (RESOLVED)
 
 **Impact: medium-high — determines whether new signups convert to active writers.**
 
-After signup, no guided setup. No "create your profile, write your first article, set your pricing" sequence. New writers land on the feed with no orientation. The invite system exists (`/invite/[token]`) but there's no post-signup wizard.
+~~After signup, no guided setup. No "create your profile, write your first article, set your pricing" sequence. New writers land on the feed with no orientation. The invite system exists (`/invite/[token]`) but there's no post-signup wizard.~~
+
+Fixed 2026-08-07 — a first-session **welcome** sheet (migration 176,
+`web/src/components/workspace/Welcome.tsx`), shipped deliberately NOT as the
+sequence this item describes. Two corrections to the framing, both worth keeping:
+
+- **"Determines whether new signups convert to active writers" was the wrong
+  frame by the time it was built.** The beta went readers-first, so the sheet is
+  reader-first too and publishing is one collapsed offer, passed in a click.
+  Steering every admitted member toward writing would misdescribe the product.
+- **The sharper defect was not the missing wizard.** Accounts are provisioned by
+  `provisionAccount(email, email.split('@')[0])`, so members land named after
+  their email address with no photo and no bio. That — not orientation — is what
+  step 1 repairs, and it is the only step everyone sees. Orientation is handled
+  by OFFERING the pre-existing six-beat tour on the last step, rather than by
+  building a second one.
 
 ### 7. ~~CSP header blocking external images~~ (RESOLVED)
 

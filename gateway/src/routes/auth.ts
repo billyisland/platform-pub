@@ -319,7 +319,43 @@ export async function authRoutes(app: FastifyInstance) {
       defaultArticlePricePence: account.defaultArticlePricePence,
       isAdmin: adminIds.includes(account.id),
       usernameChangedAt: account.usernameChangedAt,
+      // NULL ⇒ the first-session welcome has never been offered to this member
+      // (migration 176). Rides the session payload for the same reason
+      // `cardActionRequiredAt` does: the workspace already has it at bootstrap,
+      // so gating the sheet costs no extra round trip. Device-independent by
+      // construction — the two older seen-flags are `localStorage` and would ask
+      // a member to introduce themselves again on every new browser.
+      onboardedAt: account.onboardedAt,
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // POST /auth/onboarded — record that the first-session welcome was answered
+  //
+  // Answered, NOT completed: dismissing the sheet is an answer, and a member who
+  // closes it must not be asked again on their next device. So both the "Done"
+  // path and the ✕ call this. Nothing about the profile is inferred from it.
+  //
+  // FIRST-WRITE-WINS via `WHERE onboarded_at IS NULL`, mirroring the halt
+  // table's arbiter: the timestamp records when the offer was first answered,
+  // and a duplicate call (two tabs, a retry after a flaky response) must not
+  // move it. That also makes the route idempotent, which is what lets the client
+  // fire it without awaiting — a lost call costs one repeat offer, never an
+  // error the member has to see.
+  // ---------------------------------------------------------------------------
+
+  app.post("/auth/onboarded", { preHandler: requireAuth }, async (req, reply) => {
+    await pool.query(
+      `UPDATE accounts SET onboarded_at = now()
+        WHERE id = $1 AND onboarded_at IS NULL`,
+      [req.session!.sub],
+    );
+    // Always 200, whether or not this call was the one that stamped it — the
+    // caller's question is "is this member welcomed", and after either outcome
+    // the answer is yes. Reporting the rowCount would invite a client to treat
+    // 0 as a failure and retry a settled state.
+    invalidateAuthCache(req.session!.sub);
+    return reply.status(200).send({ ok: true });
   });
 
   // ---------------------------------------------------------------------------

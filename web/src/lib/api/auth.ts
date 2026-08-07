@@ -35,6 +35,17 @@ export interface MeResponse {
   defaultArticlePricePence: number | null
   isAdmin: boolean
   usernameChangedAt: string | null
+  /**
+   * When the first-session welcome was offered and ANSWERED — completed or
+   * dismissed alike (migration 176). NULL ⇒ never offered, which is the only
+   * gate `Welcome` reads.
+   *
+   * Do not read this as "the profile is filled in": a member answers it by
+   * closing it, and the two facts are deliberately separate. It is on the
+   * account rather than in `localStorage` so a member introduces themselves
+   * once, not once per browser.
+   */
+  onboardedAt: string | null
 }
 
 export const auth = {
@@ -67,6 +78,13 @@ export const auth = {
 
   me: () =>
     request<MeResponse>('/auth/me'),
+
+  // Record that the first-session welcome was answered — by completing it or by
+  // closing it, which is why the caller fires this from BOTH paths. Idempotent
+  // server-side (first-write-wins), so it is safe to call without awaiting and a
+  // lost call costs one repeat offer rather than an error.
+  markOnboarded: () =>
+    request<{ ok: boolean }>('/auth/onboarded', { method: 'POST' }),
 
   connectStripe: () =>
     request<{ stripeConnectUrl: string }>('/auth/upgrade-writer', { method: 'POST' }),

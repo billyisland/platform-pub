@@ -23,6 +23,97 @@ starts.
 
 ## Progress
 
+- **2026-08-07 (the first-session welcome — a member stops being named after
+  their email address)** — CONSOLIDATED-TODO §3.3, closing the last unbuilt
+  §3 item that had no partial work. **Migration 176.**
+
+  **The gap was not "no wizard", it was that the beta names people after their
+  inbox.** Every account is provisioned by
+  `provisionAccount(email, email.split('@')[0])` — display name from the email's
+  local part, username derived from that — so an admitted waitlister lands in the
+  workspace called `ejklake`, with no photo and no bio, and nothing had ever
+  asked them to fix it. That is the defect step 1 repairs, and it is the only
+  step every member sees.
+
+  **Two owner decisions reshaped it away from the literal spec** (both taken
+  2026-08-07, both recorded here because the reasoning outlives the build).
+  **(a) Reader-first with a writer branch.** §3.3's "profile → first article →
+  pricing" came from a frontend audit written before the beta went readers-first;
+  marching someone admitted to READ through a pricing form states the wrong thing
+  about the platform. Publishing is now ONE collapsed offer on step 3
+  (`Set my prices` / `Write something now →`), passed in a single click.
+  PRINCIPLES.md's symmetry is "about primitives, not about onboarding", which is
+  the licence for the asymmetry. **(b) The dormant tour is offered, not sprung.**
+  The six-beat first-run program has existed since 2026-07-15 and was switched
+  off the same day — EXPLAIN-ADR amendment 1: "landing in Explain mode on load
+  without asking for it read as a malfunction, not a welcome". That was a verdict
+  on the ENTRY, not the tour, so the tour survives and the entry becomes a
+  question on the last step. `FirstRunController` stays dormant and un-mounted;
+  the new `FirstRunLauncher` opens the same program on an explicit yes.
+
+  **A live bug in the thing it replaced, and this is the durable finding.**
+  `BringYourWorld` fired on `mintedFounderFeed` — the bootstrap returning zero
+  feeds. That stopped meaning "brand-new account" when starter-seeding moved into
+  `listFeedsForOwner`, which is the very function `/workspace/bootstrap` calls:
+  **a healthy new account never has zero feeds**, so the branch is the
+  seeding-FAILURE path. The offer was reachable on prod *only* because the §0l
+  incident had destroyed the starter template — and landing §0l item 1's repair
+  would have silently switched the surface off, a first-session experience
+  deleted as a side effect of an unrelated fix, with nothing to say it had.
+  Generalised into CLAUDE.md: **a first-session signal derived from an empty
+  result inverts the day the system starts working.**
+
+  **Account state, not a device flag.** `accounts.onboarded_at` (nullable, no
+  default) replaces a `localStorage` seen-key, because a member who has
+  introduced themselves must not be asked again on their laptop for having first
+  signed in on their phone. `POST /auth/onboarded` stamps it on complete,
+  dismiss AND walk-away-into-the-editor alike — all three are answers —
+  first-write-wins on `WHERE onboarded_at IS NULL`, so the client fires it
+  without awaiting and a lost call costs one repeat offer rather than an error.
+
+  **`BringYourWorld` is deleted, absorbed as step 2** exactly as
+  FOLLOW-GRAPH-IMPORT-ADR §7.4 always said it would be. Still D7-pure (nothing
+  imports without an act inside it) and still absent ENTIRELY when capabilities
+  are dark — which is why the sheet is four steps on dev and will be three on
+  prod until `FOLLOW_IMPORT_ENABLED` flips.
+
+  **The ordering fix is load-bearing and was proven, not assumed.** Floor-mode
+  Explain sits BELOW the Glasshouse band, so a tour opened while the welcome pane
+  is still mounted renders behind it — the accepted tour would look like nothing
+  happening. `FirstRunLauncher` mounts only once the pane has gone, so the open
+  lands in a later commit than the unmount rather than relying on both batching.
+
+  **Validation — driven, with controls, not compiled and declared.** Migration
+  applied to dev; **drift guard 8/8 green** after a canonical `pg_dump` regen +
+  seed re-append. `tsc` clean (web, shared, gateway), root ESLint **0 errors**,
+  hairline tripwire clean on all three touched files, `next build` clean.
+  Browser-driven against the rebuilt dev stack at 1440×900 and 390×844:
+  - four steps desktop (`1/4 Say who you are` → `Bring your world` → `You can
+    publish here too` → `Want a look round?`), **three on mobile** — the
+    desktop-only tour step correctly absent;
+  - accepting the tour opens **first-run beat 1/6** on the floor, with its
+    stepper, leader line and About chrome swap — i.e. the pane really did
+    unmount first;
+  - ✕ stamps `onboarded_at` (NULL → timestamp), so dismissal counts as an answer;
+  - **negative control:** with the column set, a reload shows **no sheet** — the
+    gate closes, which is the half a "does it render" check never proves;
+  - **idempotency control:** a second `POST /auth/onboarded` a full second later
+    left the timestamp byte-identical, so `WHERE onboarded_at IS NULL` is doing
+    real work rather than being decorative;
+  - zero page errors in either drive.
+
+  One honest correction from the run: the first drive reported "first-run copy on
+  screen: false" and the tour *had* opened — the assertion string was wrong (it
+  matched the `fromStarter` copy fork, not the one that rendered). The screenshot
+  is what settled it. Worth keeping as the shape of a false negative: a failing
+  assertion about a working feature reads exactly like a working assertion about
+  a broken one until you look.
+
+  **Not done, deliberately:** the handle is not editable in the sheet (30-day
+  cooldown — a hasty choice there would lock a member out of correcting it for a
+  month; the copy names the handle and points at Settings instead), and the
+  first-login ceremony stays commented out, untouched and still its own call.
+
 - **2026-08-07 (W2 — segregation stops being an adjective)** —
   CONSOLIDATED-TODO §1.18, `PAYMENT-PERIMETER-ADR` §3.W2. No migration.
 

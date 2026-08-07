@@ -127,7 +127,7 @@ Largely the existing frontend audit, with one significant addition and one clari
 2. Landing page (audit item 3).
 3. Writer analytics surfacing Traffology (audit item 4, integrated with the Traffology work).
 4. Publication homepage templates (audit item 5).
-5. Writer onboarding (audit item 6).
+5. ~~Writer onboarding (audit item 6).~~ Done 2026-08-07 — shipped as a first-session **welcome**, reader-first with a writer branch (migration 176). See the *What's not in this plan* note below for how the design pass resolved.
 6. ~~CSP header fix (audit item 7).~~ Done — `img-src` widened to `https:`.
 7. Import tooling (audit item 8).
 8. **Author-controlled presentation** — editor support for flowing vs custom presentation modes, publication-level design token system, faithful render in the reader route. This is larger than it reads and is what makes the writer pitch real.
@@ -177,7 +177,7 @@ For paid articles, the compose surface needs to expose price, access mode, paywa
 
 ## What's not in this plan but lives nearby
 
-- **Onboarding.** Reader-first and writer-first onboarding are genuinely different. Neither is in Phase A or Phase B as scoped. Needs its own small design pass.
+- **Onboarding.** Reader-first and writer-first onboarding are genuinely different. Neither is in Phase A or Phase B as scoped. Needs its own small design pass. *[2026-08-07 — the pass happened, and it resolved the fork rather than picking a side: ONE sheet, reader-first, with publishing as a single collapsed OFFER rather than a second path. The two are genuinely different, but forking on a "here to read or to write?" question asks people to classify themselves before they have seen anything, and on this platform the honest answer is usually "both, eventually". So the shared steps are shared and the asymmetry is one step deep. PRINCIPLES.md's symmetry claim is "about primitives, not about onboarding", which is what licenses that. Spec: CONSOLIDATED-TODO §3.3; `web/src/components/workspace/Welcome.tsx`.]*
 - **Linked accounts and cross-posting.** Already implemented in the note composer and settings. In the compose-as-surface model, this becomes a per-compose affordance — "also post to Bluesky / Mastodon" as an inline toggle.
 - **Federation and self-hosting.** Post-launch. The design should not foreclose it; doesn't need to actively support it at v1.
 - **Groups as persistent entities.** Emerges from the cliquey primitive rather than being built as a separate feature. The product can offer to save a frequently-used thread membership after repeated use. No creation flow needed until the primitive has been lived with and the shape of real usage has become clear.

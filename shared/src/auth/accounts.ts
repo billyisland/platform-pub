@@ -162,6 +162,14 @@ export interface AccountInfo {
    * why nothing is moving. STRIPE audit S1.
    */
   cardActionRequiredAt: string | null
+  /**
+   * When the first-session welcome was offered and answered — completed or
+   * dismissed alike (migration 176). NULL = never offered, which is the gate
+   * `Welcome` reads. It records that the offer was MADE, never that the profile
+   * was filled in: a member may answer it by closing it, and nothing may infer
+   * a populated display name / bio / avatar from a non-null value here.
+   */
+  onboardedAt: string | null
 }
 
 export async function getAccount(accountId: string): Promise<AccountInfo | null> {
@@ -181,12 +189,13 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     default_article_price_pence: number | null
     username_changed_at: Date | null
     card_action_required_at: Date | null
+    onboarded_at: Date | null
   }>(
     `SELECT id, nostr_pubkey, username, display_name, bio, avatar_blossom_url,
             email, status, stripe_customer_id, stripe_connect_id,
             stripe_connect_kyc_complete, free_allowance_remaining_pence,
             default_article_price_pence, username_changed_at,
-            card_action_required_at
+            card_action_required_at, onboarded_at
      FROM accounts WHERE id = $1`,
     [accountId]
   )
@@ -210,6 +219,7 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     defaultArticlePricePence: r.default_article_price_pence,
     usernameChangedAt: r.username_changed_at?.toISOString() ?? null,
     cardActionRequiredAt: r.card_action_required_at?.toISOString() ?? null,
+    onboardedAt: r.onboarded_at?.toISOString() ?? null,
   }
 }
 

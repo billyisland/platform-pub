@@ -1,0 +1,56 @@
+-- =============================================================================
+-- 176 — a member is asked to introduce themselves exactly once, everywhere
+--
+-- CONSOLIDATED-TODO §3.3. The workspace has had a first-session surface since
+-- the follow-graph import shipped (`BringYourWorld`), and it fires on the wrong
+-- signal: `WorkspaceView`'s bootstrap treats "the server returned zero feeds" as
+-- "brand-new account". That was true when it was written and is not true now —
+-- `/workspace/bootstrap` calls `listFeedsForOwner`, which SEEDS the starter
+-- template before returning, so a healthy new account never has zero feeds. The
+-- zero-feeds branch is the FAILURE path (no feed carries `is_starter_template`),
+-- which is why the offer still appears on prod today: the §0l incident left the
+-- template destroyed. Repair the template and the first-session surface goes
+-- silent for every new member, with nothing to say it had.
+--
+-- WHY A COLUMN AND NOT A `localStorage` KEY. The two existing seen-flags
+-- (`workspace:ceremony_seen:`, `workspace:bring_world_seen:`) are per-DEVICE,
+-- which is right for what they gate — a one-off animation and a standing offer
+-- that costs nothing to see twice. It is wrong for onboarding: a member who has
+-- already introduced themselves must not be asked again on their laptop because
+-- they first signed in on their phone. "Has this person been welcomed" is a fact
+-- about the ACCOUNT, so it lives on the account, next to the other facts about
+-- them that outlive a browser.
+--
+-- WHY IT IS THE HONEST GATE. Every account in the closed beta is provisioned by
+-- `provisionAccount(email, email.split('@')[0])` — the admit path derives the
+-- display name from the email's local part and the username from that. So every
+-- admitted member currently lands in the workspace wearing a name they did not
+-- choose, with no photo and no bio, and nothing ever asks them to fix it. That
+-- is what the welcome exists to repair, and NULL here is precisely the set of
+-- people it has not yet been offered to.
+--
+-- NULLABLE, NO DEFAULT — and this is the deploy-safety statement §0p.2 asks
+-- every migration to make. The column is nullable with no default, so the
+-- ordering is safe in BOTH directions: old code never names it and is unaffected
+-- by a migrated DB, and new code treats NULL as "not yet welcomed", which is the
+-- correct reading for every row that exists when this runs. There is no window
+-- in which either half is broken by the other. (Contrast migration 170, whose
+-- NOT NULL column with no default made its own deploy window breaking in both
+-- directions.)
+--
+-- Every existing member therefore reads as un-welcomed and is offered the sheet
+-- once. That is deliberate, not a backfill oversight: nobody on the platform has
+-- ever been asked for a display name, and the beta cohort is small enough that
+-- the alternative — silently marking them done and leaving the email-derived
+-- names in place forever — would preserve exactly the state this fixes.
+--
+-- Stamped when the sheet is completed OR dismissed (`POST /auth/onboarded`,
+-- first-write-wins on `WHERE onboarded_at IS NULL`), because dismissing is an
+-- answer. It records that the offer was MADE, never that it was accepted — no
+-- part of the product may read it as "this profile is filled in".
+-- =============================================================================
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS onboarded_at timestamptz;
+
+COMMENT ON COLUMN accounts.onboarded_at IS
+  'When the first-session welcome was offered and answered (completed or dismissed). NULL = never offered. Records that the offer was made, never that the profile was filled in.';

@@ -30,12 +30,17 @@ import { prefersReducedMotion } from "../../lib/workspace/motion";
 import {
   workspaceFeeds as workspaceFeedsApi,
   follows as followsApi,
+  auth,
   type WorkspaceFeed,
   type WorkspaceFeedSource,
 } from "../../lib/api";
 import type { PipStatus } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
-import { ExplainProvider, useExplainable } from "./ExplainProvider";
+import {
+  ExplainProvider,
+  useExplainable,
+  FirstRunLauncher,
+} from "./ExplainProvider";
 import { useExplain } from "../../stores/explain";
 import { ExplainOverlay } from "./ExplainOverlay";
 import { AboutOverlay } from "./AboutOverlay";
@@ -139,16 +144,26 @@ const EXTERNAL_QUOTE_LABEL: Record<string, string> = {
 // no equivalent gate since it's a per-action animation, not an onboarding.
 const CEREMONY_SEEN_PREFIX = "workspace:ceremony_seen:";
 
-// "Bring your world" (FOLLOW-GRAPH-IMPORT-ADR §7.4): the first-session import
-// offer rides the same zero-feeds signal. Its seen-key is written only when
-// the sheet is actually dismissed — a dark import flag renders no sheet and
-// burns nothing.
-const BRING_WORLD_SEEN_PREFIX = "workspace:bring_world_seen:";
-
-// Lazy like the LazyOverlays surfaces: only brand-new accounts ever render
-// this, so its chunk (resolver input + import hooks) stays out of /reader.
-const BringYourWorld = nextDynamic(
-  () => import("./BringYourWorld").then((m) => m.BringYourWorld),
+// The first-session welcome (CONSOLIDATED-TODO §3.3), which ABSORBED the
+// "Bring your world" import offer it supersedes (FOLLOW-GRAPH-IMPORT-ADR §7.4 —
+// that sheet was explicitly a stand-in until this built) as its step 2.
+//
+// THE SIGNAL CHANGED, AND THAT WAS THE BUG. `BringYourWorld` fired on
+// `mintedFounderFeed` — the bootstrap returning zero feeds — which stopped
+// meaning "brand-new account" once `/workspace/bootstrap` began seeding starter
+// feeds through `listFeedsForOwner`. A healthy new account now never has zero
+// feeds, so that branch is the FAILURE path (no feed carries
+// `is_starter_template`): the offer appears on prod today only because the §0l
+// incident destroyed the template, and would go silent the moment it is
+// repaired. The welcome instead reads `accounts.onboarded_at` (migration 176),
+// which is about the member rather than about the state of their feeds — and,
+// being server-side, does not re-ask on every new browser the way the two
+// `localStorage` seen-flags above do.
+//
+// Lazy like the LazyOverlays surfaces: only un-welcomed accounts ever render
+// it, so its chunk (resolver input + import hooks) stays out of /reader.
+const Welcome = nextDynamic(
+  () => import("./Welcome").then((m) => m.Welcome),
   { ssr: false },
 );
 
@@ -315,7 +330,12 @@ export function WorkspaceView() {
     null,
   );
   const [ceremony, setCeremony] = useState<PendingCeremony | null>(null);
-  const [bringWorld, setBringWorld] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  // Set when the welcome's last step is accepted. The launcher mounts only once
+  // `welcomeOpen` has gone false, so the tour opens in a LATER commit than the
+  // pane's unmount — floor-mode Explain sits below the Glasshouse band, so a
+  // tour opened under a live pane would render behind it.
+  const [tourPending, setTourPending] = useState(false);
   const [pendingMerge, setPendingMerge] = useState<{
     source: WorkspaceFeed;
     target: WorkspaceFeed;
@@ -494,7 +514,7 @@ export function WorkspaceView() {
     !!pipPanel ||
     !!feedComposerFor ||
     !!composerOpen ||
-    bringWorld ||
+    welcomeOpen ||
     !!ceremony;
 
   // `\` toggles the regimented layout (§V): every visible feed on screen at
@@ -1345,20 +1365,19 @@ export function WorkspaceView() {
           // });
         }
 
-        // "Bring your world" (ADR §7.4): same first-session signal as the
-        // ceremony, its own seen-key (written on dismiss, not here — a dark
-        // import flag renders no sheet and must not consume the one shot).
+        // The first-session welcome (§3.3). Gated on `onboardedAt` being NULL —
+        // the account has never been offered it — and NOT on `mintedFounderFeed`
+        // the way its predecessor was: that signal means "the bootstrap returned
+        // no feeds", which since starter-seeding moved into `listFeedsForOwner`
+        // is the seeding-FAILURE path rather than the new-account path (see the
+        // `Welcome` import comment).
+        //
         // Skipped when a deep-linked overlay already claimed the Glasshouse —
-        // superseding what the user explicitly navigated to would be rude.
-        if (
-          mintedFounderFeed &&
-          typeof window !== "undefined" &&
-          window.localStorage.getItem(
-            `${BRING_WORLD_SEEN_PREFIX}${user.id}`,
-          ) !== "true" &&
-          !useGlasshousePresence.getState().isOpen
-        ) {
-          setBringWorld(true);
+        // superseding what the user explicitly navigated to would be rude. The
+        // gate is server-side and survives, so it simply offers on a later
+        // mount; nothing is consumed by not showing it here.
+        if (user.onboardedAt === null && !useGlasshousePresence.getState().isOpen) {
+          setWelcomeOpen(true);
         }
 
         for (const feed of list) {
@@ -2014,22 +2033,30 @@ export function WorkspaceView() {
           if (target) void loadVesselItems(target.feed);
         }}
       />
-      {bringWorld && (
-        <BringYourWorld
+      {welcomeOpen && (
+        <Welcome
           onClose={() => {
-            setBringWorld(false);
-            if (user && typeof window !== "undefined") {
-              try {
-                window.localStorage.setItem(
-                  `${BRING_WORLD_SEEN_PREFIX}${user.id}`,
-                  "true",
-                );
-              } catch {
-                // Quota / private browsing — worst case the offer shows once
-                // more, which is harmless (it never imports by itself).
-              }
-            }
+            setWelcomeOpen(false);
+            // Answered — by completing it, by walking out of it into the editor,
+            // or by closing it. All three are answers, so all three stamp. The
+            // route is idempotent (first-write-wins), so this is fire-and-forget:
+            // a lost call costs one repeat offer, never an error the member sees.
+            void auth.markOnboarded().catch(() => {});
           }}
+          onLaunchTour={() => {
+            setTourPending(true);
+            setWelcomeOpen(false);
+            void auth.markOnboarded().catch(() => {});
+          }}
+        />
+      )}
+      {/* Mounts only once the welcome pane has gone, so the tour opens in a
+          later commit than the unmount — floor-mode Explain sits below the
+          Glasshouse band and would otherwise render behind it. */}
+      {tourPending && !welcomeOpen && user && (
+        <FirstRunLauncher
+          userId={user.id}
+          onLaunched={() => setTourPending(false)}
         />
       )}
       {ceremony && (
@@ -2072,11 +2099,15 @@ export function WorkspaceView() {
           sheet the disc-X dismisses. */}
       {!isMobile && <ExplainOverlay />}
       <AboutOverlay />
-      {/* First-run auto-entry (D6) is DORMANT (2026-07-15): auto-dropping a
+      {/* First-run AUTO-entry (D6) stays DORMANT (2026-07-15): auto-dropping a
           fresh device into Explain on load proved disorienting on the live
-          site, so the six-beat tour no longer mounts — Explain is strictly
-          ∀-menu-invoked. Revive by remounting <FirstRunController userId
-          armed={bootstrap === "ready" && !ceremony && !bringWorld} /> here
+          site, so the six-beat tour never mounts by itself. The tour itself is
+          NOT dormant — the welcome sheet's last step offers it, and
+          <FirstRunLauncher> above opens it on an explicit yes; that offer is
+          what amendment 1's verdict on the ENTRY leaves intact. Revive the
+          auto-entry, should it ever be wanted again, by remounting
+          <FirstRunController userId
+          armed={bootstrap === "ready" && !ceremony && !welcomeOpen} /> here
           (ExplainProvider.tsx keeps the controller + program intact). */}
       </Floor>
     </ExplainProvider>

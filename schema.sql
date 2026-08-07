@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict MeBPl4uSBKwxZr66WORAf1wzJekgHqaEbcg4SeTBucO6MaG6f8SgUCWvkVIMXdw
+\restrict vRJ1STXqJxx2iUJqBiB8n6XBggfQg7nrHC9ny14zzOuG7LoDtOMDgvdHF0jkzJ6
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -756,6 +756,7 @@ CREATE TABLE public.accounts (
     discovery_enabled boolean DEFAULT false NOT NULL,
     card_action_required_at timestamp with time zone,
     free_allowance_granted_pence integer DEFAULT 500 NOT NULL,
+    onboarded_at timestamp with time zone,
     CONSTRAINT accounts_annual_discount_pct_check CHECK (((annual_discount_pct >= 0) AND (annual_discount_pct <= 30))),
     CONSTRAINT accounts_hosting_type_check CHECK ((hosting_type = ANY (ARRAY['hosted'::text, 'self_hosted'::text])))
 );
@@ -766,6 +767,13 @@ CREATE TABLE public.accounts (
 --
 
 COMMENT ON COLUMN public.accounts.free_allowance_granted_pence IS 'What this reader was gifted as their free allowance, stamped from the free_allowance_pence dial at signup. Historical fact — never restated when the dial is retuned. free_allowance_remaining_pence is what is left of it.';
+
+
+--
+-- Name: COLUMN accounts.onboarded_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.accounts.onboarded_at IS 'When the first-session welcome was offered and answered (completed or dismissed). NULL = never offered. Records that the offer was made, never that the profile was filled in.';
 
 
 --
@@ -4838,13 +4846,6 @@ CREATE UNIQUE INDEX idx_notifications_dedup ON public.notifications USING btree 
 
 
 --
--- Name: INDEX idx_notifications_dedup; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_notifications_dedup IS 'At most one UNREAD notification per (recipient, actor, type, targets). Reading a notification frees its slot so the next occurrence of the same event notifies again — migration 019''s intent, in force from 173. Every INSERT INTO notifications is a bare ON CONFLICT DO NOTHING, so this index alone decides what collapses. actor_id is deliberately NOT COALESCEd: actor-less types (pledge_fulfilled) must never dedup against each other.';
-
-
---
 -- Name: idx_notifications_drive; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7587,9 +7588,8 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict MeBPl4uSBKwxZr66WORAf1wzJekgHqaEbcg4SeTBucO6MaG6f8SgUCWvkVIMXdw
+\unrestrict vRJ1STXqJxx2iUJqBiB8n6XBggfQg7nrHC9ny14zzOuG7LoDtOMDgvdHF0jkzJ6
 
---
 
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
@@ -7766,4 +7766,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('172_notifications_offer_id.sql'),
     ('173_notification_dedup_partial.sql'),
     ('174_notifications_dedup_drive.sql'),
-    ('175_payouts_halted_accounts.sql');
+    ('175_payouts_halted_accounts.sql'),
+    ('176_accounts_onboarded_at.sql');
