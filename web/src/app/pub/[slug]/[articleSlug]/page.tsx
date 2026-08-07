@@ -2,13 +2,20 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../../lib/markdown'
 import { ArticleReader } from '../../../../components/article/ArticleReader'
+import { PublicPage } from '../../../../components/public/PublicPage'
 import type { ArticleMetadata } from '../../../../lib/api'
 
 // =============================================================================
 // Publication Article Page — /pub/:slug/:articleSlug  (Server Component)
 //
-// Same as the standard article page but rendered within the publication shell
-// (layout.tsx provides PublicationNav + PublicationFooter).
+// Identical to the standard /article/:dTag page, and now chassised identically
+// too: `PublicPage ground={false}`, because ArticleReader's root is
+// `min-h-screen bg-white` and owns both its ground and its height.
+//
+// It used to sit inside `pub/[slug]/layout.tsx`, which wrapped it in a
+// `max-w-feed` main between a publication nav bar and a footer — a second
+// chassis on a route where LayoutShell already mounts PublicNavRow. The layout
+// is deleted; an article is the reading experience and takes no frame.
 // =============================================================================
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
@@ -77,6 +84,7 @@ export default async function PublicationArticlePage({
     : ''
 
   return (
+    <PublicPage ground={false}>
     <ArticleReader
       article={{
         id: article.nostrEventId,
@@ -103,5 +111,6 @@ export default async function PublicationArticlePage({
       nudgeShownThisMonth={article.nudgeShownThisMonth ?? false}
       preRenderedFreeHtml={freeHtml}
     />
+    </PublicPage>
   )
 }

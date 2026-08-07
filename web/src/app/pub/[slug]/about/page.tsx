@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../../lib/markdown'
+import { PublicationMasthead } from '../../../../components/publication/PublicationMasthead'
+import { PublicPage } from '../../../../components/public/PublicPage'
 import WorkspacePaneRedirect from '../../../../components/layout/WorkspacePaneRedirect'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
@@ -25,18 +27,8 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   return {
     title,
     description,
-    openGraph: {
-      title,
-      description,
-      type: 'website',
-      url,
-      siteName: 'all.haus',
-    },
-    twitter: {
-      card: 'summary',
-      title,
-      description,
-    },
+    openGraph: { title, description, type: 'website', url, siteName: 'all.haus' },
+    twitter: { card: 'summary', title, description },
   }
 }
 
@@ -47,17 +39,18 @@ export default async function AboutPage({ params }: { params: { slug: string } }
   const aboutHtml = pub.about ? await renderMarkdown(pub.about) : null
 
   return (
-    <div className="max-w-article mx-auto">
+    <PublicPage>
       <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}/about` }} />
-      <h1 className="font-serif text-3xl mb-6">About {pub.name}</h1>
-      {aboutHtml ? (
-        <div
-          className="prose prose-sm"
-          dangerouslySetInnerHTML={{ __html: aboutHtml }}
-        />
-      ) : (
-        <p className="text-grey-400 text-sm">No about page yet.</p>
-      )}
-    </div>
+      <PublicationMasthead pub={pub} view="about" />
+      <div className="mx-auto max-w-article px-4 sm:px-6 pt-14 pb-20">
+        {aboutHtml ? (
+          <div className="prose" dangerouslySetInnerHTML={{ __html: aboutHtml }} />
+        ) : (
+          <p className="label-ui text-grey-600 py-16 text-center">
+            NO ABOUT PAGE YET
+          </p>
+        )}
+      </div>
+    </PublicPage>
   )
 }

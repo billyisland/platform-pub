@@ -20,6 +20,10 @@ import { formatDateFromISO } from "../../lib/format";
 import { renderMarkdown } from "../../lib/markdown";
 import { ProfileLink } from "../ui/ProfileLink";
 import { PubFollowButton } from "./PubFollowButton";
+import { HomepageBlog } from "./HomepageBlog";
+import { HomepageMagazine } from "./HomepageMagazine";
+import { HomepageMinimal } from "./HomepageMinimal";
+import type { PubArticle } from "./article-shared";
 
 interface PubPublic {
   id: string;
@@ -28,6 +32,9 @@ interface PubPublic {
   tagline: string | null;
   about: string | null;
   isFollowing: boolean;
+  /** The writer's chosen homepage template — the overlay honours it, so the
+   *  publication reads the same here as on its public page. */
+  homepage_layout?: string | null;
 }
 
 const NAV: { view: PubView; label: string }[] = [
@@ -149,10 +156,14 @@ export function PublicationPanel({
       </nav>
 
       {view === "home" && (
-        <ArticleList slug={pub.slug} limit={20} onOpen={handleOpen} variant="rich" />
+        <HomeView
+          slug={pub.slug}
+          layout={pub.homepage_layout ?? "blog"}
+          onOpen={openArticle}
+        />
       )}
       {view === "archive" && (
-        <ArticleList slug={pub.slug} limit={100} onOpen={handleOpen} variant="list" />
+        <ArticleList slug={pub.slug} limit={100} onOpen={handleOpen} />
       )}
       {view === "masthead" && <MastheadView slug={pub.slug} />}
       {view === "about" && <AboutView name={pub.name} about={pub.about} />}
@@ -161,18 +172,65 @@ export function PublicationPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Article list — shared by home (rich serif cards) and archive (dense list).
-// Both open the reader overlay; neither links out to /pub/:slug/:article.
+// Home — the writer's chosen template, rendered in overlay mode.
+//
+// THE SAME THREE COMPONENTS THE PUBLIC PAGE USES. This view previously ignored
+// `homepage_layout` and rendered a fourth arrangement of its own, so a writer
+// who picked Magazine got Magazine on /pub/:slug and something else in the
+// workspace. Passing `onOpen` swaps every ArticleLink from a <Link> to a
+// <button> that opens the reader in place, which is what keeps the shared
+// templates on the right side of the escape ban.
+// ---------------------------------------------------------------------------
+function HomeView({
+  slug,
+  layout,
+  onOpen,
+}: {
+  slug: string;
+  layout: string;
+  onOpen: (dTag: string) => void;
+}) {
+  const [articles, setArticles] = useState<PubArticle[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setArticles(null);
+    pubApi
+      .getPublicArticles(slug, { limit: 20 })
+      .then((a) => {
+        if (!cancelled) setArticles((a.articles ?? []) as PubArticle[]);
+      })
+      .catch(() => {
+        if (!cancelled) setArticles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  if (articles === null) {
+    return (
+      <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
+    );
+  }
+
+  const props = { slug, articles, onOpen };
+  if (layout === "magazine") return <HomepageMagazine {...props} />;
+  if (layout === "minimal") return <HomepageMinimal {...props} />;
+  return <HomepageBlog {...props} />;
+}
+
+// ---------------------------------------------------------------------------
+// Article list — the archive's dense list. Opens the reader overlay; never
+// links out to /pub/:slug/:article.
 // ---------------------------------------------------------------------------
 function ArticleList({
   slug,
   limit,
-  variant,
   onOpen,
 }: {
   slug: string;
   limit: number;
-  variant: "rich" | "list";
   onOpen: (dTag: string) => () => void;
 }) {
   const [articles, setArticles] = useState<any[] | null>(null);
@@ -207,80 +265,30 @@ function ArticleList({
     );
   }
 
-  if (variant === "list") {
-    return (
-      <div className="space-y-7">
-        {articles.map((a: any) => (
-          <button
-            key={a.nostr_event_id ?? a.nostr_d_tag}
-            type="button"
-            onClick={onOpen(a.nostr_d_tag)}
-            className="group block w-full text-left"
-          >
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="font-serif text-base text-black group-hover:text-crimson-dark transition-colors">
-                {a.title}
-              </h2>
-              {a.published_at && (
-                <span className="font-mono text-mono-xs text-grey-600 shrink-0">
-                  {formatDateFromISO(a.published_at)}
-                </span>
-              )}
-            </div>
-            <p className="label-ui text-grey-600 mt-1">
-              {a.author_display_name ?? a.author_username}
-            </p>
-          </button>
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-0">
-      {articles.map((a: any) => {
-        const isPaid = a.access_mode === "paywalled";
-        const barColor = isPaid ? "var(--ah-crimson)" : "var(--ah-ink)";
-        return (
-          <button
-            key={a.nostr_event_id ?? a.nostr_d_tag}
-            type="button"
-            onClick={onOpen(a.nostr_d_tag)}
-            className="group block w-full text-left mt-9 first:mt-0"
-            style={{
-              borderLeft: `6px solid ${barColor}`,
-              paddingLeft: "28px",
-            }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="label-ui text-grey-600">
-                {a.author_display_name ?? a.author_username}
-              </span>
-              {a.published_at && (
-                <>
-                  <span className="font-mono text-mono-xs text-grey-600">
-                    &middot;
-                  </span>
-                  <span className="font-mono text-mono-xs tracking-[0.02em] text-grey-600">
-                    {formatDateFromISO(a.published_at)}
-                  </span>
-                </>
-              )}
-            </div>
-            <h2 className="font-serif text-[28px] font-medium italic text-black leading-[1.18] tracking-[-0.02em] mb-2 group-hover:text-crimson-dark transition-colors">
+    <div className="space-y-7">
+      {articles.map((a: any) => (
+        <button
+          key={a.nostr_event_id ?? a.nostr_d_tag}
+          type="button"
+          onClick={onOpen(a.nostr_d_tag)}
+          className="group block w-full text-left"
+        >
+          <div className="flex items-baseline justify-between gap-4">
+            <h2 className="font-serif text-base text-black group-hover:text-crimson-dark transition-colors">
               {a.title}
             </h2>
-            {a.summary && (
-              <p
-                className="font-serif text-[15.5px] text-grey-600 leading-[1.65]"
-                style={{ maxWidth: "540px" }}
-              >
-                {a.summary}
-              </p>
+            {a.published_at && (
+              <span className="font-mono text-mono-xs text-grey-600 shrink-0">
+                {formatDateFromISO(a.published_at)}
+              </span>
             )}
-          </button>
-        );
-      })}
+          </div>
+          <p className="label-ui text-grey-600 mt-1">
+            {a.author_display_name ?? a.author_username}
+          </p>
+        </button>
+      ))}
     </div>
   );
 }

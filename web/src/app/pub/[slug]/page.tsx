@@ -3,8 +3,24 @@ import type { Metadata } from 'next'
 import { HomepageBlog } from '../../../components/publication/HomepageBlog'
 import { HomepageMagazine } from '../../../components/publication/HomepageMagazine'
 import { HomepageMinimal } from '../../../components/publication/HomepageMinimal'
-import { PubFollowButton } from '../../../components/publication/PubFollowButton'
+import { PublicationMasthead } from '../../../components/publication/PublicationMasthead'
+import { PublicPage } from '../../../components/public/PublicPage'
 import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
+
+// =============================================================================
+// Publication homepage — /pub/:slug  (Server Component)
+//
+// THE CHASSIS IS THE PUBLIC REGISTER, not a chassis of its own. This route used
+// to sit inside `pub/[slug]/layout.tsx`, which mounted a `PublicationNav` bar
+// and a `PublicationFooter` — on a route where `LayoutShell` already mounts the
+// sitewide `PublicNavRow`, so the page carried two navigations and, because the
+// layout never cleared `--ah-row-band`, the fixed row sat over the footer. Both
+// are deleted; `PublicPage` paints the bone ground and reserves the band, and
+// the publication's identity is carried by `PublicationMasthead`.
+//
+// The cover is full-bleed and the article body is measured, so the masthead
+// sits OUTSIDE the measured column and each template centres its own body.
+// =============================================================================
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
 const SITE_URL = process.env.APP_URL ?? 'https://all.haus'
@@ -32,7 +48,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const title = `${pub.name} — all.haus`
   const description = pub.tagline || `${pub.name} on all.haus`
   const url = `${SITE_URL}/pub/${params.slug}`
-  const image = pub.logo_blossom_url ?? pub.cover_blossom_url
+  const image = pub.cover_blossom_url ?? pub.logo_blossom_url
 
   return {
     title,
@@ -66,39 +82,17 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
   if (!pub) return notFound()
 
   const layout = pub.homepage_layout ?? 'blog'
+  const articles = data.articles ?? []
 
   return (
-    <div>
+    <PublicPage>
       <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}` }} />
-      {/* Masthead */}
-      <div className="text-center mb-10">
-        <h1 className="font-serif text-2xl font-light tracking-tight text-black">
-          {pub.name}
-        </h1>
-        {pub.tagline && (
-          <p className="text-grey-500 text-sm mt-2">{pub.tagline}</p>
-        )}
-        <div className="mt-4 flex items-center justify-center gap-4">
-          <PubFollowButton publicationId={pub.id} initialFollowing={pub.isFollowing ?? false} />
-          <a
-            href={`/api/v1/pub/${pub.slug}/rss`}
-            className="label-ui text-grey-300 hover:text-black"
-          >
-            RSS
-          </a>
-        </div>
+      <PublicationMasthead pub={pub} view="home" />
+      <div className="mx-auto max-w-content px-4 sm:px-6 pt-14 pb-20">
+        {layout === 'magazine' && <HomepageMagazine slug={pub.slug} articles={articles} />}
+        {layout === 'minimal' && <HomepageMinimal slug={pub.slug} articles={articles} />}
+        {layout === 'blog' && <HomepageBlog slug={pub.slug} articles={articles} />}
       </div>
-
-      {/* Articles in chosen layout */}
-      {layout === 'magazine' && (
-        <HomepageMagazine slug={pub.slug} articles={data.articles} />
-      )}
-      {layout === 'minimal' && (
-        <HomepageMinimal slug={pub.slug} articles={data.articles} />
-      )}
-      {layout === 'blog' && (
-        <HomepageBlog slug={pub.slug} articles={data.articles} />
-      )}
-    </div>
+    </PublicPage>
   )
 }

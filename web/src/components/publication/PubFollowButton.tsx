@@ -49,7 +49,7 @@ export function PubFollowButton({ publicationId, initialFollowing }: Props) {
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
       disabled={loading}
-      className={`text-sm transition-colors disabled:opacity-50 ${
+      className={`text-ui-sm transition-colors disabled:opacity-50 ${
         following
           ? `btn-soft py-1.5 px-4${hovering ? ' text-crimson' : ''}`
           : 'btn py-1.5 px-4'

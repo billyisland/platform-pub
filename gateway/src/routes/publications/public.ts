@@ -85,7 +85,7 @@ export async function publicationPublicRoutes(app: FastifyInstance) {
       const { rows } = await pool.query(
         `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, a.title, a.slug, a.summary,
                 a.content_free, a.word_count, a.access_mode, a.price_pence,
-                a.published_at,
+                a.cover_image_url, a.published_at,
                 acc.username AS author_username, acc.display_name AS author_display_name,
                 acc.avatar_blossom_url AS author_avatar
          FROM articles a

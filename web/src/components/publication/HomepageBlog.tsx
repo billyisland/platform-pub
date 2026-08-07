@@ -1,38 +1,66 @@
-import Link from 'next/link'
+import {
+  ArticleLink,
+  EmptyState,
+  PubByline,
+  PubCover,
+  articleKey,
+  type PubArticle,
+} from './article-shared'
 
-interface Article {
-  nostr_d_tag: string
-  title: string
-  summary: string | null
-  published_at: string | null
-  author_display_name: string | null
-  author_username: string
-}
+// =============================================================================
+// HomepageBlog — reverse-chronological, one piece at a time, generous.
+//
+// The straight answer to "just show me the writing in order". Each entry is a
+// wide text column with an optional cover thumbnail alongside; every piece gets
+// the same weight, which is exactly the difference from Magazine (which spends
+// its layout deciding what matters most).
+//
+// SEPARATION WAS A BOTTOM RULE ON EVERY ENTRY AND IS NOW A GAP. That rule was
+// one of five single-pixel lines the tripwire caught across this surface.
+// Rhythm does the same job: 56px between entries is unambiguous at any type
+// size, and unlike a rule it need not pick a colour that works in both modes.
+//
+// THE THUMBNAIL SITS RIGHT, not left, so every title starts on the same
+// vertical — a left-hand image makes the column of headlines ragged and turns
+// an ordered list of writing into a list of pictures.
+// =============================================================================
 
-interface Props {
+export function HomepageBlog({
+  slug,
+  articles,
+  onOpen,
+}: {
   slug: string
-  articles: Article[]
-}
-
-export function HomepageBlog({ slug, articles }: Props) {
-  if (articles.length === 0) {
-    return <p className="text-grey-400 text-sm py-10 text-center">No articles published yet.</p>
-  }
+  articles: PubArticle[]
+  /** Overlay mode — see ArticleLink. Omitted on the standalone page. */
+  onOpen?: (dTag: string) => void
+}) {
+  if (articles.length === 0) return <EmptyState />
 
   return (
-    <div className="space-y-0">
-      {articles.map(a => (
-        <article key={a.nostr_d_tag} className="border-b border-grey-200 py-6">
-          <Link href={`/pub/${slug}/${a.nostr_d_tag}`} className="block group">
-            <h2 className="font-serif text-xl text-black group-hover:opacity-70 mb-1">{a.title}</h2>
-            {a.summary && <p className="text-sm text-grey-600 mb-2 line-clamp-2">{a.summary}</p>}
-            <p className="text-ui-xs text-grey-300">
-              {a.author_display_name || a.author_username}
-              {a.published_at && (
-                <> &middot; {new Date(a.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</>
+    <div className="mx-auto max-w-feed">
+      {articles.map((a, i) => (
+        <article key={articleKey(a)} className={i === 0 ? '' : 'mt-14'}>
+          <ArticleLink slug={slug} article={a} onOpen={onOpen}>
+            <div className="flex flex-col-reverse sm:flex-row sm:items-start gap-5 sm:gap-8">
+              <div className="min-w-0 flex-1">
+                <PubByline article={a} className="mb-2" />
+                <h2 className="font-serif font-medium text-black text-[1.625rem] leading-[1.2] tracking-[-0.015em] group-hover:text-crimson-dark transition-colors">
+                  {a.title}
+                </h2>
+                {a.summary && (
+                  <p className="font-serif text-grey-600 mt-3 leading-[1.65] text-[1.0625rem] line-clamp-3">
+                    {a.summary}
+                  </p>
+                )}
+              </div>
+              {a.cover_image_url && (
+                <div className="sm:w-[200px] sm:shrink-0">
+                  <PubCover src={a.cover_image_url} ratio="4 / 3" />
+                </div>
               )}
-            </p>
-          </Link>
+            </div>
+          </ArticleLink>
         </article>
       ))}
     </div>

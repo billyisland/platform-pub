@@ -23,6 +23,91 @@ starts.
 
 ## Progress
 
+- **2026-08-07 (publication homepage templates — the publishing house stops
+  keeping a second front door)** — CONSOLIDATED-TODO §3.4. No migration, no
+  flag; one additive column on one SELECT.
+
+  **§3.4 was two surfaces and only one of them was the wireframe.** The
+  in-workspace `PublicationPanel` was already house-standard. The standalone
+  `/pub/[slug]/**` pages were not, and their problem was structural before it
+  was aesthetic: `pub/[slug]/layout.tsx` mounted a `PublicationNav` bar and a
+  `PublicationFooter` on routes where `LayoutShell` **already** mounts
+  `PublicNavRow` — so every publication page carried two navigations, and
+  because the layout never cleared `--ah-row-band` the fixed row sat over the
+  footer. Both are deleted. Each of the five views now composes `PublicPage` +
+  a shared `PublicationMasthead`, and the article route matches
+  `/article/:dTag` exactly (`ground={false}`, because `ArticleReader` owns its
+  ground and its height).
+
+  **The reason "magazine" did not look like a magazine is that it had no
+  picture to lay out.** `articles.cover_image_url` has existed since migration
+  081 and the by-slug articles endpoint simply never selected it, while the
+  publication's own `cover_blossom_url`/`logo_blossom_url` were fetched and
+  dropped on the floor. One column on one SELECT was the whole backend half.
+  Worth carrying: a template starved of its data reads as a design failure and
+  gets rebuilt as one — check what the endpoint actually returns before
+  concluding the layout is the problem.
+
+  **The templates now serve BOTH registers from one set of components, which
+  is the part most likely to rot if someone forks it.** The overlay used to
+  ignore `homepage_layout` entirely and render a fourth arrangement of its own,
+  so a writer who chose Magazine got Magazine on their public page and
+  something else in the workspace. The seam is `ArticleLink`: given `onOpen` it
+  renders a `<button>` that opens the reader in place (the escape ban), and
+  without it a real `<Link>` to `/pub/:slug/:articleSlug` (SSR, new-tab,
+  copy-link — the point of those routes). Verified both modes in the served
+  bytes: 8 real anchors on the standalone page, and the templates present in
+  the client chunk for the overlay.
+
+  **Five hairlines cleared** (`HomepageBlog`, `PublicationNav`, `archive`,
+  `subscribe` ×2) and the tripwire is green on the whole surface. Two
+  incidental corrections while in here: `text-grey-500` in the old masthead was
+  an **undefined token** — greys 500/700/800/900 emit no rule and silently
+  inherit — and `PublicationPanel`'s `text-[28px]`/`text-[15.5px]` were
+  hardcoded px that do not scale with the global type-size control; both went
+  out with the dead `rich` variant the shared templates replaced.
+
+  **Driven against a real fixture, not just compiled.** A seeded publication
+  (invented names, drawn SVG data-URI imagery — nothing that resolves to a live
+  registry, and no network fetch) with eight articles across two years, three
+  of them carrying covers and two paywalled. All three layouts render
+  **distinctly** — and note the first attempt showed all three byte-identical,
+  because `next: { revalidate: 60 }` was serving one cached page: a layout
+  switch verified without busting that cache proves nothing. Minimal emits
+  strictly fewer image URIs than the other two, which is direct evidence its
+  "no covers, on purpose" rule is in force rather than merely commented.
+  **Mutation control:** nulling every cover flips the magazine lead to its
+  centred no-image treatment (`lead-centred` 0 → 1) and drops the article
+  data-URIs (14 → 8) with all eight titles still rendering — so the degradation
+  path is behaviourally distinct, not a comment.
+
+  **And then browser-driven, which is what actually closed it.** Playwright is
+  cached under `~/.npm/_npx/*/node_modules/playwright` (the §11 note is right,
+  and I had written this entry claiming no browser tooling existed before
+  checking — the note is there precisely so nobody repeats that). All three
+  layouts, five views, at **1440×900 and 390×844, in light and dark**, mode set
+  pre-paint via an init script writing `ah:color-mode`. **No page errors**; the
+  only console noise is the logged-out `auth/me` 401, one per page.
+
+  What the browser showed that the bytes could not: the magazine does read as a
+  magazine — asymmetric 3:2 lead, two-up second rank, three-column index — the
+  masthead's logo lap-up over the cover holds at both widths, dark mode inverts
+  the ground while the cover and logo (photographs) correctly do not, and
+  Minimal reads as a genuine contents page.
+
+  **The `revalidate` trap caught me a SECOND time here, and that is the durable
+  bit.** The first screenshot run rendered the lead in its no-cover treatment,
+  because the fixture had been restored but `web` never restarted — I was
+  photographing the cached null-cover page from the mutation control. Bytes and
+  pixels both lie the same way about a cached page. *Restart the service, then
+  assert the state you expect in the markup, and only then believe a render.*
+
+  **One honest residue, not a defect:** the fixture's logo is a black disc, so
+  in dark mode its lower half (lapping below the cover onto the ink ground)
+  merges with the ground. That is the publication's own asset over the
+  publication's own cover — both their choice — so no code change; noted in
+  case a real publication hits it and it is mistaken for a bug.
+
 - **2026-08-07 (the first-session welcome — a member stops being named after
   their email address)** — CONSOLIDATED-TODO §3.3, closing the last unbuilt
   §3 item that had no partial work. **Migration 176.**
