@@ -421,7 +421,7 @@ Waves 1–3 of the 2026-07-05 logic-economy audit all shipped (migrations 139–
 
     **And the decision was already taken.** §0b item 4 has required, as a precondition of ever flipping the flag, "a real `logSubscriptionCharge` leg (no tab debit / no `subscription_earning`)" — which *is* option (c). Options (a) cap-the-credit and (b) unsettled-reads-only were foreclosed a year ago; re-opening them re-litigates a settled call. The one thing rev. 4's analysis genuinely adds is the *reason* (c) is right, which is now recorded where the revival decision lives: it is the only option that leaves the reader's offer intact.
 
-    **What remains, and it is small:** the flag-off state is a *property to preserve*, not work to do. Fold the negative-tab framing into §0b item 4's revival list (done), and run the negative-tab query against prod once — pre-2026-07-16 history could have left a real credit on a real account, which the new alert will surface as an incident on its first run with no live cause to explain it. That is a check, not a decision. → `docs/adr/PAYMENT-PERIMETER-ADR.md` §3.W1; `docs/runbooks/reader-tab-credit.md`; §0b item 4.
+    **What remained was small, and is now done: the prod negative-tab query ran 2026-08-07 and returned 0 rows.** No pre-2026-07-16 history left a real credit, so W1's detection will not open its life with an incident nobody can explain. The flag-off state stays a *property to preserve*, not work to do. Original framing kept below. Fold the negative-tab framing into §0b item 4's revival list (done), and run the negative-tab query against prod once — pre-2026-07-16 history could have left a real credit on a real account, which the new alert will surface as an incident on its first run with no live cause to explain it. That is a check, not a decision. → `docs/adr/PAYMENT-PERIMETER-ADR.md` §3.W1; `docs/runbooks/reader-tab-credit.md`; §0b item 4.
 
     **The generalisable lesson** (why this is left in rather than deleted): a defect found by *reading a route* is not yet a defect in production. The route's own header comment carried the flag, the four legs and the do-not-flip; the scoping pass read the body and not the guard. Before an audit finding is written up as blocking, establish that the code path is reachable in the deployment it is claimed to block.
 17. **W1's admin refund action — a full new Stripe money path, not a button** (parallel lane; does NOT gate W0, whose detection + runbook shipped 2026-08-06). Needed only for a **residual** credit: the commonest cause (double settlement) is now known to resolve through the existing webhook — a **full** refund fires `charge.refunded` → `reverseSettlement`, restoring the debt — and a **partial** refund is not a resolution, since the handler logs `manual_review_required` and skips the unwind, leaving the reader the credit *and* the money. Build it with the whole money-moving-create discipline (`CLAUDE.md` Stripe invariant): three-phase reserve → create → confirm, row-stable idempotency key, terminal/ambiguous split via `charge-errors.ts`, resume-sweep coverage, a new `credit_refund` trigger type posted via `applyLedgerDelta`, a `ledger_orphans` branch, and adjacency registration (convention — Guard 1 is per-file floors and Guard 3 keys on payout-table INSERTs, so an unregistered pure-ledger site stays green; register it anyway). **The trap: `credit_refund` must join the `ledger_reader_balance` view in the SAME migration as the action.** Parity compares the view itself, so omitting it halts ALL payouts on the action's first use, platform-wide, every run. Plumbing home exists (gateway admin proxy → payment-service internal `x-internal-token`), and the `charge.refunded` webhook already posts the `allocated_draws` refund draw, so segregation accounting comes free. → `docs/adr/PAYMENT-PERIMETER-ADR.md` §3.W1.
@@ -577,9 +577,29 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 ## 11. Verification debt (work is done, proof isn't)
 
-- **PENDING PROD DEPLOY, opened 2026-08-05 (§0p fix batch)** — *a claim to
-  check, not prod's state; measure the box first (the four cheap sources below),
-  because this entry's predecessors were stale four times.* Master has gained
+- ~~**PENDING PROD DEPLOY, opened 2026-08-05 (§0p fix batch)**~~ — **DISCHARGED
+  2026-08-07: prod is current with `3e1f7dc2`, both halves measured.** Migrations
+  172–175 applied and the code verified in the RUNNING containers by three
+  markers this batch introduces (`payout_halt_stale`, `payouts_halted_accounts`,
+  `payoutHaltEscalationHours`), all present.
+
+  **The first attempt was schema-only, and the markers are what caught it** —
+  the DB read `t | t` while all three code markers read **0**. Nothing broke,
+  because the batch was deliberately safe in both orderings, so the new table
+  and dial simply sat unread with no error anywhere. Two lessons worth keeping:
+  **a migration marker is not a deploy check** (pair the schema half with a code
+  half, since the code half is the one that can be silently absent), and **grep
+  the running container rather than the image** — that proves the code is
+  executing, which an image build date cannot, and it catches the
+  rebuilt-but-never-recreated case a date comparison sees straight past.
+
+  Also cleared the same day: the §1.16 negative-tab check ran against prod and
+  returned **0 rows**, so no pre-2026-07-16 history left a real reader in credit
+  for W1's detection to surface as a phantom incident. That was the perimeter's
+  last outstanding residue.
+
+  Historical detail of what the batch contained, kept for the record: master had
+  gained
   **migration 172** (`notifications.offer_id` + the rebuilt
   `idx_notifications_dedup`), **migration 173** (that index made partial —
   §0p.1), **migration 174** (`drive_id` into that index + `idx_notifications_drive`),
@@ -787,7 +807,7 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
     **Deployment note:** ~~bundle the pre-flight with migration 168 (§11's pending-deploy entry)~~ — **both deployed**: 168 was live 07-31, the pre-flight 08-01 (verified by marker grep — §11). The standing fact worth keeping: the pre-flight is **inert while the flag is off** (`allocatedFundsParam` returns `{}` on the flag before it ever consults the brand), but it MUST be live before the flag is ever flipped — it is, so this is now a property to preserve, not work to do.
 
-0e. ~~**Payment perimeter — decide the spend-conversion credit (§1.16), the only thing blocking the W0 letter.**~~ — **STRUCK 2026-08-06, the day it was written.** The route it turns on has been 503-gated dark since 2026-07-16 (`SUBSCRIPTION_CONVERT_ENABLED`, "Do NOT flip"), so it blocks nothing, the alert cannot fire from it, and the fix it demanded was already a precondition of revival in §0b item 4. Full correction at §1.16. **The perimeter's critical path is therefore discharged**: W1 detection + runbook and W6 shipped 2026-08-06, and everything else (§1.18) is parallel-lane. The one residue is a *check*, not a decision — run the negative-tab query against prod once, since pre-2026-07-16 history could have left a real credit for the new alert to surface.
+0e. ~~**Payment perimeter — decide the spend-conversion credit (§1.16), the only thing blocking the W0 letter.**~~ — **STRUCK 2026-08-06, the day it was written; its one residual check ran clean on prod 2026-08-07 (0 rows), so the perimeter's critical path is now discharged in full.** The route it turns on has been 503-gated dark since 2026-07-16 (`SUBSCRIPTION_CONVERT_ENABLED`, "Do NOT flip"), so it blocks nothing, the alert cannot fire from it, and the fix it demanded was already a precondition of revival in §0b item 4. Full correction at §1.16. **The perimeter's critical path is therefore discharged**: W1 detection + runbook and W6 shipped 2026-08-06, and everything else (§1.18) is parallel-lane. The one residue is a *check*, not a decision — run the negative-tab query against prod once, since pre-2026-07-16 history could have left a real credit for the new alert to surface.
 
 1. **F4 live check + pub-split re-pay + card re-auth prompt** (§1.1/§1.2/§1.4 — one Stripe-correctness session with real keys; closes the last reader-facing money loop). **Bundle the §11 Stripe verifies into this same session** — they're blocked on the same thing (dev's key is the placeholder `sk_test_...`), so one key unblocks both. *(§1.13's two independent defects are both closed now — the `finalisePublicationPayout` zombie parent 2026-07-29, the webhook-scope contradiction 2026-07-30.)* **Largely discharged 2026-07-30/31**: F4 confirmed and deleted, pub-split re-pay shipped, the card prompt shipped. What the key actually bought was bigger than the list: driving the real service against a sandbox found **two P0s in the pre-existing settlement path** (no `payment_method` on the PI ⇒ no charge could ever succeed; and a duplicate-charge window between complete and confirm) — both fixed 2026-07-31, FIX-PROGRAMME. **Still owed from this item: the §1.4 S2 browser test** (SetupIntent card attach incl. 3DS `4000002500003155`), which needs the sandbox *publishable* key and a `docker compose build web` (it is a build arg).
 1b. ~~**Funds-segregation §5 step 0**~~ (§1.13) — **CLOSED 2026-07-30, both halves.** The five sandbox probes ran green, and the production baseline ran and **returned nothing to measure**: zero payouts in the window, zero writers over threshold, zero connected accounts, on a gated pre-launch platform. So `allocated_residual_alert_bps` and `payout_max_slices` keep their placeholders — but that is now a **recorded state blocked on payout volume**, not an outstanding task, and it is written in beside them in `config-defaults.sql` so the next reader of that file learns it there. Re-run the SQL once payouts flow.
