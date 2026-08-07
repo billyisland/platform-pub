@@ -186,6 +186,43 @@ starts.
     and `onboarded_at` went NULL → a timestamp. A reload then showed no sheet.
   - zero page errors across the whole journey.
 
+  **Deployed, and the deploy was already done — 2026-08-07 18:15.** Verifying
+  the batch found it live: prod had run it at **17:12**, thirty-four minutes
+  BEFORE the §11 entry declaring it pending was written at 17:46. The four
+  previous stale-tracker incidents in that section were stale by days; this one
+  was stale on composition, because it was assembled from the commit list rather
+  than from the box. `_migrations` 176 against 176 files; `onboarded_at` **3**,
+  `onboardedAt` **1**, `PARITY_PEERS` **4** and payment's
+  `allocation-coverage.js` all present in the RUNNING containers.
+
+  **The internal-parity probe's first production run passed**, three boot lines
+  at 17:12 — `payment-service`/`INTERNAL_SERVICE_TOKEN`,
+  `key-custody`/`INTERNAL_SECRET`, `key-service`/`INTERNAL_SECRET`, each
+  "Internal parity: confirmed". The pre-deploy check compared
+  `printenv <secret> | sha256sum` across the peers (hashes, so no secret reaches
+  the scrollback) and matched on both, so the fatal path was never armed; the
+  gateway reads `(healthy)`, which independently says the 5-minute re-probe has
+  seen no drift since. First real evidence that the boot probe behaves in
+  production as designed rather than only in its tests.
+
+  **A second wrong claim, same shape as the first.** The flag note said "prod's
+  compose default is `0`, so this is a deploy-time env addition" — read off
+  `docker-compose.yml`'s `${FOLLOW_IMPORT_ENABLED:-0}`. Prod's root `.env` had
+  carried `=1` all along, so appending it made a duplicate line (removed, backed
+  up, `diff` confirming exactly one line changed). **A compose default describes
+  what happens when a variable is absent; it is not a statement about any
+  particular box.** The check that actually settles it is
+  `docker compose exec gateway printenv FOLLOW_IMPORT_ENABLED`, which returned
+  **1** — the running process, not the file, being what decides whether the
+  cohort meets a four-step welcome or a three-step one.
+
+  **And one procedural point worth more than either.** This pass went straight
+  from migrate to `docker compose up -d`, skipping the build loop. It printed
+  nine green ticks and changed nothing — correctly, since the images already
+  carried the code. Had the batch been genuinely pending, that same nine-tick
+  success would have left every marker stale. **`up -d` without a preceding
+  `build` is not a deploy, and it does not report the difference.**
+
   **One dev-environment artifact worth recording so a future reader of the
   screenshots is not misled:** the saved avatar renders as a BROKEN image in dev.
   `PUBLIC_MEDIA_URL` is `https://all.haus/media` in `docker-compose.yml`, so the
