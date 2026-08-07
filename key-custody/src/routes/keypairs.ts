@@ -93,6 +93,21 @@ export function resolveSignerId(data: { signerId?: string; accountId?: string })
 export async function keypairRoutes(app: FastifyInstance) {
 
   // ---------------------------------------------------------------------------
+  // GET /api/v1/auth-check
+  //
+  // The gateway's boot-time secret-parity probe. Does nothing and says nothing:
+  // reaching this handler proves the caller holds the same INTERNAL_SECRET this
+  // service verifies against, so the 200 IS the parity proof and the 401 IS the
+  // mismatch. Discloses nothing derived from the secret — the guard already
+  // answers the question, so an echoed hash would be exposure for no gain.
+  // Spec: gateway/src/lib/internal-parity.ts.
+  // ---------------------------------------------------------------------------
+
+  app.get('/auth-check', { preHandler: requireInternalSecret }, async (_req, reply) => {
+    return reply.status(200).send({ ok: true })
+  })
+
+  // ---------------------------------------------------------------------------
   // POST /api/v1/keypairs/generate
   //
   // Generates a new Nostr keypair. Returns the public key and the

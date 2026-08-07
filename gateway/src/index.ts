@@ -5,6 +5,7 @@ import {
   tributesEnabled,
 } from "@platform-pub/shared/lib/env.js";
 import { ADVISORY_LOCKS } from "@platform-pub/shared/lib/advisory-locks.js";
+import { assertInternalParity } from "./lib/internal-parity.js";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import cookie from "@fastify/cookie";
@@ -394,6 +395,14 @@ async function start() {
   const port = parseInt(process.env.PORT ?? "3000", 10);
   await app.listen({ port, host: "0.0.0.0" });
   logger.info({ port }, "Gateway started");
+
+  // Prove we hold the same shared secrets as payment / key-custody / key-service,
+  // and exit if one provably differs (a drifted secret is silent and total — it
+  // broke every paywalled unlock on prod for an unknown period, 2026-08-07).
+  // Deliberately NOT awaited: peers start alongside us, so this retries in the
+  // background while the gateway serves. Blocking here would couple all free
+  // reading and auth to a money service being up. See lib/internal-parity.ts.
+  void assertInternalParity();
 
   // Background workers — run periodically after startup
   // Advisory locks prevent duplicate execution when horizontally scaled

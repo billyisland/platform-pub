@@ -116,8 +116,8 @@ Key variables:
 | `SESSION_SECRET`                            | gateway                                | JWT signing key, cookie secret, and OAuth-state HMAC (min 32 chars)                                                                  |
 | `PLATFORM_SERVICE_PRIVKEY`                  | gateway, payment, key-service          | 64-hex Nostr private key for platform service events                                                                                 |
 | `READER_HASH_KEY`                           | gateway                                | HMAC key for reader pubkey privacy hashing                                                                                            |
-| `INTERNAL_SECRET`                           | gateway, key-custody, key-service      | Shared secret authenticating gateway→key-custody and gateway→key-service calls                                                       |
-| `INTERNAL_SERVICE_TOKEN`                    | gateway, payment-service               | Shared secret authenticating **gateway→payment** calls — `/gate-pass`, `/card-connected`, the admin proxies (`/payout-cycle`, `/settlement-check/monthly`, `/allocation-coverage`). **The two `.env` files must carry the SAME value, and nothing else uses it**: there is no cron→payment path (this row claimed one until 2026-08-07 and it cost an hour's misdiagnosis — the payout cycle is IN-PROCESS, a `setTimeout` chain started by `startPayoutWorker` at `payment-service/src/index.ts`, and there is no root crontab on prod). **A mismatch is silent and serious**: payment-service answers 403, and because `/gate-pass` is the paywall, **every paywalled unlock fails** while the site looks healthy — found on prod 2026-08-07, where the only symptom anyone had noticed was the admin segregation panel reading "unavailable" (the one proxy that fires on a page load rather than a button). Verify without printing the secret: `docker compose exec -T gateway sh -c 'echo -n "$INTERNAL_SERVICE_TOKEN"\|md5sum'` and the same for `payment` — the hashes must match |
+| `INTERNAL_SECRET`                           | gateway, key-custody, key-service      | Shared secret authenticating gateway→key-custody and gateway→key-service calls. **All THREE `.env` files must carry the same value** — it is the wider of the two internal secrets, and a mismatch silently breaks publishing, key issuance, vault keys and account export. Since 2026-08-07 the gateway proves this at boot and **refuses to start** if it differs (see the `INTERNAL_SERVICE_TOKEN` row and `gateway/src/lib/internal-parity.ts`) |
+| `INTERNAL_SERVICE_TOKEN`                    | gateway, payment-service               | Shared secret authenticating **gateway→payment** calls — `/gate-pass`, `/card-connected`, the admin proxies (`/payout-cycle`, `/settlement-check/monthly`, `/allocation-coverage`). **The two `.env` files must carry the SAME value, and nothing else uses it**: there is no cron→payment path (this row claimed one until 2026-08-07 and it cost an hour's misdiagnosis — the payout cycle is IN-PROCESS, a `setTimeout` chain started by `startPayoutWorker` at `payment-service/src/index.ts`, and there is no root crontab on prod). **A mismatch is silent and serious**: payment-service answers 403, and because `/gate-pass` is the paywall, **every paywalled unlock fails** while the site looks healthy — found on prod 2026-08-07, where the only symptom anyone had noticed was the admin segregation panel reading "unavailable" (the one proxy that fires on a page load rather than a button). **Since 2026-08-07 you should never have to find this by hand**: the gateway probes all three peers at boot (`gateway/src/lib/internal-parity.ts`) and **refuses to start** on a definitive 401/403, naming the peer and the env var — so a drifted secret is a failed deploy instead of a silent outage. It exits ONLY on a proven mismatch; an unreachable or older peer never kills it. **If the gateway is crash-looping after a deploy, read its log first** — `docker compose logs gateway --tail=40` — the FATAL line names exactly which secret and which service. To check by hand without printing the secret: `docker compose exec -T gateway sh -c 'echo -n "$INTERNAL_SERVICE_TOKEN"\|md5sum'` and the same for `payment` — the hashes must match |
 | `ACCOUNT_KEY_HEX`                           | key-custody **only**                   | AES-256 key encrypting custodial Nostr privkeys at rest                                                                              |
 | `KMS_MASTER_KEY_HEX`                        | key-service                            | AES-256 master key for vault content-key envelope encryption                                                                         |
 | `STRIPE_SECRET_KEY`                         | gateway, payment                       | Stripe API key (validated at startup — gateway will not boot without it)                                                             |
@@ -368,6 +368,38 @@ docker compose logs gateway --tail=20                # "Gateway started" — no 
 ```
 
 ---
+
+## Troubleshooting: the gateway will not start
+
+Since 2026-08-07 the gateway refuses to run if it holds a different shared
+secret from `payment-service`, `key-custody` or `key-service`. Read its log
+first — the FATAL line names the peer AND the env var:
+
+```bash
+docker compose logs gateway --tail=40
+```
+
+Look for `SHARED SECRET MISMATCH`. The fix is to make that variable identical in
+`gateway/.env` and the named service's `.env`, then recreate **both** containers
+(an env-file change needs a recreate, not a restart):
+
+```bash
+docker compose up -d --force-recreate gateway payment
+```
+
+**Change the GATEWAY's value, not the peer's,** unless you know otherwise: the
+peer is the verifier, so anything else already working against it is using the
+peer's value.
+
+Why it is fatal rather than a warning: this is what a drifted
+`INTERNAL_SERVICE_TOKEN` did on prod, 2026-08-07 — the payment service answered
+403 to everything the gateway sent it, so **every paywalled unlock failed**,
+silently, while the site looked healthy. It was found only because an admin
+panel happened to proxy on a page load. A failed deploy is the cheaper failure.
+
+It exits only on a proven 401/403. An unreachable peer, or one on an older image
+with no `/api/v1/auth-check`, is logged and retried, never fatal — so a partial
+deploy cannot take the gateway down.
 
 ## Troubleshooting: feature not appearing after a rebuild
 

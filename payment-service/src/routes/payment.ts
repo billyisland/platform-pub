@@ -238,6 +238,26 @@ export async function paymentRoutes(app: FastifyInstance) {
   )
 
   // ---------------------------------------------------------------------------
+  // GET /auth-check (internal — the gateway's boot-time secret-parity probe)
+  //
+  // Does nothing and says nothing. Its ENTIRE value is the status code: reaching
+  // this handler at all proves the caller holds the same INTERNAL_SERVICE_TOKEN
+  // this service verifies against, so a 200 IS the parity proof and a 403 IS the
+  // mismatch. Deliberately discloses nothing — no hash, no fingerprint, no
+  // length — because a probe that echoed anything derived from the secret would
+  // be a disclosure surface bought for no benefit (the guard already answers the
+  // question).
+  //
+  // Why it exists rather than reusing a business endpoint: a probe pointed at a
+  // real route silently changes meaning the day someone edits that route's guard
+  // or gives it side effects. Spec: gateway/src/lib/internal-parity.ts.
+  // ---------------------------------------------------------------------------
+
+  app.get('/auth-check', { preHandler: requireInternalToken }, async (req, reply) => {
+    return reply.status(200).send({ ok: true })
+  })
+
+  // ---------------------------------------------------------------------------
   // GET /allocation-coverage (internal — the owner dashboard's segregation panel)
   //
   // PAYMENT-PERIMETER-ADR W2. Read-only and cheap: two indexed aggregates and no

@@ -62,6 +62,21 @@ export async function keyRoutes(app: FastifyInstance) {
   });
 
   // ---------------------------------------------------------------------------
+  // GET /auth-check
+  //
+  // The gateway's boot-time secret-parity probe. It needs no guard of its own —
+  // the plugin-scope preHandler above already covers every route here, which is
+  // exactly what makes reaching this handler proof that the caller's
+  // INTERNAL_SECRET matches ours. The 200 IS the parity proof and the 401 IS the
+  // mismatch; nothing derived from the secret is disclosed.
+  // Spec: gateway/src/lib/internal-parity.ts.
+  // ---------------------------------------------------------------------------
+
+  app.get("/auth-check", async (_req, reply) => {
+    return reply.status(200).send({ ok: true });
+  });
+
+  // ---------------------------------------------------------------------------
   // POST /articles/:nostrEventId/vault
   // Called by the publishing pipeline after the writer hits publish.
   // Encrypts the paywalled body and stores the content key.
