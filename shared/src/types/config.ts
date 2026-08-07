@@ -23,4 +23,8 @@ export interface PlatformConfig {
   payoutMaxSlices: number              // default 20   (max child transfers per payout)
   allocatedResidualAlertBps: number    // default 2000 (PLACEHOLDER — re-measure before the live flip)
   allocationSyncFreshnessHours: number // default 24   (allocated_pence staleness before re-read)
+  // How long a payout halt (global or per-account) may stand before the
+  // reconciler escalates it. A halt nobody clears is a policy of not paying —
+  // PAYMENT-PERIMETER-ADR W4, and dev proved it over a silent fortnight.
+  payoutHaltEscalationHours: number    // default 24   (hours before a standing halt escalates)
 }

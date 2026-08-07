@@ -111,7 +111,7 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
       const config = await loadConfig()
       const nearThresholdPence = Math.floor(config.tabSettlementThresholdPence * 0.8)
 
-      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts, holdingDial] =
+      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts, holdingDial, haltedAccounts] =
         await Promise.all([
           pool.query(
             `SELECT
@@ -188,6 +188,21 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           pool.query<{ value: string }>(
             `SELECT value FROM platform_config WHERE key = 'regulatory_holding_warning_days'`
           ),
+          // W4 per-account payout halts. Read here rather than proxied from
+          // payment-service's /payouts/halt-status because this dashboard
+          // already reads the global flag straight from the same DB, and a
+          // freeze the ONLY operator surface cannot see is the invisible-halt
+          // failure this work exists to bound, one granularity down.
+          //
+          // UNCAPPED, for the reason the attribution query is: a capped list
+          // reading as a total tells the operator everyone is paid but twenty.
+          pool.query(
+            `SELECT h.account_id, h.mismatch_class, h.reason, h.created_at,
+                    a.username, a.display_name
+               FROM payouts_halted_accounts h
+               JOIN accounts a ON a.id = h.account_id
+              ORDER BY h.created_at ASC`
+          ),
         ])
 
       const stateRow = (state: string) => {
@@ -254,9 +269,20 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           reversedCount: reversedPayouts.count,
           reversedPence: reversedPayouts.totalPence,
           lastPayoutAt: completedPayouts.lastAt,
+          // The PLATFORM-wide freeze. Kept distinct from the per-account set
+          // below: an operator reading "one writer is halted" as "the platform
+          // is halted" would resume the wrong control.
           halted: haltRow?.value === 'true',
           haltReason: haltRow?.description ?? null,
           haltedSince: haltRow?.updated_at ?? null,
+          haltedAccounts: haltedAccounts.rows.map((h: any) => ({
+            accountId: h.account_id,
+            username: h.username,
+            displayName: h.display_name,
+            mismatchClass: h.mismatch_class,
+            reason: h.reason,
+            since: h.created_at,
+          })),
         },
         revenue: {
           allTimePlatformFeePence: num(r.all_time),

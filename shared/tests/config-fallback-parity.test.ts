@@ -54,6 +54,7 @@ const FALLBACK_KEYS = [
   'payout_max_slices',
   'allocated_residual_alert_bps',
   'allocation_sync_freshness_hours',
+  'payout_halt_escalation_hours',
 ] as const
 
 describe('loadConfig fallbacks vs config-defaults.sql', () => {
@@ -73,6 +74,7 @@ describe('loadConfig fallbacks vs config-defaults.sql', () => {
       payout_max_slices: c.payoutMaxSlices,
       allocated_residual_alert_bps: c.allocatedResidualAlertBps,
       allocation_sync_freshness_hours: c.allocationSyncFreshnessHours,
+      payout_halt_escalation_hours: c.payoutHaltEscalationHours,
     })
     expect(bad).toEqual([])
   })

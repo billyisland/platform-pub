@@ -571,6 +571,74 @@ above are added.)
 **Trap.** Do not add a "resume anyway" that skips reconciliation. First-writer-
 wins on the halt reason stays.
 
+**AS BUILT — 2026-08-07 (migration 175).** Shipped as specified above, with one
+open question resolved and one addition the spec did not call for.
+
+- **Storage + primitives.** `payouts_halted_accounts` (account_id PK,
+  mismatch_class, reason, created_at), written only by
+  `payout-halt.ts::haltAccountPayouts` — one batched INSERT with `ON CONFLICT
+  DO NOTHING`, returning the newly-halted rows. First-writer-wins is not
+  tidiness here: the ledger is append-only, so an orphan re-detects on **every**
+  run until a human acts, and an upsert would refresh `created_at` each time,
+  making a fortnight-old halt read as new and silently defeating the age bound
+  below.
+- **Attribution.** The orphan WHERE predicate is now ONE constant
+  (`LEDGER_ORPHAN_PREDICATE`) from which both the capped check and the uncapped
+  `LEDGER_ORPHAN_ATTRIBUTION_SQL` are built — two copies of a predicate that
+  long is how they come to disagree, and the disagreement would be invisible.
+  The reversal ref_table lists are TS constants interpolated into the SQL
+  catch-all *and* read by `isAttributableOrphan`, so the two readers cannot
+  drift apart. `le.account_id` joined the SELECT as specified.
+- **The unknown-ref_table catch-all is NOT attributable** (a refinement, not in
+  the spec). That branch exists to fail loud on a trigger reuse nobody has
+  taught the file about; narrowing the response to one account is precisely the
+  confidence we do not have there, so it falls through to the global halt —
+  the default-deny posture the branch was written in.
+- **Uncapped, and pinned as a property.** The attribution query carries no
+  LIMIT, and the test asserts the *absence of a LIMIT* rather than a row count,
+  so a bound reintroduced with a large value still fails.
+- **THE PUBLICATION FORK, RESOLVED: leave the halted split `pending`.** The spec
+  named two options and said one must be chosen before building; the answer is
+  the third, which is that the shipped not-payable (KYC-incomplete) branch
+  already has exactly this shape and its consequences were checked rather than
+  assumed. The other splits in the parent still pay on the same pass (the loop
+  `continue`s); `finalisePublicationPayout` advances the reads to `writer_paid`
+  regardless of any split's state, so nothing upstream is stranded; the resume
+  sweep retries the parent every cycle and pays the split the moment the halt
+  clears, needing no revival path of its own; and `reservePublicationPayout` has
+  no pending-parent guard, so a still-open parent never blocks that
+  publication's next pool. **The parent staying `pending` is therefore a
+  wait-state already in production, not a new wedge.** Both spec options were
+  worse: marking it `failed` would lie in the books (nothing was rejected) and
+  feed the re-pay sweep, burning the split's finite `attempt` cap on a condition
+  with nothing to do with its destination; a new non-pending status needs an
+  ALTER TYPE plus a bespoke revival path to do what the resume sweep already
+  does free.
+- **Bound.** `payout_halt_escalation_hours` (dial, default 24) +
+  `escalateStaleHalts`, alerting under `payout_halt_stale`. It runs on **every**
+  reconciliation including clean ones — the way a halt becomes permanent is that
+  a human fixes the data and not the flag, after which every run reconciles
+  clean and pays nobody.
+- **Visibility + clearing** (not in the spec, but a per-account halt nobody can
+  see or clear is strictly worse for whoever it catches than the global flag it
+  replaces): `POST /payouts/resume/:accountId`, the account set on
+  `GET /payouts/halt-status`, and a **separate** admin-overview banner — never
+  merged with the platform-wide one, since the two are cleared differently and
+  an operator reading one as the other would resume the wrong control.
+- **Acceptance, honestly.** As the spec anticipated, "a divergence confined to
+  one Writer's ledger" is still not an observable event — no `CRITICAL_CHECKS`
+  entry examines a Writer's ledger. What is proved is the mechanism: a synthetic
+  orphaned `writer_payout` attributes to its account, that account leaves the
+  eligibility set, and the control writer stays in it
+  (`payout-halt-attribution-integration.test.ts`, DB-backed; the branching and
+  escalation in `ledger-reconcile.test.ts`). Mutation-verified seven ways,
+  including dropping the exclusion, keying the tribute exclusion on the author
+  instead of the inspirer, capping the attribution, and turning the insert into
+  an upsert.
+- **Not done here:** writer-side attributable checks (alert-only, per the
+  reconcile file's expected-nonzero warning) remain the follow-on if ¶7.14.6
+  needs more.
+
 ### W5 — Publication splits: record the mandate (HJ ¶7.14.2)
 
 **Today.** `publication_members.revenue_share_bps` is set by members holding

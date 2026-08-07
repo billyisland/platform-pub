@@ -23,6 +23,84 @@ starts.
 
 ## Progress
 
+- **2026-08-07 (W4 — the payout halt stops being one switch for everybody)** —
+  CONSOLIDATED-TODO §1.18, `PAYMENT-PERIMETER-ADR` §3.W4, migration 175.
+
+  **The control was right and its breadth was the problem.** Any ledger
+  divergence set `platform_config.payouts_halted` and all three cycles refused
+  to move anything — VNL exercising discretion over every Writer's money on the
+  strength of a divergence that might implicate one, the clearest surviving HJ
+  ¶7.14.6 principal-like-control marker. It now halts at the granularity the
+  checks can honestly attribute, which is narrower than it first looks: only
+  `ledger_orphans`, and only its payout-side trigger types. `reader_balance_parity`
+  — the commonest class — names a READER, and walking that to the writers they
+  paid would be over-broad by construction; `dispute_stake` looks payout-shaped
+  and is reader-side (it debits the disputant's tab). Both stay global.
+
+  **Attribution runs uncapped, and the test asserts the absence of a LIMIT
+  rather than a row count.** Every other statement in that file is capped
+  deliberately — existence is all a global halt needs — but this one decides
+  whose money stops, and a bound would mean the 21st diverging account kept
+  being paid out of a divergence already detected. Pinning the property rather
+  than a count means a bound reintroduced with a large value still fails.
+
+  **One predicate, two readers.** The orphan WHERE clause is now a single
+  constant the capped check and the uncapped attribution are both built from,
+  and the reversal ref_table lists are TS constants interpolated into the SQL
+  catch-all *and* read by `isAttributableOrphan` — two copies of a predicate
+  that long is how they come to disagree, invisibly and in both directions.
+  A refinement the spec did not call for: an **unrecognised** reversal ref_table
+  is NOT attributable. That branch exists to fail loud on a trigger reuse nobody
+  has taught the file about, and narrowing to one account is exactly the
+  confidence we do not have there.
+
+  **The ADR's open publication fork was resolved by checking, not choosing.**
+  It named two options and said one must be picked before building; the answer
+  was a third — leave the halted split `pending` — because that is the shipped
+  KYC-incomplete branch's own shape, and its consequences were verified rather
+  than assumed: other splits pay on the same pass, `finalisePublicationPayout`
+  advances the reads regardless, the resume sweep pays the split when the halt
+  clears, and `reservePublicationPayout` has no pending-parent guard so the next
+  pool is never blocked. The parent sitting `pending` is a wait-state already in
+  production, not a new wedge. Both named options were worse: `failed` lies in
+  the books and feeds the re-pay sweep, burning a finite `attempt` cap on a
+  condition unrelated to the destination; a new status wants an ALTER TYPE plus
+  a revival path the resume sweep already gives free.
+
+  **A halt nobody clears is a policy of not paying**, and nothing had ever
+  compared a halt's age — dev sat globally halted for a silent fortnight from
+  2026-07-17, every cycle a no-op, nothing wrong with the payout code. So
+  `payout_halt_escalation_hours` (dial, default 24) + `escalateStaleHalts`,
+  alerting under `payout_halt_stale` on **every** run including clean ones:
+  clean runs are precisely what a stale halt produces, since the way it happens
+  is a human fixing the data and not the flag.
+
+  **Visibility and clearing shipped with it**, though the spec did not ask: a
+  per-account halt nobody can see or clear is strictly worse for whoever it
+  catches than the global flag it replaces. `POST /payouts/resume/:accountId`,
+  the set on `GET /payouts/halt-status`, and a **separate** admin-overview
+  banner — never merged with the platform-wide one, since they are two controls
+  cleared two ways and an operator reading one as the other resumes the wrong
+  thing. Resuming the global halt deliberately does not release a per-account
+  one.
+
+  **Two eligibility constants were extracted** (`WRITER_PAYOUT_ELIGIBILITY_SQL`,
+  `TRIBUTE_PAYOUT_ELIGIBILITY_SQL`) so the DB test executes the cycles' own SQL
+  — behaviour-preserving, the same move the M4(b) and settlement-guard tests
+  made. That the exclusion removes the halted writer *without* removing anyone
+  else is a property of how a NOT EXISTS composes with a four-CTE query
+  carrying a threshold, a KYC gate and a carve; a mock cannot evaluate it, and
+  both failure directions are silent.
+
+  Mutation-verified seven ways, each red on exactly the intended test: capping
+  the attribution query; treating an unknown reversal ref_table as attributable;
+  halting globally regardless of attribution; escalating only on non-clean runs;
+  dropping the writer-cycle exclusion; keying the tribute exclusion on the
+  author instead of the inspirer; and turning the halt INSERT into an upsert
+  (which refreshes `created_at` and would make every halt read as new). Suites:
+  payment 352, gateway 450, shared 117, all green; drift guard 8/8; ledger
+  adjacency and read-chargeable guards green; `next build` clean.
+
 - **2026-08-06 (the rev. 4 scoping's two standalone defects — a dial nobody
   read, a share anybody could move — and the blocker that wasn't)** —
   CONSOLIDATED-TODO §1.14, §1.15, §1.16. All three came out of the

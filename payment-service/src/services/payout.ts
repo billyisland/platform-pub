@@ -6,7 +6,11 @@ import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import { tributesEnabled, allocatedFundsEnabled } from '@platform-pub/shared/lib/env.js'
 import { readNetSql, perReadNetPence } from '@platform-pub/shared/lib/per-read-net.js'
 import { isConnectPayable } from '../lib/connect-payable.js'
-import { isPayoutsHalted } from '../lib/payout-halt.js'
+import {
+  isPayoutsHalted,
+  isAccountHalted,
+  haltedAccountExclusionSql,
+} from '../lib/payout-halt.js'
 import { isTerminalTransferError } from '../lib/charge-errors.js'
 import {
   executeStripeIdempotent,
@@ -323,6 +327,108 @@ export const TRIBUTE_CHILDLESS_ADVANCE_SQL = `
      AND payout_transfer_id IS NULL
      AND state = 'released'
   RETURNING amount_pence`
+
+/**
+ * The writer cycle's eligibility query, exported as its ONE home so the
+ * DB-backed test executes the statement the cycle runs rather than a retyped
+ * copy of it. $1 = writerPayoutThresholdPence, $2 = platformFeeBps.
+ *
+ * F2: `AND publication_id IS NULL` excludes publication-article reads from the
+ * individual writer cycle — the publication payout cycle pools them.
+ * F1: the `sub` CTE folds WRITER subscription earnings (already NET) into the
+ * base, added as a separate term (NOT through readNetSql, which would re-apply
+ * the fee). Publication subscriptions (publication_id NOT NULL) are excluded
+ * here — their income flows through the publication pool.
+ *
+ * W4's per-account halt exclusion lives in the WHERE. It is here rather than in
+ * the loop below on purpose: an excluded writer must never be claimed at all,
+ * because reserving and rolling back their reads every cycle would churn the
+ * claim columns forever while paying nobody.
+ */
+export const WRITER_PAYOUT_ELIGIBILITY_SQL = `WITH base AS (
+         SELECT earnings.writer_id,
+                SUM(earnings.chargeable_pence) AS gross_pence,
+                SUM(${readNetSql('earnings.chargeable_pence', '$2')}) AS net_pence
+         FROM (
+           SELECT writer_id, chargeable_pence
+           FROM read_events
+           WHERE state = 'platform_settled' AND writer_payout_id IS NULL
+             AND publication_id IS NULL
+         ) AS earnings
+         GROUP BY earnings.writer_id
+       ),
+       sub AS (
+         SELECT writer_id, SUM(amount_pence) AS sub_net_pence
+         FROM subscription_events
+         WHERE event_type = 'subscription_earning'
+           AND writer_id IS NOT NULL
+           AND publication_id IS NULL
+           AND writer_payout_id IS NULL
+           AND settled_at IS NOT NULL
+         GROUP BY writer_id
+       ),
+       carve AS (
+         SELECT re.writer_id, SUM(ta.amount_pence) AS carve_pence
+         FROM tribute_accruals ta
+         JOIN read_events re ON re.id = ta.read_event_id
+         JOIN tributes t ON t.id = ta.tribute_id
+         WHERE re.state = 'platform_settled' AND re.writer_payout_id IS NULL
+           AND re.publication_id IS NULL
+           AND t.parent_tribute_id IS NULL
+           AND ta.state IN ('released', 'paid')
+         GROUP BY re.writer_id
+       ),
+       candidates AS (
+         SELECT writer_id FROM base
+         UNION
+         SELECT writer_id FROM sub
+       )
+       SELECT c.writer_id,
+              COALESCE(base.gross_pence, 0) AS gross_pence,
+              (COALESCE(base.net_pence, 0) + COALESCE(sub.sub_net_pence, 0)
+                 - COALESCE(carve.carve_pence, 0)) AS net_pence,
+              a.stripe_connect_id
+       FROM candidates c
+       JOIN accounts a ON a.id = c.writer_id
+       LEFT JOIN base  ON base.writer_id  = c.writer_id
+       LEFT JOIN sub   ON sub.writer_id   = c.writer_id
+       LEFT JOIN carve ON carve.writer_id = c.writer_id
+       WHERE a.stripe_connect_kyc_complete = TRUE
+         AND a.stripe_connect_id IS NOT NULL
+         -- W4: this writer's own ledger diverged, so this writer's money stops
+         -- and nobody else's. The global halt above still catches divergences
+         -- that could not be attributed to anyone.
+         AND ${haltedAccountExclusionSql('a.id')}
+         AND (COALESCE(base.net_pence, 0) + COALESCE(sub.sub_net_pence, 0)
+                - COALESCE(carve.carve_pence, 0)) >= $1`
+
+/**
+ * The tribute cycle's eligibility query — exported for the same reason as
+ * WRITER_PAYOUT_ELIGIBILITY_SQL: the DB-backed test runs the cycle's own SQL.
+ * Takes no parameters (there is no tribute payout threshold — the share is the
+ * inspirer's the moment it releases).
+ */
+export const TRIBUTE_PAYOUT_ELIGIBILITY_SQL = `WITH candidates AS (
+         SELECT tribute_id FROM tribute_accruals
+         WHERE state = 'released' AND tribute_payout_id IS NULL
+         GROUP BY tribute_id
+       )
+       SELECT t.id AS tribute_id,
+              t.resolved_account_id AS inspirer_account_id,
+              t.author_account_id,
+              insp.stripe_connect_id
+       FROM candidates c
+       JOIN tributes t ON t.id = c.tribute_id
+       JOIN accounts insp ON insp.id = t.resolved_account_id
+       WHERE t.status = 'live'
+         AND insp.stripe_connect_kyc_complete = TRUE
+         AND insp.stripe_connect_id IS NOT NULL
+         -- W4: the halted party here is the INSPIRER — the recipient of this
+         -- cycle's transfer, and the account whose ledger the orphan named.
+         -- Never the author: their carve is the author cycle's business, and
+         -- freezing a tribute over the payer's divergence would be the same
+         -- someone-else's-divergence category error W4 exists to end.
+         AND ${haltedAccountExclusionSql('insp.id')}`
 
 export function computePublicationSplits(
   grossPence: number,
@@ -702,64 +808,7 @@ class PayoutService {
       net_pence: string
       stripe_connect_id: string
     }>(
-      // F2: `AND publication_id IS NULL` excludes publication-article reads from
-      // the individual writer cycle — the publication payout cycle pools them.
-      // F1: the `sub` CTE folds WRITER subscription earnings (already NET) into
-      // the base, added as a separate term (NOT through readNetSql, which would
-      // re-apply the fee). Publication subscriptions (publication_id NOT NULL)
-      // are excluded here — their income flows through the publication pool.
-      `WITH base AS (
-         SELECT earnings.writer_id,
-                SUM(earnings.chargeable_pence) AS gross_pence,
-                SUM(${readNetSql('earnings.chargeable_pence', '$2')}) AS net_pence
-         FROM (
-           SELECT writer_id, chargeable_pence
-           FROM read_events
-           WHERE state = 'platform_settled' AND writer_payout_id IS NULL
-             AND publication_id IS NULL
-         ) AS earnings
-         GROUP BY earnings.writer_id
-       ),
-       sub AS (
-         SELECT writer_id, SUM(amount_pence) AS sub_net_pence
-         FROM subscription_events
-         WHERE event_type = 'subscription_earning'
-           AND writer_id IS NOT NULL
-           AND publication_id IS NULL
-           AND writer_payout_id IS NULL
-           AND settled_at IS NOT NULL
-         GROUP BY writer_id
-       ),
-       carve AS (
-         SELECT re.writer_id, SUM(ta.amount_pence) AS carve_pence
-         FROM tribute_accruals ta
-         JOIN read_events re ON re.id = ta.read_event_id
-         JOIN tributes t ON t.id = ta.tribute_id
-         WHERE re.state = 'platform_settled' AND re.writer_payout_id IS NULL
-           AND re.publication_id IS NULL
-           AND t.parent_tribute_id IS NULL
-           AND ta.state IN ('released', 'paid')
-         GROUP BY re.writer_id
-       ),
-       candidates AS (
-         SELECT writer_id FROM base
-         UNION
-         SELECT writer_id FROM sub
-       )
-       SELECT c.writer_id,
-              COALESCE(base.gross_pence, 0) AS gross_pence,
-              (COALESCE(base.net_pence, 0) + COALESCE(sub.sub_net_pence, 0)
-                 - COALESCE(carve.carve_pence, 0)) AS net_pence,
-              a.stripe_connect_id
-       FROM candidates c
-       JOIN accounts a ON a.id = c.writer_id
-       LEFT JOIN base  ON base.writer_id  = c.writer_id
-       LEFT JOIN sub   ON sub.writer_id   = c.writer_id
-       LEFT JOIN carve ON carve.writer_id = c.writer_id
-       WHERE a.stripe_connect_kyc_complete = TRUE
-         AND a.stripe_connect_id IS NOT NULL
-         AND (COALESCE(base.net_pence, 0) + COALESCE(sub.sub_net_pence, 0)
-                - COALESCE(carve.carve_pence, 0)) >= $1`,
+      WRITER_PAYOUT_ELIGIBILITY_SQL,
       [config.writerPayoutThresholdPence, config.platformFeeBps]
     )
 
@@ -2328,6 +2377,37 @@ class PayoutService {
         continue
       }
 
+      // W4 per-account halt. This cycle cannot exclude in its eligibility query
+      // the way the writer and tribute cycles do: that query never touches an
+      // account at all — recipients resolve per split, here, at transfer time.
+      //
+      // LEAVING THE SPLIT 'pending' IS THE RESOLUTION, and it is deliberately
+      // the shape the not-payable branch above already has. The ADR raised the
+      // worry that a halted split wedges its parent forever, the parent
+      // completing on "no split PENDING" — but that is the KYC branch's
+      // behaviour as shipped, and the consequences were checked rather than
+      // assumed: the other splits in this parent still pay on this same pass
+      // (we `continue`, not `return`); the reads are advanced to writer_paid by
+      // finalisePublicationPayout regardless of any split's state, so nothing
+      // upstream is stranded; the resume sweep retries the parent each cycle
+      // and pays this split the moment the halt clears, needing no resurrection
+      // path of its own; and `reservePublicationPayout` has no pending-parent
+      // guard, so a still-open parent never blocks the publication's next pool.
+      //
+      // The two alternatives were both worse. Marking it 'failed' would lie in
+      // the books (nothing was rejected, and `failChild` semantics release
+      // units) and would feed the re-pay sweep, burning this split's finite
+      // `attempt` cap on a condition that has nothing to do with its
+      // destination. A new non-pending status would need an ALTER TYPE plus a
+      // bespoke revival path to do what the resume sweep already does for free.
+      if (await isAccountHalted(pool, split.account_id)) {
+        logger.warn(
+          { splitId: split.id, accountId: split.account_id, payoutId },
+          'Publication split recipient has an attributable ledger divergence — left pending until their halt clears',
+        )
+        continue
+      }
+
       // Capture the guard-narrowed connect id in a const so the narrowing
       // survives into the thunk closure below (control-flow narrowing of the
       // mutable `acc.stripe_connect_id` does not persist into a callback).
@@ -2849,21 +2929,7 @@ class PayoutService {
       author_account_id: string
       stripe_connect_id: string
     }>(
-      `WITH candidates AS (
-         SELECT tribute_id FROM tribute_accruals
-         WHERE state = 'released' AND tribute_payout_id IS NULL
-         GROUP BY tribute_id
-       )
-       SELECT t.id AS tribute_id,
-              t.resolved_account_id AS inspirer_account_id,
-              t.author_account_id,
-              insp.stripe_connect_id
-       FROM candidates c
-       JOIN tributes t ON t.id = c.tribute_id
-       JOIN accounts insp ON insp.id = t.resolved_account_id
-       WHERE t.status = 'live'
-         AND insp.stripe_connect_kyc_complete = TRUE
-         AND insp.stripe_connect_id IS NOT NULL`,
+      TRIBUTE_PAYOUT_ELIGIBILITY_SQL,
     )
 
     let processed = 0

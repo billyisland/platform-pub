@@ -7,7 +7,12 @@ import { accrualService, AllowanceExhaustedError } from '../services/accrual.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
 import { runLedgerReconcileAndEnforce } from '../services/reconcile-ledger.js'
-import { getPayoutHaltState, resumePayouts } from '../lib/payout-halt.js'
+import {
+  getPayoutHaltState,
+  resumePayouts,
+  listHaltedAccounts,
+  resumeAccountPayouts,
+} from '../lib/payout-halt.js'
 import logger from '../lib/logger.js'
 
 // requireInternalToken — the single guard for the mutating internal routes
@@ -179,7 +184,13 @@ export async function paymentRoutes(app: FastifyInstance) {
   //                             on mismatch (the manual twin of the scheduled
   //                             worker).
   // GET  /payouts/halt-status — report whether payouts are halted, why, since when.
-  // POST /payouts/resume      — clear the halt once a human has reconciled.
+  // POST /payouts/resume      — clear the GLOBAL halt once a human has reconciled.
+  // POST /payouts/resume/:accountId — clear ONE account's halt (W4).
+  //
+  // Both halts report and clear through this one surface. A per-account halt
+  // with no way to see it or clear it would not be a narrower control — it
+  // would be a permanent freeze on whoever it caught, which is strictly worse
+  // than the global flag it replaces for them.
   // ---------------------------------------------------------------------------
 
   app.post('/reconcile-ledger', { preHandler: requireInternalToken }, async (req, reply) => {
@@ -188,14 +199,38 @@ export async function paymentRoutes(app: FastifyInstance) {
   })
 
   app.get('/payouts/halt-status', { preHandler: requireInternalToken }, async (req, reply) => {
-    return reply.status(200).send(await getPayoutHaltState(pool))
+    const [global, accounts] = await Promise.all([
+      getPayoutHaltState(pool),
+      listHaltedAccounts(pool),
+    ])
+    // `halted` keeps meaning the PLATFORM-wide freeze — the existing readers of
+    // this route (the admin dashboard banner) must not start reading "one writer
+    // is halted" as "the platform is halted". The account set is reported
+    // alongside it, never folded into it.
+    return reply.status(200).send({ ...global, haltedAccounts: accounts })
   })
 
   app.post('/payouts/resume', { preHandler: requireInternalToken }, async (req, reply) => {
     await resumePayouts(pool)
-    logger.warn('Payouts manually resumed — halt flag cleared')
+    logger.warn('Payouts manually resumed — global halt flag cleared')
     return reply.status(200).send({ resumed: true })
   })
+
+  app.post<{ Params: { accountId: string } }>(
+    '/payouts/resume/:accountId',
+    { preHandler: requireInternalToken },
+    async (req, reply) => {
+      const { accountId } = req.params
+      const resumed = await resumeAccountPayouts(pool, accountId)
+      if (!resumed) {
+        // Reported honestly rather than confirmed: an operator who has just
+        // cleared the wrong id must not read "resumed" and stop looking.
+        return reply.status(404).send({ resumed: false, error: 'account_not_halted' })
+      }
+      logger.warn({ accountId }, 'Account payouts manually resumed — halt row cleared')
+      return reply.status(200).send({ resumed: true, accountId })
+    },
+  )
 
   // ---------------------------------------------------------------------------
   // POST /settlement-check/monthly (internal — called by monthly fallback cron)

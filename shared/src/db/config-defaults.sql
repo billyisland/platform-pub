@@ -295,3 +295,26 @@ INSERT INTO platform_config (key, value, description) VALUES
   ('allocated_residual_alert_bps',     '2000', 'PLACEHOLDER — re-set from a 30-day production baseline before the live flip. Rolling-30-day share of payout value funded from platform balance rather than allocated funds, above which the residual metric alerts. Alert only; never halts payouts (a large residual means the money is right and the SEGREGATION COVERAGE is poor).'),
   ('allocation_sync_freshness_hours',  '24',   'How stale a settlement''s allocated_pence may be before the allocation-sync sweep re-reads it from Stripe. Lower = more Stripe calls, fresher drawing budget (settlement.ts::syncAllocations).')
 ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Payout-halt escalation (PAYMENT-PERIMETER-ADR W4, migration 175).
+--
+-- A halt that is never cleared is indistinguishable from a policy of not
+-- paying, and nothing in the system noticed: the banner displayed the halt and
+-- no job ever compared its age. Dev sat globally halted for a fortnight from
+-- 2026-07-17 — every payout cycle a no-op, the reconciliation clean each time
+-- (a human had fixed the data and not the flag), nothing wrong with the payout
+-- code at all (scripts/backfill-seed-opening-balances.ts header).
+--
+-- It is a DIAL rather than a constant because the right value is a property of
+-- how the operator is staffed, not of the code: 24h says "a halt should not
+-- survive a working day unlooked-at", which is the same urgency the alert-tier
+-- reconciliation incidents already carry. Lower it once someone is on call;
+-- raise it and you are choosing to let money sit still for longer.
+--
+-- The reconciler checks this on EVERY run, including clean ones — a stale halt
+-- is precisely the state that produces clean runs forever.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('payout_halt_escalation_hours',     '24',   'Hours a payout halt (the global payouts_halted flag or a payouts_halted_accounts row) may stand before the ledger reconciler escalates it under the payout_halt_stale alert marker. A halt nobody clears is a policy of not paying (reconcile-ledger.ts::escalateStaleHalts).')
+ON CONFLICT (key) DO NOTHING;

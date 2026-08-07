@@ -73,6 +73,32 @@ export default function AdminOverviewPage() {
             </div>
           )}
 
+          {/* W4 per-account halts. A SEPARATE banner from the platform-wide one
+              above, never a merged "payouts halted": these are two different
+              controls cleared two different ways, and an operator who read one
+              as the other would resume the wrong thing. Rendered whether or not
+              the global halt is also up — they can both be in force. */}
+          {data.payout.haltedAccounts.length > 0 && (
+            <div className="bg-glasshouse-well px-4 py-3 mb-8">
+              <p className="label-ui text-crimson mb-1">
+                {data.payout.haltedAccounts.length} account
+                {data.payout.haltedAccounts.length === 1 ? '' : 's'} frozen — everyone else is being paid
+              </p>
+              <div className="space-y-1">
+                {data.payout.haltedAccounts.map((h) => (
+                  <p key={h.accountId} className="text-ui-xs text-black">
+                    <span className="font-medium">{h.displayName ?? h.username ?? h.accountId}</span>
+                    {' · '}
+                    <span className="label-ui text-grey-600">{h.mismatchClass}</span>
+                    {' · '}
+                    {h.reason}
+                    {` Since ${timeAgo(h.since)}.`}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
           <StatSection label="Stage 1 — Accrual" helper="Money owed by readers, not yet charged.">
             <StatGrid>
               <StatCard label="Active tabs" value={data.accrual.activeTabCount} />

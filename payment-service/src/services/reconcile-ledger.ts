@@ -1,6 +1,13 @@
-import { pool } from '@platform-pub/shared/db/client.js'
+import { pool, loadConfig } from '@platform-pub/shared/db/client.js'
 import logger from '../lib/logger.js'
-import { haltPayouts, type Queryable } from '../lib/payout-halt.js'
+import {
+  haltPayouts,
+  haltAccountPayouts,
+  listHaltedAccounts,
+  getPayoutHaltState,
+  type AccountHalt,
+  type Queryable,
+} from '../lib/payout-halt.js'
 
 // =============================================================================
 // Scheduled ledger reconciliation (PAYMENTS ADR §1.2).
@@ -63,6 +70,149 @@ interface Check {
 // attribution has a stronger requirement still — it must run UNCAPPED, because
 // halting from a truncated payload silently pays the 21st diverging account.
 const SAMPLE_LIMIT = 20
+
+// -----------------------------------------------------------------------------
+// The orphan predicate (A6) and its ref_table sets — ONE home, two readers.
+//
+// The `ledger_orphans` check runs it CAPPED (existence is all a global halt
+// needs) and W4's attribution runs it UNCAPPED (halting per account from a
+// truncated payload silently pays the 21st diverging account). Two copies of a
+// predicate this long is how the two come to disagree, and the disagreement
+// would be invisible: the check would halt on a row the attribution never saw,
+// or worse, the attribution would name an account the check no longer flags.
+// So the predicate is written once and both statements are built from it.
+//
+// The ref_table lists are TS constants interpolated into the catch-all rather
+// than literals inside the SQL, because `isAttributableOrphan` reads the SAME
+// lists. A new ref_table branch added to the predicate without extending the
+// list would make its rows unattributable — which fails SAFE (global halt), but
+// only because these two readers share the list rather than each keeping one.
+// -----------------------------------------------------------------------------
+
+/** ref_tables `writer_payout_reversal` is legitimately posted against. */
+const WRITER_REVERSAL_REF_TABLES = [
+  'writer_payouts',
+  'publication_payout_splits',
+  'tab_settlements',
+] as const
+
+/** ref_tables `tribute_payout_reversal` is legitimately posted against. */
+const TRIBUTE_REVERSAL_REF_TABLES = ['tribute_payouts', 'tab_settlements'] as const
+
+const sqlList = (values: readonly string[]) => values.map((v) => `'${v}'`).join(', ')
+
+/**
+ * `le.account_id` is in the SELECT for W4: it is the ONLY recoverable handle on
+ * whose divergence this is, the orphan's source row being by definition gone.
+ */
+const LEDGER_ORPHAN_COLUMNS = `le.id AS ledger_id, le.trigger_type, le.ref_table, le.ref_id, le.account_id`
+
+const LEDGER_ORPHAN_PREDICATE = `
+        (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
+               AND NOT EXISTS (SELECT 1 FROM read_events re WHERE re.id = le.ref_id))
+         OR (le.trigger_type = 'tab_settlement'
+               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+         OR (le.trigger_type = 'writer_payout'
+               AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
+         OR (le.trigger_type = 'publication_split'
+               AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
+         OR (le.trigger_type IN ('dispute_stake', 'dispute_stake_refund')
+               AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id))
+         OR (le.trigger_type = 'tribute_payout'
+               AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
+         -- Reversals must resolve against the table each handler actually refs,
+         -- not all against tab_settlements (the old bug: a real writer_payout_
+         -- reversal / tribute_payout_reversal whose ref_id is a writer_payouts /
+         -- tribute_payouts id would fail the tab_settlements lookup and halt ALL
+         -- payouts on the next run — recurring forever, the entry being append-
+         -- only). BOTH reversal triggers are multi-table: F5 reuses
+         -- writer_payout_reversal for publication-split-recipient reversals
+         -- (ref_table 'publication_payout_splits'), and the chargeback planner
+         -- (settlement.ts reverseSettlement) posts writer_payout_reversal AND
+         -- tribute_payout_reversal with ref_table 'tab_settlements'. Every
+         -- branch is ref_table-scoped — an unscoped branch flags the other
+         -- handlers' rows as orphans forever (§0f item 3).
+         OR (le.trigger_type = 'tab_settlement_reversal'
+               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'writer_payouts'
+               AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
+         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'publication_payout_splits'
+               AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
+         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'tab_settlements'
+               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+         OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tribute_payouts'
+               AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
+         OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tab_settlements'
+               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+         -- Catch-all: ref_table-scoped branches are default-ALLOW — a reversal
+         -- posted with a ref_table outside the known set matches no branch and
+         -- is silently unchecked forever. The next F5-style trigger reuse must
+         -- fail loud here (add its scoped branch above, then extend the list).
+         OR (le.trigger_type = 'writer_payout_reversal'
+               AND le.ref_table NOT IN (${sqlList(WRITER_REVERSAL_REF_TABLES)}))
+         OR (le.trigger_type = 'tribute_payout_reversal'
+               AND le.ref_table NOT IN (${sqlList(TRIBUTE_REVERSAL_REF_TABLES)}))`
+
+/**
+ * The W4 attribution statement: the SAME predicate, deliberately UNCAPPED.
+ *
+ * The cap on every other statement here is right — a global halt needs only
+ * existence, so twenty rows is a sufficient starting point for a human. This one
+ * decides WHOSE money stops, and a bound would mean the 21st diverging account
+ * kept being paid out of a divergence we had already detected. If a bound is
+ * ever reintroduced, a truncated result must fall back to the GLOBAL halt; a
+ * partial per-account halt is the one outcome that must never happen.
+ *
+ * Exported so the DB-backed test executes the statement the service runs.
+ */
+export const LEDGER_ORPHAN_ATTRIBUTION_SQL = `
+      SELECT ${LEDGER_ORPHAN_COLUMNS}
+      FROM ledger_entries le
+      WHERE ${LEDGER_ORPHAN_PREDICATE}`
+
+/**
+ * Trigger types whose orphaned entry names an account whose OWN payouts are the
+ * ones to stop. Payout-side only, and the list is short on purpose.
+ *
+ * `reader_balance_parity` — the commonest divergence class — names a READER,
+ * and mapping a reader to the writers they paid via `read_events` would halt
+ * writers on the strength of someone else's divergence: over-broad by
+ * construction, and the same ¶7.14.6 discretion W4 exists to narrow. Nothing
+ * outside this set is attributable, so it halts globally instead.
+ *
+ * `dispute_stake` is deliberately ABSENT though it looks payout-shaped: the
+ * stake debits the DISPUTANT's reading tab (it is counted by
+ * `ledger_reader_balance`), so it is a reader-side trigger and halting that
+ * account's payouts would be the same category error one table over.
+ */
+const ATTRIBUTABLE_ORPHAN_TRIGGERS = new Set(['writer_payout', 'publication_split', 'tribute_payout'])
+
+export interface OrphanRow {
+  trigger_type: string
+  ref_table: string | null
+  account_id: string | null
+}
+
+/**
+ * Whether an orphan row can honestly be attributed to its account.
+ *
+ * A reversal is attributable only on a ref_table we RECOGNISE. The catch-all
+ * branch above exists to fail loud on an unknown one — "we do not understand
+ * this entry" — and narrowing the response to one account is precisely the
+ * confidence we do not have there. So an unknown ref_table falls through to the
+ * global halt, which is the default-deny posture that branch was written in.
+ */
+export function isAttributableOrphan(row: OrphanRow): boolean {
+  if (!row.account_id) return false
+  if (ATTRIBUTABLE_ORPHAN_TRIGGERS.has(row.trigger_type)) return true
+  if (row.trigger_type === 'writer_payout_reversal') {
+    return (WRITER_REVERSAL_REF_TABLES as readonly string[]).includes(row.ref_table ?? '')
+  }
+  if (row.trigger_type === 'tribute_payout_reversal') {
+    return (TRIBUTE_REVERSAL_REF_TABLES as readonly string[]).includes(row.ref_table ?? '')
+  }
+  return false
+}
 
 /**
  * The negative-reading-tab detector, exported as its ONE home so the DB-backed
@@ -178,52 +328,9 @@ const CRITICAL_CHECKS: Check[] = [
     description:
       'a ledger entry whose originating source row is gone (reconcile-ledger.sql A6)',
     sql: `
-      SELECT le.id AS ledger_id, le.trigger_type, le.ref_table, le.ref_id
+      SELECT ${LEDGER_ORPHAN_COLUMNS}
       FROM ledger_entries le
-      WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
-               AND NOT EXISTS (SELECT 1 FROM read_events re WHERE re.id = le.ref_id))
-         OR (le.trigger_type = 'tab_settlement'
-               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
-         OR (le.trigger_type = 'writer_payout'
-               AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
-         OR (le.trigger_type = 'publication_split'
-               AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
-         OR (le.trigger_type IN ('dispute_stake', 'dispute_stake_refund')
-               AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id))
-         OR (le.trigger_type = 'tribute_payout'
-               AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
-         -- Reversals must resolve against the table each handler actually refs,
-         -- not all against tab_settlements (the old bug: a real writer_payout_
-         -- reversal / tribute_payout_reversal whose ref_id is a writer_payouts /
-         -- tribute_payouts id would fail the tab_settlements lookup and halt ALL
-         -- payouts on the next run — recurring forever, the entry being append-
-         -- only). BOTH reversal triggers are multi-table: F5 reuses
-         -- writer_payout_reversal for publication-split-recipient reversals
-         -- (ref_table 'publication_payout_splits'), and the chargeback planner
-         -- (settlement.ts reverseSettlement) posts writer_payout_reversal AND
-         -- tribute_payout_reversal with ref_table 'tab_settlements'. Every
-         -- branch is ref_table-scoped — an unscoped branch flags the other
-         -- handlers' rows as orphans forever (§0f item 3).
-         OR (le.trigger_type = 'tab_settlement_reversal'
-               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
-         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'writer_payouts'
-               AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
-         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'publication_payout_splits'
-               AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
-         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'tab_settlements'
-               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
-         OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tribute_payouts'
-               AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
-         OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tab_settlements'
-               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
-         -- Catch-all: ref_table-scoped branches are default-ALLOW — a reversal
-         -- posted with a ref_table outside the known set matches no branch and
-         -- is silently unchecked forever. The next F5-style trigger reuse must
-         -- fail loud here (add its scoped branch above, then extend this list).
-         OR (le.trigger_type = 'writer_payout_reversal'
-               AND le.ref_table NOT IN ('writer_payouts', 'publication_payout_splits', 'tab_settlements'))
-         OR (le.trigger_type = 'tribute_payout_reversal'
-               AND le.ref_table NOT IN ('tribute_payouts', 'tab_settlements'))
+      WHERE ${LEDGER_ORPHAN_PREDICATE}
       LIMIT ${SAMPLE_LIMIT}`,
   },
   {
@@ -252,11 +359,33 @@ export interface ReconcileResult {
    * route's JSON and the tests can both read the halt decision without
    * re-deriving it from severities — and so an alert-only run reads as
    * "incident, payouts still flowing" rather than an unexplained `ok: false`.
+   *
+   * It says a halt-class divergence EXISTS, not that everyone was frozen: since
+   * W4 a divergence that attributes to accounts halts only those. Whether this
+   * run froze the platform is `enforcement.globalHalt`.
    */
   haltRequired: boolean
   checkedAt: string
   checksRun: number
   violations: ReconcileViolation[]
+}
+
+/** What the enforcement wrapper actually did — see `runLedgerReconcileAndEnforce`. */
+export interface ReconcileEnforcement {
+  /** The platform-wide freeze: only for divergences no check could attribute. */
+  globalHalt: boolean
+  /** Which classes forced it, so the halt record says what could not be attributed. */
+  globalHaltClasses: string[]
+  /** Accounts this run attributed a divergence to (halted, new or already). */
+  attributedAccounts: AccountHalt[]
+  /** Of those, how many were NOT already halted — first-writer-wins makes repeats 0. */
+  newlyHaltedAccounts: number
+  /** Halts (global or per-account) older than payout_halt_escalation_hours. */
+  staleHalts: number
+}
+
+export interface EnforcedReconcileResult extends ReconcileResult {
+  enforcement: ReconcileEnforcement
 }
 
 /** `name(count)`, with `20+` where the sample was capped. */
@@ -295,29 +424,144 @@ export async function reconcileLedger(db: Queryable): Promise<ReconcileResult> {
 }
 
 /**
+ * Attribute a halt-class violation to accounts where the check honestly can.
+ *
+ * Only `ledger_orphans` can: it is the one check whose violating rows name the
+ * account whose OWN payouts should stop (see `ATTRIBUTABLE_ORPHAN_TRIGGERS`).
+ * Every other halt-class check names a reader or names nobody, so it returns
+ * `fullyAttributed: false` and the caller freezes the platform.
+ *
+ * Re-queries UNCAPPED rather than reading `violation.sample` — that sample is
+ * five rows of twenty, and halting from it would pay everyone it omitted.
+ */
+async function attributeHaltingViolation(
+  db: Queryable,
+  violation: ReconcileViolation,
+): Promise<{ halts: AccountHalt[]; fullyAttributed: boolean }> {
+  if (violation.check !== 'ledger_orphans') return { halts: [], fullyAttributed: false }
+
+  const { rows } = await db.query(LEDGER_ORPHAN_ATTRIBUTION_SQL)
+
+  const halts = new Map<string, AccountHalt>()
+  let unattributable = 0
+  for (const raw of rows) {
+    const row = raw as unknown as OrphanRow & { ledger_id?: string }
+    if (!isAttributableOrphan(row)) {
+      unattributable++
+      continue
+    }
+    // First orphan per account wins the reason, matching the row-level
+    // first-writer-wins in the table: the first divergence is the one to
+    // investigate, and a Map keyed on the account keeps one row per account so
+    // the batch INSERT cannot conflict with itself.
+    if (!halts.has(row.account_id!)) {
+      halts.set(row.account_id!, {
+        accountId: row.account_id!,
+        mismatchClass: violation.check,
+        reason: `orphaned ${row.trigger_type} ledger entry ${row.ledger_id ?? '(unknown)'} (ref_table ${row.ref_table ?? 'null'})`,
+      })
+    }
+  }
+
+  // An empty result is NOT full attribution. The capped check found rows; if the
+  // uncapped re-query finds none, something moved underneath us (or the two
+  // statements disagree, which they cannot while both are built from the one
+  // predicate) — either way we do not know whose divergence it is.
+  const fullyAttributed = unattributable === 0 && halts.size > 0
+  return { halts: [...halts.values()], fullyAttributed }
+}
+
+/**
+ * Escalate a halt that has outlived the configured bound — global or
+ * per-account, and INDEPENDENT of whether this run found anything.
+ *
+ * That independence is the whole point. A halt that is never cleared is
+ * indistinguishable from a policy of not paying, and the way it happens is that
+ * a human fixes the DATA and never clears the FLAG: every subsequent run
+ * reconciles clean, logs "clean", and pays nobody. Dev sat exactly like that for
+ * a fortnight from 2026-07-17, silently, with nothing wrong with the payout code
+ * (scripts/backfill-seed-opening-balances.ts header). So this runs on every
+ * reconciliation, including the clean ones — especially the clean ones.
+ */
+async function escalateStaleHalts(db: Queryable, maxAgeHours: number): Promise<number> {
+  const cutoff = Date.now() - maxAgeHours * 3_600_000
+  const isStale = (since: string | null) => since !== null && Date.parse(since) < cutoff
+
+  const [global, accounts] = await Promise.all([getPayoutHaltState(db), listHaltedAccounts(db)])
+  const staleGlobal = global.halted && isStale(global.since)
+  const staleAccounts = accounts.filter((a) => isStale(a.since))
+  const total = staleAccounts.length + (staleGlobal ? 1 : 0)
+
+  if (total > 0) {
+    logger.fatal(
+      {
+        alert: 'payout_halt_stale',
+        maxAgeHours,
+        globalHalt: staleGlobal ? { since: global.since, reason: global.reason } : null,
+        accounts: staleAccounts,
+      },
+      `PAYOUT HALT UNRESOLVED for over ${maxAgeHours}h — ${staleGlobal ? 'the platform-wide halt' : ''}${staleGlobal && staleAccounts.length ? ' and ' : ''}${staleAccounts.length ? `${staleAccounts.length} account(s)` : ''} still frozen. A halt nobody clears is a policy of not paying.`,
+    )
+  }
+  return total
+}
+
+/**
  * Run the reconciliation and enforce the §1.2 response, per severity:
  *   • any 'halt' violation → ALERT (a fatal-level structured log the ops
- *     alerting keys on) and HALT PAYOUTS (the durable flag the three payout
- *     cycles refuse to run past).
+ *     alerting keys on) and HALT PAYOUTS — platform-wide unless the violation
+ *     attributes to accounts, in which case only those accounts freeze (W4).
  *   • any 'alert' violation → ALERT ONLY, with its OWN marker (`alert` = the
  *     check name), and nobody's payouts move. See the SEVERITY note at the head
  *     of this file for why a negative reading tab must not freeze payouts.
  * The two are independent: an alert-only incident in the same run as a
  * divergence emits both, and an alert-only run never touches the halt flag.
  * Used by both the scheduled worker and the manual POST /reconcile-ledger route.
+ *
+ * W4 — WHY THE GLOBAL HALT IS NOT SIMPLY REPLACED. The narrow instrument is not
+ * a relaxation of the broad one: a divergence that cannot be attributed still
+ * freezes everything, and the global reason names the class that could not be.
+ * The two also coexist within one run — a `ledger_orphans` violation carrying
+ * both a writer's orphan and a reader's halts that writer AND the platform, so
+ * clearing the global halt later does not quietly release the account.
  */
-export async function runLedgerReconcileAndEnforce(db: Queryable = pool): Promise<ReconcileResult> {
+export async function runLedgerReconcileAndEnforce(
+  db: Queryable = pool,
+): Promise<EnforcedReconcileResult> {
   const result = await reconcileLedger(db)
 
   const halting = result.violations.filter((v) => v.severity === 'halt')
   const alerting = result.violations.filter((v) => v.severity === 'alert')
 
-  if (halting.length > 0) {
-    const reason = `Ledger reconciliation mismatch: ${summarise(halting)}`
+  const attributedAccounts: AccountHalt[] = []
+  const globalHaltClasses: string[] = []
+
+  for (const violation of halting) {
+    const { halts, fullyAttributed } = await attributeHaltingViolation(db, violation)
+    attributedAccounts.push(...halts)
+    if (!fullyAttributed) globalHaltClasses.push(violation.check)
+  }
+
+  let newlyHaltedAccounts = 0
+  if (attributedAccounts.length > 0) {
+    newlyHaltedAccounts = await haltAccountPayouts(db, attributedAccounts)
+    logger.fatal(
+      {
+        alert: 'payouts_halted_account',
+        accounts: attributedAccounts,
+        newlyHalted: newlyHaltedAccounts,
+      },
+      `ACCOUNT PAYOUTS HALTED — ${attributedAccounts.length} account(s) with an attributable ledger divergence (${newlyHaltedAccounts} newly). Everyone else keeps being paid.`,
+    )
+  }
+
+  if (globalHaltClasses.length > 0) {
+    const unattributable = halting.filter((v) => globalHaltClasses.includes(v.check))
+    const reason = `Ledger reconciliation mismatch (unattributable): ${summarise(unattributable)}`
     await haltPayouts(db, reason)
     // fatal, not error: this is the money-books-diverged alert — payouts are now
     // frozen and a human must reconcile before POST /payouts/resume.
-    logger.fatal({ alert: 'payouts_halted', violations: halting }, `PAYOUTS HALTED — ${reason}`)
+    logger.fatal({ alert: 'payouts_halted', violations: unattributable }, `PAYOUTS HALTED — ${reason}`)
   }
 
   for (const violation of alerting) {
@@ -333,8 +577,21 @@ export async function runLedgerReconcileAndEnforce(db: Queryable = pool): Promis
     )
   }
 
+  // Unconditional, including on a clean run — see escalateStaleHalts.
+  const config = await loadConfig()
+  const staleHalts = await escalateStaleHalts(db, config.payoutHaltEscalationHours)
+
   if (result.ok) {
     logger.info({ checksRun: result.checksRun }, 'Ledger reconciliation clean')
   }
-  return result
+  return {
+    ...result,
+    enforcement: {
+      globalHalt: globalHaltClasses.length > 0,
+      globalHaltClasses,
+      attributedAccounts,
+      newlyHaltedAccounts,
+      staleHalts,
+    },
+  }
 }

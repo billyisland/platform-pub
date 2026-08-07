@@ -45,6 +45,15 @@ export interface AdminOverview {
     halted: boolean
     haltReason: string | null
     haltedSince: string | null
+    /** Per-account freezes (W4) — distinct from the platform-wide `halted`. */
+    haltedAccounts: Array<{
+      accountId: string
+      username: string | null
+      displayName: string | null
+      mismatchClass: string
+      reason: string
+      since: string
+    }>
   }
   revenue: {
     allTimePlatformFeePence: number

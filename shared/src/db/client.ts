@@ -114,6 +114,7 @@ export async function loadConfig(forceRefresh = false): Promise<PlatformConfig> 
     payoutMaxSlices: int(map, 'payout_max_slices', 20),
     allocatedResidualAlertBps: int(map, 'allocated_residual_alert_bps', 2000),
     allocationSyncFreshnessHours: int(map, 'allocation_sync_freshness_hours', 24),
+    payoutHaltEscalationHours: int(map, 'payout_halt_escalation_hours', 24),
   }
 
   cachedConfig = config

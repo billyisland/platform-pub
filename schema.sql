@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict QJjx2spVI97HSyOEgRlurVxhF20kRXWySzXD67nkQYGncfVNb63sp9mWHE9uex6
+\restrict MeBPl4uSBKwxZr66WORAf1wzJekgHqaEbcg4SeTBucO6MaG6f8SgUCWvkVIMXdw
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1834,6 +1834,46 @@ COMMENT ON COLUMN public.payout_transfers.funding IS 'allocated = drawn from a c
 
 
 --
+-- Name: payouts_halted_accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.payouts_halted_accounts (
+    account_id uuid NOT NULL,
+    mismatch_class text NOT NULL,
+    reason text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE payouts_halted_accounts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.payouts_halted_accounts IS 'Accounts whose outbound payouts are frozen by an ATTRIBUTABLE ledger-reconciliation divergence (PAYMENT-PERIMETER-ADR W4). Presence means halted; a row is deleted to resume, exactly as the global payouts_halted key is. Narrower than that flag by design — the global halt remains for divergences no check can attribute to an account, and HJ ¶7.14.6 is the reason the narrow instrument exists.';
+
+
+--
+-- Name: COLUMN payouts_halted_accounts.mismatch_class; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.payouts_halted_accounts.mismatch_class IS 'The reconciler check name that attributed this halt (today only ledger_orphans, whose payout-side trigger types are the sole attributable class). A class, never free text, so an operator can tell two halts apart and so a new class cannot inherit an old one''s meaning by accident.';
+
+
+--
+-- Name: COLUMN payouts_halted_accounts.reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.payouts_halted_accounts.reason IS 'The specifics behind mismatch_class — the offending ledger entry''s trigger type and id. The class says which check; this says which row.';
+
+
+--
+-- Name: COLUMN payouts_halted_accounts.created_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.payouts_halted_accounts.created_at IS 'When this account was first halted. First-writer-wins, so it is the FIRST detection and not the most recent one — which is what makes it a sound input to the payout_halt_escalation_hours bound. A halt that is never cleared is indistinguishable from a policy of not paying.';
+
+
+--
 -- Name: platform_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3403,6 +3443,14 @@ ALTER TABLE ONLY public.outbound_posts
 
 ALTER TABLE ONLY public.payout_transfers
     ADD CONSTRAINT payout_transfers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payouts_halted_accounts payouts_halted_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payouts_halted_accounts
+    ADD CONSTRAINT payouts_halted_accounts_pkey PRIMARY KEY (account_id);
 
 
 --
@@ -6704,6 +6752,14 @@ ALTER TABLE ONLY public.payout_transfers
 
 
 --
+-- Name: payouts_halted_accounts payouts_halted_accounts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payouts_halted_accounts
+    ADD CONSTRAINT payouts_halted_accounts_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
 -- Name: pledge_drives pledge_drives_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7531,7 +7587,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict QJjx2spVI97HSyOEgRlurVxhF20kRXWySzXD67nkQYGncfVNb63sp9mWHE9uex6
+\unrestrict MeBPl4uSBKwxZr66WORAf1wzJekgHqaEbcg4SeTBucO6MaG6f8SgUCWvkVIMXdw
 
 --
 
@@ -7709,4 +7765,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('171_grant_offer_codes.sql'),
     ('172_notifications_offer_id.sql'),
     ('173_notification_dedup_partial.sql'),
-    ('174_notifications_dedup_drive.sql');
+    ('174_notifications_dedup_drive.sql'),
+    ('175_payouts_halted_accounts.sql');
