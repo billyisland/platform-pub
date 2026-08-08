@@ -23,6 +23,87 @@ starts.
 
 ## Progress
 
+- **2026-08-07 (archive import — the design pass, and a ruling that deleted
+  half of it)** — CONSOLIDATED-TODO §3.5, `docs/adr/ARCHIVE-IMPORT-ADR.md`.
+  **Design only; no code.** No migration, no flag, no deploy.
+
+  **Three facts already in the tree decided most of the design, and all three
+  were found by reading rather than guessing.** (1) A complete server-side
+  publish pipeline already exists — `publishPersonalDraft` in
+  `gateway/src/workers/scheduler.ts` signs via key-custody, dual-writes
+  `articles` + `feed_items`, enqueues `relay_outbox` inside that transaction,
+  seals the vault and swings to v2 — so the importer is its second caller and
+  the first slice contains no import code at all, only the extraction. A bulk
+  publisher written beside the real one is how the vault step or the in-txn
+  outbox enqueue goes quietly missing. (2) Both publish paths hardcode `now()`
+  in **four** places (`articles/publish.ts:104`, `scheduler.ts:202`/`253`/`310`
+  — the `articles` column, the `feed_items` column, the NIP-23 `published_at`
+  tag and the event `created_at`), so an unmodified import dates a 2019
+  archive today, destroying the chronology that *is* the archive and landing
+  200 articles atop every follower's feed at once. NIP-23 already draws the
+  right line: backdate the tag and both columns, leave `created_at` at now.
+  Backdating `created_at` too would work but only for ten years —
+  `relay/strfry.conf:65` sets `rejectEventsOlderThanSeconds = 315360000`, past
+  which the DB row indexes fine and the relay publish silently fails. (3)
+  `publishPersonalDraft` calls `sendPublishNotifications` on every publish, so
+  an unguarded import of 200 posts is 200 broadcast emails to the list the
+  writer has just brought over — irreversible, and it would fire on first real
+  use. Off unconditionally, with drive fulfilment, as a property of what an
+  import is rather than a setting.
+
+  **The format was checked against sources, not memory, and two properties of
+  it drive the rest.** The Substack export's HTML files are *body fragments* —
+  title, subtitle and date live only in `posts.csv`, joined on `post_id` — and
+  the archive **contains no images at all**, every `<img>` still pointing at
+  Substack's CDN. So "import an archive" means several hundred outbound
+  fetches, which pulls the `safeFetch` SSRF invariant into the middle of the
+  feature and makes image rehosting its own resumable phase with its own
+  failure counters. A failed image degrades to the original URL and is
+  counted; it never fails the post.
+
+  **The owner ruling is the entry's real content: nothing imported is ever
+  paywalled.** Substack's paywall is a subscription and ours is a per-article
+  price plus a gate position; there is no faithful translation, and the free/
+  paid boundary may not be marked in the export at all — so a gate percentage
+  would be *invented*, and inventing the number that decides how much of a
+  writer's paid work is given away free is not a default to ship. Paid posts
+  land in `article_drafts` with their full body and the writer prices and
+  gates them in the editor that already knows how. That removes the vault
+  path, the price/gate lockstep across three validators, the `performGatePass`
+  deliverability check and the publication paywall hard-block from the feature
+  **entirely**, and collapsed a whole slice into one INSERT — the largest
+  de-risking in the design, and it came from a scope decision rather than from
+  code. Corollary worth keeping: an unrecognised `audience` value now fails
+  **closed**, to the draft, never to public.
+
+  Three smaller decisions, each closing a bug class before it exists.
+  Idempotency comes from a deterministic d-tag (`<slug>-sub<post_id>`) because
+  `generateDTag` appends a timestamp by design, so a re-run through it would
+  land the archive twice — the `articles` upsert on `(writer_id, nostr_d_tag)`
+  collides with nothing. The job model is `follow_imports` copied (parse →
+  **preview** → confirm → sweep, resumable cursor), and with the paid-post
+  choice gone the preview survives as the place the writer is *told* what will
+  happen to their paid work before anything is written. And the uploaded ZIP
+  is untrusted input, so zip-slip and zip-bomb both get explicit caps, and the
+  raised body limit goes on that route via `req.file({ limits })` — never on
+  the global, which governs every avatar on the platform.
+
+  **The first build step is not code.** Five facts about the export are
+  sourced from documentation rather than from an archive, and one of them —
+  whether the paid body is present or truncated to the free preview — decides
+  whether the draft ruling above is right or should become an honest skip.
+  Recorded as slice 0. The two pure refactors (slices 1 and 2) need no archive
+  and are the pickup.
+
+  Four questions opened and all four called the same session (ADR §XIII): no
+  paywalled import, no email ever — not even a one-off "I've brought my
+  archive over" digest, no Substack URL preservation, bodyless rows skipped
+  and counted. One call taken rather than given and flagged as overturnable in
+  a word: paid posts land as drafts rather than being dropped, because the
+  body is converted either way so the marginal cost is one INSERT, and the
+  alternative's failure mode is a writer's best work silently absent while the
+  import reports success.
+
 - **2026-08-07 (publication homepage templates — the publishing house stops
   keeping a second front door)** — CONSOLIDATED-TODO §3.4. No migration, no
   flag; one additive column on one SELECT.
