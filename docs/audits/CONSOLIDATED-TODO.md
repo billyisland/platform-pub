@@ -374,15 +374,203 @@ the renewal worker and `seed.ts` supply the anchor; migration 170's
    the deploy window breaking in BOTH directions, and the entry should say which
    kind it is.**
 3. **NOTE — `subscription-convert.ts:140` computes its period end in local
-   time.** `new Date(now.getFullYear(), now.getMonth() + 1, 1)` is the local
-   constructor, while the comment `a94947ca` added asserts "the anchor is the
-   1st and every later renewal lands there". No `TZ` is set in
-   `docker-compose.yml` so containers run UTC and it holds today; on a non-UTC
-   TZ the stored end lands on the previous day in UTC while the anchor says 1
-   (it self-corrects at the first renewal, having run ~1 day long). The line is
-   pre-existing and the route is flag-gated off (`SUBSCRIPTION_CONVERT_ENABLED`,
-   §0e item 4). Either `Date.UTC` it or drop the claim — batch with whatever
-   revives that route.
+   time. SHARPENED 2026-08-08 (§0q review): the consequence is a mischarge,
+   not a drift.** `new Date(now.getFullYear(), now.getMonth() + 1, 1)` is the
+   local constructor. East of UTC, "first of next month" is 23:00Z (or
+   earlier) on the LAST day of the current month, stored against
+   `period_anchor_day = 1` — and `advanceSubscriptionPeriod` then renews
+   31 Aug 23:00Z → 1 Sep 23:00Z: **a one-day period charged at a full
+   month's price**, correct only from the period after that. (This entry's
+   earlier "self-corrects having run ~1 day long" understated it — the
+   arithmetic was traced end-to-end in the §0q pass.) Still latent: no `TZ`
+   in `docker-compose.yml` so containers run UTC today, and the route is
+   flag-gated off (`SUBSCRIPTION_CONVERT_ENABLED`, §0e item 4). **Fix when
+   reviving the route:** don't patch the constructor in place — add a
+   `startOfNextUtcMonth()` export to `shared/src/lib/subscription-period.ts`
+   (the declared one home for period arithmetic) and call it; the comment
+   `a94947ca` added defends the anchor *semantics* while the expression under
+   it sits outside the home, which is how the constructor went unnoticed.
+
+---
+
+## 0q. 2026-08-08 commit audit — Aug 04–08 window (perimeter W2/W4, parity probe, publications surface, publisher extraction)
+
+Review of `a2355cd4..a574b7e8` (36 commits; the Aug 02–04 tail overlaps §0p and
+was not re-litigated — §0p's dispositions stand). Method: the window read in
+five clusters, every HIGH re-verified by hand at the cited lines, the
+publications defects reproduced against the live dev stack (curl + live
+payloads, not code-reading alone), and the adjacent suites run: payment 27 unit
++ 15 DB-backed green with migration 175 applied, gateway article-publisher 8/8,
+hairline tripwire clean across the pub surface. The window's structural work is
+sound — the invariants each commit claims were checked and hold (clean list at
+the end). Six defects, one on a money path, plus a consolidation batch.
+
+1. ~~**HIGH (money) — the per-account payout halt is bypassed by the two
+   resume sweeps.**~~ — **DONE 2026-08-08, same day, both halves (full record
+   in FIX-PROGRAMME).** The shipped shape deliberately diverged from the fix
+   proposed here: not a loop-level `isAccountHalted` continue but the
+   exclusion **in the sweeps' SQL** (exported `WRITER_PAYOUT_RESUME_SQL` /
+   `TRIBUTE_PAYOUT_RESUME_SQL`), for the W4 test's own reason — a loop check
+   is only testable against a mock answering from a fixture, while the SQL is
+   run by the DB-backed suite with a paired control. The batched tail went
+   further than proposed: the split loop's halt flag now rides its accounts
+   SELECT, which orphaned `isAccountHalted` entirely — deleted, so
+   `haltedAccountExclusionSql` is the predicate's ONE home at all six
+   transfer-choosing sites. +3 tests, mutation-proved both halves. Deploy:
+   payment-service image only.
+
+2. **MEDIUM — the overlay masthead renders "· undefined" after every member's
+   role.** `PublicationPanel.tsx:355` reads `m.contributor_type`, which the
+   masthead endpoint (`publications/public.ts:122`) never selects, so
+   `undefined !== "staff"` appends the literal text; `:336` keys the list on
+   `m.account_id`, also never selected, so every React key is undefined. The
+   standalone page fixed both lines in this same commit (`masthead/page.tsx:80`)
+   while the overlay copy kept the broken forms — the register drift b06787f4
+   set out to end, in the file it touched. **Fix:** minimal is the
+   standalone's guard + `key={m.username}`; the right one is item 8a (share
+   the masthead template, as home already is).
+
+3. **MEDIUM — `/@username` member links 404 everywhere the overlay intercept
+   doesn't run.** `masthead/page.tsx:73` and `PublicationPanel.tsx:348` (and
+   pre-existing `ReadingHistory.tsx:62`) build `href={'/@' + username}`, but
+   the profile route is `app/[username]` with no `@`-stripping — verified
+   live: `/@prospect` 404s, `/prospect` 200s. Left-click works only because
+   `ProfileLink`'s overlay path strips the `@`; new-tab, copy-link and SEO
+   crawl — the commit's own stated purpose for the standalone routes — get
+   the 404. **Fix:** drop the `@` from the hrefs; nothing else changes.
+
+4. **MEDIUM (latent — gates §3.5 slice 3) — the `feed_items` upsert drops a
+   corrected `published_at`.** `article-publisher.ts:187` takes
+   `published_at = EXCLUDED.published_at` on the `articles` conflict arm; the
+   `feed_items` arm (`:234–240`) omits the column. Invisible today (the
+   scheduler passes now() to both), but ARCHIVE-IMPORT-ADR §VII *designs*
+   re-runs to converge through this upsert via deterministic d-tags — a
+   re-run correcting a date would split the article/profile surfaces from
+   every follower's feed, silently. The "writes the same instant to both
+   columns" test pins only the INSERT arm. **Fix:** one line in the conflict
+   list + extend that test to the conflict arm; land it before slice 3 makes
+   the path live.
+
+5. **MEDIUM — the admin overview renders the parity `unverified` state as
+   fine.** `admin/overview/page.tsx:92` banners on `!parity.ok` only, while
+   the API ships `parity.unverified` under a doc comment reading "never to be
+   rendered as fine" (`api/admin-dashboard.ts:74`). The sticky case: a peer
+   rolled back to a pre-`/auth-check` image 404s forever (`no_endpoint`,
+   never definitive), so a simultaneously drifted secret is silent everywhere
+   but one boot log line — on the surface built to show it. **Fix:** a
+   second, quieter banner for `unverified.length > 0` with its own copy
+   ("never confirmed" is a third state, per the invariant).
+
+6. **LOW (test) — the in-transaction outbox claim is asserted by name only.**
+   `article-publisher.test.ts:251` checks the enqueue's payload but never its
+   client argument — the only evidence the enqueue rode the transaction. Move
+   `enqueueRelayPublish` after `withTransaction` and the suite stays green
+   while the repo's most-cited invariant breaks. **Fix:** assert
+   `enqueueMock.mock.calls[0][0]` is the client the mocked `withTransaction`
+   handed its callback.
+
+7. **Cross-ref:** the local-time month boundary in `subscription-convert.ts`
+   re-surfaced with a sharper consequence than §0p.3 had recorded — amended
+   there (the first renewal charges a full month for a one-day period; the
+   fix belongs in `subscription-period.ts` as the one home).
+
+8. **Consolidation batch (simplification/muddiness — one sitting):**
+   - **(a) Finish what b06787f4 started: the registers still fork past the
+     homepage.** The overlay archive is a flat relative-dated `ArticleList`
+     against the standalone's year-grouped absolute dates (contradicting
+     `article-shared.tsx`'s own "dates are part of the record" comment); the
+     overlay header hand-duplicates the block `PublicationMasthead` owns; a
+     workspace member has **no path to the subscription terms at all**;
+     `showNav` is never passed false; `theme_config` is fetched, typed and
+     consumed nowhere. One pass: share archive/masthead the way home is
+     shared, add the Subscribe affordance to the overlay, delete the dead
+     prop and the dead field.
+   - **(b) `PlatformConfig` is declared twice** —
+     `payment-service/src/types/index.ts:12` duplicates
+     `shared/src/types/config.ts:8`, and both a0867c04 and 3e1f7dc2 had to
+     edit both. The parity suite pins values, not types, so the local copy
+     rots silently. Delete it; import shared's.
+   - **(c) `proxyToService` still has the no-footprint defect 3dc8949a fixed
+     in `callPaymentService`** (`articles/shared.ts:44`): an upstream non-2xx
+     reaches the browser with nothing in the gateway log. Same ~6 lines,
+     moved into the shared helper.
+   - **(d) On the public pub pages an outage renders as emptiness:**
+     `getArticles`/`getMasthead` return `{articles: []}` on any non-ok
+     response, so a gateway 500 paints "NO ARTICLES PUBLISHED YET", cached
+     60s (`archive/page.tsx:33`, `masthead/page.tsx:22`, `page.tsx:41`).
+     These were `notFound()` before the rework. Distinguish error from empty.
+   - **(e) `contributor_type !== 'staff'`** compares against a value the
+     enum does not contain (`permanent`/`one_off`, schema.sql:95) — dead
+     until someone selects the column, wrong the day they do. Fix the
+     sentinel when (a) wires the field.
+   - **(f) Parity transition-log wording overstates what is known** when
+     boot seeded `null` (`internal-parity.ts:272`): a first-ever match logs
+     "RESTORED", a first-ever mismatch logs "APPEARED AT RUNTIME —
+     redeployed with a different secret", sending the operator to
+     reconstruct a redeploy that never happened. Branch on `before === null`.
+   - **(g) `Welcome.tsx:98`** splices the `world` step in when capabilities
+     resolve, so a fast clicker sees the sheet jump backwards. Unreachable
+     while `FOLLOW_IMPORT_ENABLED` is dark; lock the step list at open.
+   - **(h) `MediaStoreError` conflates bad bytes (a 400) with Blossom
+     failure (a 500)** and the route answers 500 for both (`media.ts:90–96`)
+     — the extraction minted the typed error that would let the route
+     distinguish, then didn't. Also `ALLOWED_IMAGE_TYPES` sits in the bytes
+     module while CLAUDE.md files the declared-MIME check under the route;
+     move the constant when touched.
+   - **(i) `members.ts:273`** returns a raw `flatten()` as `error` — the
+     banned envelope ("[object Object]" client-side); pre-existing but
+     touched territory. One line via `zodValidationError`.
+   - **(j) ARCHIVE-IMPORT-ADR §II** names the extracted function
+     `publishArticle`; §XII and CLAUDE.md say `publishPersonalArticle` — a
+     later reader greps the wrong name. One word.
+   - **(k) Owner flag, no build:** the §1.6 unconditional `article_unlocks`
+     flip also makes permanent the unlocks of *charged-back* reads (the
+     reader got their money back). Probably right under the gift philosophy;
+     nobody has said so explicitly.
+   - **(l) Pre-existing, minor:** `/pub/:slug/:articleSlug` fetches by d-tag
+     alone, so a wrong-slug URL renders the article and echoes the wrong
+     slug into its OG url.
+
+**Verified clean, needn't be re-audited:** a574b7e8's extraction is
+behaviour-preserving line-by-line against the pre-commit scheduler (SQL
+identical up to `now()` → params; options `!== false` so an omitted option
+cannot flip a scheduled publish; articles + feed_items + enqueue in one
+transaction, vault seal outside, v2 swing + enqueue in the second, v2
+`created_at = v1 + 1` with `baseTags` carrying the backdated tag; drive
+fulfilment awaited un-swallowed before the draft DELETE); media extraction
+keeps hash-verify-before-INSERT and byte-identical route status codes, and
+`storeImage` has exactly one caller. The parity state machine is genuinely
+sticky both ways with transition-only logging (`reprobeParity` returns before
+touching state on `unreachable`/`no_endpoint`), the classifier is 401∧403 with
+the peers verified to actually disagree, all three `/auth-check` routes sit
+behind the peers' own pre-existing guards returning only `{ok:true}`, the boot
+probe is bounded and post-`listen()`, and the /health 503 cannot cascade
+(compose deps are plain-list; `unless-stopped` ignores health). W4's
+attribution runs genuinely uncapped off one shared predicate constant with
+default-deny fall-through to the global halt, first-writer-wins preserves
+`created_at` for the 24h escalation, and the two halts stay two controls in
+route, banner and DEPLOYMENT.md. W2's tri-state predicate is
+`allocation_synced_at IS NOT NULL AND allocated_pence = 0`, never-synced rows
+are a third figure joining neither side, empty denominators return null and
+are rendered in words, and the endpoint deliberately avoids
+`runAllocationReconcile`. `negative_reader_tab` is alert-tier under its own
+marker with `truncated`, in `reconcile-ledger.ts` not `allocation-reconcile.ts`,
+and its DB test's parity-blindness control is real. a0867c04's publication
+threshold dial is bound, seeded, parity-tested with the two dials at
+*different* values; `revenueShareBps` is fully gone and `PATCH /payroll`
+remains the sole share writer under the advisory lock and Σ clamp. The anchor
+arithmetic recovers 31 Jan → 28 Feb → 31 Mar including leap years; migration
+170's backfill reads `current_period_start`; migrations 169–174 insert nothing
+into `platform_config`; the notification chain ends bound-and-indexed with
+`actor_id` bare and `drive_funded` can no longer abort a pledge; grant offers
+are sound end to end; the settlement adopt rides `confirmSettlement`'s
+transaction between the tab lock and the debit. Migration 176 is nullable with
+no default (safe both deploy directions) and all three welcome endings stamp.
+The publications surface is hairline-green with no raw hex and no undefined
+greys, the `ArticleLink` seam respects the escape ban on every call site, and
+deleting `pub/[slug]/layout.tsx` leaves no orphan references. No new
+`balance_pence` or ledger writers anywhere in the window; migration 175 is
+additive DDL.
 
 ---
 
@@ -921,15 +1109,13 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 Read the box before the queue — this block says what work EXISTS, not what is deployed.
 
-**Where the last session ended.** §3.5 slices 1 and 2 shipped: `services/article-publisher.ts` (the scheduler is now a *caller* of the one publish pipeline, with `publishedAt`/`sendEmail`/`matchDrives` options all defaulting to prior behaviour) and `services/media-store.ts` (`storeImage(uploaderId, buffer)`). Pure refactors, no import code, 8 new tests mutation-proved three ways, suite 469 → 477. Nothing is half-finished behind you.
+**Where the last session ended.** §3.5 slices 1 and 2 shipped: `services/article-publisher.ts` (the scheduler is now a *caller* of the one publish pipeline, with `publishedAt`/`sendEmail`/`matchDrives` options all defaulting to prior behaviour) and `services/media-store.ts` (`storeImage(uploaderId, buffer)`). Pure refactors, no import code, 8 new tests mutation-proved three ways, suite 469 → 477. Nothing is half-finished behind you. **A four-day commit review then landed 2026-08-08 (§0q):** the window's structure held; its one money fix (§0q.1, the resume-sweep halt bypass) **shipped the same day** — deploy is a payment-service rebuild alongside the gateway one above. Still open from it: the publications-overlay pair visible on dev today (§0q.2/3) and the smaller batch (§0q.4–8); all unblocked, none gated on a human, worth folding into whichever session comes next.
 
 **Deploy requirements for the slices 1 + 2 commit:** **gateway only** — `docker compose build gateway && docker compose up -d gateway`. No migration, no env var, no flag, no web change. Both are behaviour-preserving extractions, so it is safe in either ordering. Prod was last MEASURED current with `dab1a95c` at 17:12 on 2026-08-07; establish its state from the box, never from this line.
 
 **1. §3.5 is now GATED on a human, and the gate is the pickup: get a real Substack export** (ADR §XI, slice 0). Slice 3 is the adapter — unzip, CSV, HTML→markdown — and writing it against documentation rather than an archive is guessing at the only part of the feature that is hard to test afterwards. Five facts are unconfirmed, and one of them decides a shipped design decision: **whether the paid body is in the export at all, or truncated to the free preview.** If it is truncated, §V's "a paid post lands as a draft" is wrong and should become an honest skip. One cooperating writer from the launch cohort answers all five in an afternoon; the fallback is a throwaway Substack with three posts (one free, one paid, one unpublished), an hour's work. **Do not start slice 3 without one** — the two slices that could honestly be built blind have been built.
 
 **2. If no archive is to hand, take §3.7 instead** rather than guessing at slice 3. Its **browser look at the waitlist panel** is the oldest unseen thing on the admin surface — the admit ROUTE is proven end to end (2026-08-07), so what is unrendered is only the UI: the per-row action, the confirm dialog, the three status renderings. Playwright is cached and the driving pattern is in FIX-PROGRAMME 2026-08-07 (init-script `ah:color-mode` for pre-paint mode; two framings, because `fullPage` paints `position: fixed` chrome across the middle of the shot). Alongside it, §3.7's **Export CSV decide-or-decline** — a decision more than a build, which has already vanished from a build order once.
-
-**Also live, worth an eyeball rather than a task: the welcome is in front of every existing prod member**, since migration 176 reads NULL as un-welcomed and nobody has ever been asked for a display name. Log in and take the four steps as a member would. That is also the web image's only real verification (Next minifies, so an identifier grep proves nothing).
 
 **Also live, worth an eyeball rather than a task: the welcome is in front of every existing prod member**, since migration 176 reads NULL as un-welcomed and nobody has ever been asked for a display name. Log in and take the four steps as a member would. That is also the web image's only real verification (Next minifies, so an identifier grep proves nothing).
 
