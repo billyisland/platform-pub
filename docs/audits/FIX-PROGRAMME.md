@@ -23,6 +23,69 @@ starts.
 
 ## Progress
 
+- **2026-08-08 (archive import slices 1 + 2 — one publish pipeline, one media
+  path, and a date that stops being today)** — CONSOLIDATED-TODO §3.5,
+  ARCHIVE-IMPORT-ADR §XII. **No migration, no env var, no flag, no web
+  change.** Gateway only: `docker compose build gateway && up -d gateway`.
+
+  Two pure refactors with no import code in them, deliberately taken before
+  slice 0 (getting a real Substack archive) because neither depends on the
+  format and both are worth landing on their own merits.
+
+  **Slice 1 — `gateway/src/services/article-publisher.ts`.**
+  `publishPersonalDraft` moved out of the scheduler, which used to own the one
+  server-side publish pipeline outright and is now simply its first caller;
+  the importer will be the second. The scheduler's function is a nine-line
+  adapter mapping its DB row, and `publishPublicationDraft` imports
+  `splitContent` back from the service. **Every option defaults to what the
+  scheduler did before**, so a scheduled publish cannot change by omission —
+  the scheduler passes only `{draftId}`.
+
+  **The point of the slice is the date, and the date was wrong in four places
+  at once.** Both publish paths hardcoded `now()` into the `articles` column,
+  the `feed_items` column, the NIP-23 `published_at` tag and the event's
+  `created_at`. An import through that dates a 2019 archive today, which
+  destroys the chronology that *is* the archive and lands the whole thing atop
+  every follower's feed. The fix is the split NIP-23 already describes:
+  `published_at` (all three sites) is backdated because that is when the words
+  were first published; `created_at` stays now because that is when this event
+  was signed. **Wiring both to the backdate would have looked more consistent
+  and been worse** — `relay/strfry.conf` sets `rejectEventsOlderThanSeconds =
+  315360000`, so past ten years the article row indexes cleanly and the relay
+  publish silently fails, which is the failure mode no test would ever show.
+
+  Two suppressions joined it, and one of them is why this slice mattered
+  before any importer exists: `publishPersonalArticle` calls
+  `sendPublishNotifications` on every publish, so an unguarded bulk caller of
+  200 posts is 200 broadcast emails to a list the writer has just brought
+  over. `sendEmail: false` and `matchDrives: false` are properties of what an
+  import is, not settings a writer gets.
+
+  **Slice 2 — `gateway/src/services/media-store.ts`.** `storeImage(uploaderId,
+  buffer)` extracted whole out of `POST /media/upload`: crunch → hash →
+  dedupe → BUD-02 signed PUT → verify the returned hash → record. The route
+  keeps what is about the REQUEST (multipart, the declared-MIME allow-list,
+  200-vs-201, and the duplicate payload's deliberate thinness — `{url, sha256,
+  duplicate}` and no size); the module keeps what is about the BYTES. Worth
+  noting what the split bought immediately: `sharp` is now the thing that
+  validates a buffer really is an image, which the route never needed (it
+  trusted the multipart MIME) and the importer absolutely does, since it will
+  be fetching arbitrary bytes off a third-party CDN. The content-addressed
+  dedupe stops being an optimisation there and becomes load-bearing — a
+  header image repeated across 200 posts stores once, and a re-run of a failed
+  import re-stores nothing.
+
+  **Verification: 8 new tests, and the mutations are the evidence.** A passing
+  new test proves nothing until it fails for the right reason, so all three
+  were run: wiring `created_at` to `publishedAt` → 1 failure; reverting
+  `feed_items.published_at` to `now()` → 3; ignoring `sendEmail` → 1. Green
+  again on restore. The param assertions **derive the placeholder index from
+  the SQL the mock is handed** rather than hardcoding a position — `articles`'
+  VALUES carries a literal (`'tier1'`) among its placeholders, so column index
+  and param index genuinely differ, and a test asserting a remembered `$14`
+  would have pinned the memory rather than the query. Gateway suite 469 → 477,
+  `tsc` clean, root ESLint 0 errors.
+
 - **2026-08-07 (archive import — the design pass, and a ruling that deleted
   half of it)** — CONSOLIDATED-TODO §3.5, `docs/adr/ARCHIVE-IMPORT-ADR.md`.
   **Design only; no code.** No migration, no flag, no deploy.

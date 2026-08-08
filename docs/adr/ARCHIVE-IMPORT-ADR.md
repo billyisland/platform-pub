@@ -193,14 +193,19 @@ Everything in §I is sourced from documentation and second-hand accounts. Each o
 | Slice | Work | Ships behind |
 | --- | --- | --- |
 | **0** | Get a real archive; confirm §I; write the fixture into the repo | — |
-| **1** | Extract `publishPersonalDraft` → `services/article-publisher.ts`, behaviour-preserving, scheduler calls it. Add the three options (§II) plumbed through all four date sites (§III). Tests pin: a backdated publish lands the original date in `articles` *and* `feed_items` *and* the `published_at` tag while `created_at` stays now; `sendEmail:false` sends nothing. | — |
-| **2** | Extract the media core out of `POST /media/upload`; no behaviour change | — |
+| **1** | ~~Extract `publishPersonalDraft` → `services/article-publisher.ts`; add the three options plumbed through the date sites~~ **SHIPPED 2026-08-08** | — |
+| **2** | ~~Extract the media core out of `POST /media/upload`~~ **SHIPPED 2026-08-08** | — |
 | **3** | `article_imports` table + sweep + routes, mirroring follow-import. Substack adapter: unzip, CSV, HTML→markdown. Public posts publish; paid posts land as drafts (§V); bodyless rows are counted and skipped. | `ARCHIVE_IMPORT_ENABLED` |
 | **4** | Image rehosting phase (§VI) | same |
 | **5** | Dashboard Import tab: upload, preview, progress, result | same |
 | **6** | Ghost / WordPress adapters | same |
 
-Slices 1 and 2 are pure refactors with no import code in them, and both are worth landing on their own merits.
+**Slices 1 and 2 shipped 2026-08-08, before any archive existed** — they are pure refactors with no import code in them and no dependency on the format, which is exactly why they were the pickup while slice 0 waits on a human.
+
+- `gateway/src/services/article-publisher.ts` — `publishPersonalArticle(input, options)`, exporting `splitContent` and `PAYWALL_GATE_MARKER`. The scheduler's `publishPersonalDraft` is now a nine-line adapter that maps its DB row and passes `{draftId}`; every other option defaults to what the scheduler did before, so a scheduled publish cannot change by omission. `publishPublicationDraft` imports `splitContent` back from the service.
+- `gateway/src/services/media-store.ts` — `storeImage(uploaderId, buffer)` plus `ALLOWED_IMAGE_TYPES` and `MediaStoreError`. The route keeps what is about the request (multipart, the declared-MIME allow-list, 200-vs-201 and the deliberately thinner duplicate payload); the module keeps what is about the bytes. `sharp` is what now validates that a buffer really is an image, which is the check the importer needs and the route never had to make.
+
+**Pinned by `gateway/tests/article-publisher.test.ts`** (8 tests), and **mutation-proved three ways** — wiring `created_at` to `publishedAt`, reverting `feed_items.published_at` to `now()`, and ignoring `sendEmail` each turn the suite red, at 1, 3 and 1 failures respectively. The param assertions **derive the placeholder index from the SQL** rather than hardcoding it: `articles`' VALUES carries a literal (`'tier1'`) among its placeholders, so column position and param position genuinely differ, and a test asserting a remembered `$14` would have pinned the memory instead of the query.
 
 **D4 collapsed what was slice 5.** Paid-post handling was a phase of its own — the preview choice, the vault call, the publication refusal, and the price/gate lockstep to keep in step with three other validators. It is now an `INSERT INTO article_drafts` inside slice 3. That is the whole saving, and it is the reason this feature is now a week of work rather than the money-path session it was shaping into.
 
