@@ -8,7 +8,6 @@ import { readNetSql, perReadNetPence } from '@platform-pub/shared/lib/per-read-n
 import { isConnectPayable } from '../lib/connect-payable.js'
 import {
   isPayoutsHalted,
-  isAccountHalted,
   haltedAccountExclusionSql,
 } from '../lib/payout-halt.js'
 import { isTerminalTransferError } from '../lib/charge-errors.js'
@@ -429,6 +428,34 @@ export const TRIBUTE_PAYOUT_ELIGIBILITY_SQL = `WITH candidates AS (
          -- freezing a tribute over the payer's divergence would be the same
          -- someone-else's-divergence category error W4 exists to end.
          AND ${haltedAccountExclusionSql('insp.id')}`
+
+/**
+ * The two resume sweeps' row selections — exported like the eligibility SQL
+ * above so the DB-backed W4 test runs the sweeps' own statements. Each carries
+ * the SAME halt exclusion as its cycle's eligibility query (§0q.1, 2026-08-08):
+ * without it the sweeps were a bypass — the eligibility gate stopped a halted
+ * account's NEW payouts while a stuck-pending row from a crashed prior cycle
+ * was completed anyway, and a crash mid-payout is exactly what produces both
+ * the orphaned ledger entry that halts an account AND its stuck-pending row.
+ * The excluded row simply stays 'pending' — deferral, not rollback, so the
+ * never-roll-back-on-ambiguous posture is untouched and the row pays on the
+ * first sweep after the halt clears (the publication split gate's shape; its
+ * continued pendency is visible on the per-account halt surfaces, which is
+ * where the operator is already looking).
+ */
+export const WRITER_PAYOUT_RESUME_SQL = `SELECT id, writer_id, amount_pence, stripe_connect_id
+       FROM writer_payouts
+       WHERE status = 'pending'
+         AND ${haltedAccountExclusionSql('writer_id')}
+       ORDER BY created_at ASC`
+
+/** The recipient of a tribute transfer is the INSPIRER (see the eligibility
+ *  comment above) — the exclusion keys on their column, never the author's. */
+export const TRIBUTE_PAYOUT_RESUME_SQL = `SELECT id, tribute_id, inspirer_account_id, author_account_id, amount_pence
+       FROM tribute_payouts
+       WHERE status = 'pending'
+         AND ${haltedAccountExclusionSql('inspirer_account_id')}
+       ORDER BY created_at ASC`
 
 export function computePublicationSplits(
   grossPence: number,
@@ -1544,18 +1571,15 @@ class PayoutService {
   // Resume any writer_payouts stuck in 'pending' from prior runs. Safe to
   // call repeatedly — the stable idempotency key means Stripe returns the
   // already-created transfer if one exists, or creates it exactly once.
+  // Halted accounts' rows are excluded in the SQL (see WRITER_PAYOUT_RESUME_SQL)
+  // and stay pending until their halt clears.
   async resumePendingWriterPayouts(): Promise<void> {
     const { rows } = await pool.query<{
       id: string
       writer_id: string
       amount_pence: number
       stripe_connect_id: string
-    }>(
-      `SELECT id, writer_id, amount_pence, stripe_connect_id
-       FROM writer_payouts
-       WHERE status = 'pending'
-       ORDER BY created_at ASC`,
-    )
+    }>(WRITER_PAYOUT_RESUME_SQL)
 
     if (rows.length === 0) return
 
@@ -2365,9 +2389,11 @@ class PayoutService {
 
     for (const split of pendingSplits) {
       const { rows: accRows } = await pool.query<{
-        stripe_connect_id: string | null; stripe_connect_kyc_complete: boolean;
+        stripe_connect_id: string | null; stripe_connect_kyc_complete: boolean; halted: boolean;
       }>(
-        `SELECT stripe_connect_id, stripe_connect_kyc_complete FROM accounts WHERE id = $1`,
+        `SELECT stripe_connect_id, stripe_connect_kyc_complete,
+                NOT (${haltedAccountExclusionSql('accounts.id')}) AS halted
+         FROM accounts WHERE id = $1`,
         [split.account_id],
       )
 
@@ -2400,7 +2426,7 @@ class PayoutService {
       // `attempt` cap on a condition that has nothing to do with its
       // destination. A new non-pending status would need an ALTER TYPE plus a
       // bespoke revival path to do what the resume sweep already does for free.
-      if (await isAccountHalted(pool, split.account_id)) {
+      if (acc.halted) {
         logger.warn(
           { splitId: split.id, accountId: split.account_id, payoutId },
           'Publication split recipient has an attributable ledger divergence — left pending until their halt clears',
@@ -3590,6 +3616,8 @@ class PayoutService {
 
   // Resume tribute_payouts stuck in 'pending' from prior runs. Safe to call
   // repeatedly — the stable idempotency key dedupes the Stripe transfer.
+  // A halted INSPIRER's rows are excluded in the SQL (TRIBUTE_PAYOUT_RESUME_SQL)
+  // and stay pending until their halt clears.
   async resumePendingTributePayouts(): Promise<void> {
     const { rows } = await pool.query<{
       id: string
@@ -3597,12 +3625,7 @@ class PayoutService {
       inspirer_account_id: string
       author_account_id: string
       amount_pence: number
-    }>(
-      `SELECT id, tribute_id, inspirer_account_id, author_account_id, amount_pence
-       FROM tribute_payouts
-       WHERE status = 'pending'
-       ORDER BY created_at ASC`,
-    )
+    }>(TRIBUTE_PAYOUT_RESUME_SQL)
 
     if (rows.length === 0) return
 

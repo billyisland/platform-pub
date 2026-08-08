@@ -23,6 +23,52 @@ starts.
 
 ## Progress
 
+- **2026-08-08 (§0q.1 — the resume sweeps stop bypassing the per-account
+  halt)** — CONSOLIDATED-TODO §0q.1, PAYMENT-PERIMETER-ADR W4. **No migration,
+  no env var, no flag, no web change.** Payment service only:
+  `docker compose build payment-service && docker compose up -d payment-service`.
+
+  W4's per-account halt gated the eligibility queries and the publication
+  split loop, but not `resumePendingWriterPayouts` /
+  `resumePendingTributePayouts`, which selected every `status='pending'` row
+  and completed the transfer. A crash mid-payout is exactly what produces both
+  the orphaned ledger entry that halts an account AND its stuck-pending row,
+  so the bypass correlated with the halt: the sweep would pay the very account
+  the reconciler had just frozen, on the next cycle, silently.
+
+  **The fix diverged from the queue item's proposed shape, for the W4 test's
+  own reason.** The item proposed a loop-level `isAccountHalted` continue;
+  what shipped is the exclusion **in the sweeps' SQL** —
+  `haltedAccountExclusionSql('writer_id')` / `('inspirer_account_id')` — with
+  both selections exported (`WRITER_PAYOUT_RESUME_SQL` /
+  `TRIBUTE_PAYOUT_RESUME_SQL`) so the DB-backed suite runs the sweeps' own
+  statements. A loop check is only testable against a mock that answers the
+  halt from a fixture, which pins the TypeScript rather than the predicate —
+  the W4 test header's argument, applied to itself. The excluded row simply
+  stays `pending` — deferral, not rollback, so the never-roll-back-on-ambiguous
+  posture is untouched and the row pays on the first sweep after the halt
+  clears (the publication split gate's shape).
+
+  The batched tail: the split loop's two serial per-split queries became one
+  (the halt flag rides the accounts SELECT as `NOT (exclusion) AS halted`,
+  parse-verified against real Postgres), which left `isAccountHalted` with
+  zero callers — **deleted**, so `haltedAccountExclusionSql` is now the one
+  home of the predicate at all six transfer-choosing sites (three eligibility
+  queries, two sweeps, the split gate), and its doc comment says so.
+
+  Tests: **+2 DB-backed** (writer sweep exclusion with paired control — the
+  baseline-both-visible assertion is load-bearing, an exclusion that emptied
+  the sweep would otherwise pass; tribute sweep excludes a halted INSPIRER
+  and ignores a halted author, the same category rule as eligibility) and
+  **+1 scripted conformance** (a halted leg stays pending, siblings pay, no
+  transfer attempted, parent held open — the loop half the DB suite cannot
+  see; the mock gained a `haltedAccounts` set and answers the new SELECT from
+  it). **Mutation-proved both halves**: stripping the SQL exclusion turns
+  exactly the two DB tests red; disabling the `acc.halted` branch turns
+  exactly the conformance test red; restored, everything green. Payment suite
+  361 → 364 with the DB-backed suites genuinely running; tsc clean;
+  ledger-adjacency tripwire green; root ESLint 0 errors on touched files.
+
 - **2026-08-08 (archive import slices 1 + 2 — one publish pipeline, one media
   path, and a date that stops being today)** — CONSOLIDATED-TODO §3.5,
   ARCHIVE-IMPORT-ADR §XII. **No migration, no env var, no flag, no web

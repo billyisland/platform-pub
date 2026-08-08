@@ -172,24 +172,19 @@ export async function resumeAccountPayouts(db: Queryable, accountId: string): Pr
 }
 
 /**
- * The exclusion predicate the three payout cycles share, as a fragment keyed on
- * whichever column already holds the recipient's account id.
+ * The exclusion predicate every transfer-choosing site shares, as a fragment
+ * keyed on whichever column already holds the recipient's account id: the
+ * writer/tribute eligibility queries, BOTH resume sweeps (§0q.1 — a sweep
+ * without it is a bypass: eligibility stops a halted account's new payouts
+ * while a stuck-pending row from a crashed cycle pays anyway), and the
+ * publication split gate (as `NOT … AS halted`, since that cycle resolves
+ * recipients per split at transfer time).
  *
- * ONE HOME on purpose. This is the same rule in three eligibility queries, and
- * three hand-written `NOT EXISTS`es is three chances to key one of them on the
- * wrong column — which would fail SILENTLY, in the direction of paying a halted
- * account. `column` is always a code-supplied identifier at the call site; it
- * never carries user input.
+ * ONE HOME on purpose. The same rule hand-written six times is six chances to
+ * key one site on the wrong column — which would fail SILENTLY, in the
+ * direction of paying a halted account. `column` is always a code-supplied
+ * identifier at the call site; it never carries user input.
  */
 export function haltedAccountExclusionSql(column: string): string {
   return `NOT EXISTS (SELECT 1 FROM payouts_halted_accounts hlt WHERE hlt.account_id = ${column})`
-}
-
-/** True iff this one account's payouts are halted (the per-split gate). */
-export async function isAccountHalted(db: Queryable, accountId: string): Promise<boolean> {
-  const { rows } = await db.query(
-    `SELECT 1 FROM payouts_halted_accounts WHERE account_id = $1`,
-    [accountId],
-  )
-  return rows.length > 0
 }

@@ -81,6 +81,10 @@ const db = {
   ledger: [] as LedgerRow[],
   /** payout_transfers. Stays EMPTY here — this battery is the flag-off pin. */
   children: [] as Array<{ parent_table: string; parent_id: string }>,
+  /** payouts_halted_accounts (W4). The per-split SELECT's `halted` column is
+   *  answered from this set; the predicate's composition with real SQL is the
+   *  DB-backed suite's job (payout-halt-attribution-integration.test.ts). */
+  haltedAccounts: new Set<string>(),
   parentSeq: 0,
   /** Crash on the Nth query matching `re` (1 = the first). */
   crashers: [] as Array<{ re: RegExp; remaining: number }>,
@@ -93,6 +97,7 @@ function reset() {
   db.reads = []
   db.ledger = []
   db.children = []
+  db.haltedAccounts.clear()
   db.parentSeq = 0
   db.crashers = []
   transfers._reset()
@@ -146,10 +151,14 @@ function query(sql: string, params: unknown[] = []) {
       .map((s) => ({ id: s.id, account_id: s.account_id, amount_pence: s.amount_pence }))
     return Promise.resolve(ok(rows))
   }
-  // --- per-split account KYC ---
-  if (/SELECT stripe_connect_id, stripe_connect_kyc_complete FROM accounts WHERE id = \$1/.test(sql)) {
+  // --- per-split account KYC + W4 halt flag (one query since §0q.1) ---
+  if (/SELECT stripe_connect_id, stripe_connect_kyc_complete,[\s\S]*AS halted[\s\S]*FROM accounts WHERE id = \$1/.test(sql)) {
     const acc = db.accounts.get(params[0] as string)
-    return Promise.resolve(ok(acc ? [{ stripe_connect_id: acc.stripe_connect_id, stripe_connect_kyc_complete: acc.stripe_connect_kyc_complete }] : []))
+    return Promise.resolve(ok(acc ? [{
+      stripe_connect_id: acc.stripe_connect_id,
+      stripe_connect_kyc_complete: acc.stripe_connect_kyc_complete,
+      halted: db.haltedAccounts.has(acc.id),
+    }] : []))
   }
   // --- split completed flip (guarded) ---
   if (/UPDATE publication_payout_splits\s+SET status = 'completed'/.test(sql)) {
@@ -360,6 +369,24 @@ describe('publication payout — resume idempotency & KYC gating', () => {
       { account: 'A', amount: 1000 },
       { account: 'B', amount: 2000, kyc: false },
     ])
+    await payoutService.resumePendingPublicationPayouts()
+
+    expect(split('split-1').status).toBe('completed')
+    expect(split('split-2').status).toBe('pending') // skipped — no transfer attempted
+    expect(transfers.createCountFor('pub-split-pp-1-split-2')).toBe(0)
+    expect(db.parents.get('pp-1')!.status).toBe('pending')
+  })
+
+  it('a HALTED recipient leaves its leg pending, siblings pay, no transfer attempted', async () => {
+    // The W4 per-split gate: same posture as KYC-incomplete — the leg stays
+    // pending (deferral, not failure) and the parent stays open so the resume
+    // sweep pays it the moment the halt clears. The predicate itself is pinned
+    // against real Postgres in the DB-backed W4 suite; this pins the loop.
+    seedPayout('pp-1', 'pub-1', [
+      { account: 'A', amount: 1000 },
+      { account: 'B', amount: 2000 },
+    ])
+    db.haltedAccounts.add('B')
     await payoutService.resumePendingPublicationPayouts()
 
     expect(split('split-1').status).toBe('completed')

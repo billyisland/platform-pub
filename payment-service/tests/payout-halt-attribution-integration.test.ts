@@ -4,6 +4,8 @@ import { LEDGER_ORPHAN_ATTRIBUTION_SQL } from '../src/services/reconcile-ledger.
 import {
   WRITER_PAYOUT_ELIGIBILITY_SQL,
   TRIBUTE_PAYOUT_ELIGIBILITY_SQL,
+  WRITER_PAYOUT_RESUME_SQL,
+  TRIBUTE_PAYOUT_RESUME_SQL,
 } from '../src/services/payout.js'
 
 // =============================================================================
@@ -236,6 +238,74 @@ describe.skipIf(!DB_URL)('per-account payout halt: attribution and exclusion (W4
     // The INSPIRER halted: now the recipient is the diverging party.
     await halt(inspirer)
     expect(await eligible()).not.toContain(trib[0].id)
+  })
+
+  // ---------------------------------------------------------------------------
+  // 2b. The resume sweeps: a stuck-pending row does not bypass the halt.
+  //
+  // The eligibility exclusion above gates NEW payouts; a row already reserved
+  // by a crashed cycle re-enters through resumePending*Payouts instead — and a
+  // crash mid-payout is exactly what produces both the orphaned ledger entry
+  // that halts an account AND its stuck-pending row, so the two paths must
+  // agree or the halt is theatre (§0q.1). Runs the sweeps' own exported SQL.
+  // ---------------------------------------------------------------------------
+
+  it('the writer resume sweep skips the halted writer and keeps the control', async () => {
+    await client.query(
+      `INSERT INTO writer_payouts (writer_id, amount_pence, stripe_connect_id, status)
+       VALUES ($1, 500, 'acct_w4_stuck_a', 'pending'), ($2, 500, 'acct_w4_stuck_b', 'pending')`,
+      [writerA, writerB],
+    )
+
+    const sweep = async () => {
+      const { rows } = await client.query(WRITER_PAYOUT_RESUME_SQL)
+      return rows.map((r) => r.writer_id as string)
+    }
+
+    // Baseline: both stuck rows are visible to the sweep. Load-bearing — an
+    // exclusion that emptied the sweep entirely would pass the halt assertion.
+    const before = await sweep()
+    expect(before).toContain(writerA)
+    expect(before).toContain(writerB)
+
+    await halt(writerA)
+
+    const after = await sweep()
+    expect(after).not.toContain(writerA) // the halted account stays pending…
+    expect(after).toContain(writerB) // …and the control still resumes
+  })
+
+  it('the tribute resume sweep excludes a halted INSPIRER, not a halted author', async () => {
+    const author = writerB
+    const inspirer = writerA
+    const { articleId } = await mkSettledRead(author, 500)
+    const { rows: trib } = await client.query(
+      `INSERT INTO tributes (author_account_id, resolved_account_id, article_id, status, percentage_bps)
+       VALUES ($1, $2, $3, 'live', 1000) RETURNING id`,
+      [author, inspirer, articleId],
+    )
+    await client.query(
+      `INSERT INTO tribute_payouts (tribute_id, inspirer_account_id, author_account_id, amount_pence, status)
+       VALUES ($1, $2, $3, 50, 'pending')`,
+      [trib[0].id, inspirer, author],
+    )
+
+    const sweep = async () => {
+      const { rows } = await client.query(TRIBUTE_PAYOUT_RESUME_SQL)
+      return rows.map((r) => r.tribute_id as string)
+    }
+
+    expect(await sweep()).toContain(trib[0].id)
+
+    // The AUTHOR halted: the recipient of this transfer is the inspirer, so
+    // the stuck row must still resume — the same category rule the tribute
+    // eligibility test above pins, applied to the sweep.
+    await halt(author)
+    expect(await sweep()).toContain(trib[0].id)
+
+    // The INSPIRER halted: now the recipient is the diverging party.
+    await halt(inspirer)
+    expect(await sweep()).not.toContain(trib[0].id)
   })
 
   // ---------------------------------------------------------------------------
