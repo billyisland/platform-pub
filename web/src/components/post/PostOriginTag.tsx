@@ -3,6 +3,7 @@
 import React from "react";
 import type { Post } from "../../lib/post/types";
 import { originWebUrl } from "../../lib/post/origin-url";
+import { PlatformResonance } from "./PostResonance";
 import type { VesselPalette } from "../workspace/tokens";
 
 // =============================================================================
@@ -28,12 +29,24 @@ export function PostOriginTag({
   post,
   palette,
   sourceOnly,
+  showPlatformMark,
 }: {
   post: Post;
   palette: VesselPalette;
   sourceOnly: boolean; // tier D
+  // D7 platform-scope resonance mark. It sits immediately after the network
+  // name because ADJACENCY IS WHAT GIVES IT ITS SCOPE — the same triangle in
+  // the byline means "popping for this author", here it means "popping for
+  // this network". Moving it away from the name would strand the claim.
+  showPlatformMark?: boolean;
 }) {
   const isNative = post.origin.protocol === "nostr" && !!post.author.pubkey;
+  const mark = showPlatformMark ? (
+    <>
+      {" "}
+      <PlatformResonance post={post} palette={palette} />
+    </>
+  ) : null;
 
   // Slice 8 P1: "ALSO ON …" — the other linked sources cross-posting this content.
   const alsoOnLabels = (post.alsoOn ?? [])
@@ -47,7 +60,7 @@ export function PostOriginTag({
   if (isNative) {
     return (
       <>
-        <TagText palette={palette}>VIA ALL.HAUS</TagText>
+        <TagText palette={palette}>VIA ALL.HAUS{mark}</TagText>
         {alsoOn}
       </>
     );
@@ -60,6 +73,7 @@ export function PostOriginTag({
   const text = (
     <>
       VIA {label}
+      {mark}
       {community ? ` · ${community}` : ""}
       {identifier ? ` · ${identifier}` : ""}
     </>

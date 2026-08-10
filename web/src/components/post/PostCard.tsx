@@ -137,7 +137,12 @@ export function PostCard({
         onReport={onReport}
       />
       {spec.showOriginTag && (
-        <PostOriginTag post={post} palette={ctx.palette} sourceOnly={spec.originTagSourceOnly} />
+        <PostOriginTag
+          post={post}
+          palette={ctx.palette}
+          sourceOnly={spec.originTagSourceOnly}
+          showPlatformMark={spec.showPlatformResonance}
+        />
       )}
       {footer}
     </PostCardShell>

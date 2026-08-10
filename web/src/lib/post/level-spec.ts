@@ -11,6 +11,7 @@
 // =============================================================================
 
 import type { Level, BiddabilityTier, Post } from "./types";
+import { authorMark, platformMark } from "./resonance";
 
 // "+1 step" of indentation. Matches the documented thread step-in (CLAUDE.md →
 // "Thread step-in … indented 32px once (ml-8)"). Phase 3 owns the thread walk;
@@ -203,6 +204,12 @@ export interface ResolvedSpec {
   // D7 resonance glyph: the level permits it AND this post actually carries a
   // band ≥ 1. Band 0 and "no band" both render nothing, so they collapse here.
   showResonance: boolean;
+  // The same mark at the PLATFORM scope, rendered in the origin row beside the
+  // network name. Gated on `spec.resonance`, NOT on `spec.originTag`: the tag
+  // itself runs on thread parents/replies, where band-at-a-glance deliberately
+  // does not — the mark earns its space where the reader is deciding whether to
+  // read, not on context chrome around something they are already reading.
+  showPlatformResonance: boolean;
 }
 
 // A Post is native iff it carries a nostr pubkey (external items never do).
@@ -247,6 +254,7 @@ export function resolveSpec(
     // band would show one. In practice rss/email never get a band computed at
     // all (D4 absence semantics), which is the ADR's chosen mechanism — the
     // silence lives in the data, deliberately, rather than in a tier mask here.
-    showResonance: spec.resonance && (post.resonanceBand ?? 0) >= 1,
+    showResonance: spec.resonance && authorMark(post) !== null,
+    showPlatformResonance: spec.resonance && platformMark(post),
   };
 }

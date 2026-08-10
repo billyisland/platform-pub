@@ -385,11 +385,9 @@ leaderboards; no absolute "score" is ever displayed.
    Bluesky" meant *got one like*. The three bands were therefore three cuts of a
    single axis wearing a two-axis gloss. **The fix is to read the axis that
    measures it**: `fi.ambient_pctl` (already stored for D6) now joins
-   `FEED_SELECT` and the `Post` as `ambientPctl`, and the gloss's second clause
-   is read off it — `≥0.9` "high for X", `≥0.5` "decent for X", below that the
-   clause is **omitted** rather than softened, because a clause that is always
-   present adds nothing. No new dial: `PCTL_EXPR` is built so 0.5 *is* p50 and
-   0.9 *is* p90, the scorer's own two landmarks. **(b) Four bands, two senses.**
+   `FEED_SELECT` and the `Post` as `ambientPctl`, **and it gets its own mark
+   rather than a clause** (below). No new dial: `PCTL_EXPR` is built so 0.5 *is*
+   p50 and 0.9 *is* p90, the scorer's own two landmarks. **(b) Four bands, two senses.**
    Bands 1–2 both mean "above this author's usual" at different strengths and
    read identically on a card, so the mark collapses to two states — `▴`
    noticed (bands 1–2, `palette.cardMeta`) and `▲` well above (band 3,
@@ -397,10 +395,41 @@ leaderboards; no absolute "score" is ever displayed.
    **(c) The old mark was dots in a cluster whose first element is a dot** (the
    parked `TrustPip`), so it read as punctuation. A filled triangle points,
    which is the claim; aggression rides the palette's text ramp, never crimson,
-   which means PAID on a card. The platform axis never decides *whether* the
-   glyph shows — that stays the author axis's job (D4's own stance), so a post
-   that is ordinary for its author but big on the network stays silent (2.3% of
-   rows; considered and declined 2026-08-10).
+   which means PAID on a card.
+
+   **ONE SYMBOL, TWO SCOPES (the D7 stance as of 2026-08-10).** The triangle
+   means *popping* — drew more response than expected — and **what it is popping
+   relative to is set by what it stands beside, not by a second symbol**. In the
+   byline, next to the author's name, it means popping for THEM. In the origin
+   row, next to the network name, it means popping for THAT NETWORK. A card
+   reading `● BBC · 2h ▲` over `VIA BLUESKY ▴ · @bbc` says "big for the BBC, and
+   notable for Bluesky" with **one mark for the reader to learn instead of two**,
+   and the size step is degree in both scopes. Adjacency is load-bearing: the
+   platform mark sits immediately after the network name because that is what
+   gives it its scope, and moving it strands the claim. Shared vocabulary in
+   `web/src/lib/post/resonance.ts` (pure, so the level matrix can import it) with
+   the glyphs in `PostResonance.tsx`; `resolveSpec` gains
+   `showPlatformResonance`, gated on `spec.resonance` and **deliberately not on
+   `spec.originTag`** — the tag renders at thread-parent/reply where
+   band-at-a-glance must not.
+
+   **The two axes are independent, and neither gates the other.** This
+   supersedes the 2026-08-10 morning decision to keep the "ordinary for its
+   author, big for the network" cell silent: it is now the case the platform
+   mark most exists for — a power user's routine post that is still an event by
+   the network's standard, invisible while the band was the only thing rendered.
+   Over 50 real feed cards the split is 9 author-only, 2 both, 1 platform-only.
+
+   **The platform scope has ONE step, and that is the data's doing.** `PCTL_EXPR`
+   saturates at 1.0 for anything ≥2× p90 and the tail past that is fat — 6.8% of
+   scored atproto rows sit at exactly 1.0 against 10.3% at ≥0.9 — so a two-step
+   split would make the modest mark (3.5%) *rarer* than the loud one (6.8%). A
+   scale whose stronger step is commoner than its weaker one is not a scale.
+   Giving this axis a second step needs headroom above p90 **in the scorer** (a
+   p99 landmark, or log-scaling the tail), never a threshold in the client.
+   It also needs **no per-protocol gate**, unlike the author bands: a percentile
+   is per-protocol by construction, which is why one number lands at 10.3% on
+   atproto and 11.1% on activitypub.
    **Behind the operator brake `RESONANCE_GLYPH_ENABLED`, default ON since
    2026-08-10** (default OFF as shipped). It was held dark pending the
    per-protocol band-3 re-measurement below; the closed beta **inverted** that

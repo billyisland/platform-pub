@@ -23,6 +23,53 @@ starts.
 
 ## Progress
 
+- **2026-08-10 (one symbol, two scopes — the platform axis gets its own mark
+  instead of a clause)** — SOCIAL-PROOF-RESONANCE-ADR D7 amendment,
+  `web/CLAUDE.md` card chassis. **No migration, no new dial.** Web only:
+  `docker compose build web && docker compose up -d web`.
+  - **The operator's design call, and it is better than the one it replaced.**
+    Having just moved the platform axis into the tooltip's second clause, the
+    question was why the platform scope needed a *different* symbol at all: the
+    triangle already means "popping", and its scope can come from **what it
+    stands beside**. So there is now one mark in two places — after the author's
+    name it means popping for THEM, after the network name in the origin row it
+    means popping for THAT NETWORK. `● BBC · 2h ▲` over `VIA BLUESKY ▴ · @bbc`
+    reads as "big for the BBC, notable for Bluesky", with one symbol for the
+    reader to learn rather than two families, and the tooltips collapse to one
+    short clause each because the scope is now carried by position instead of by
+    words. Adjacency is load-bearing — the platform mark sits immediately after
+    the network name, and moving it strands the claim.
+  - **This supersedes the same morning's decision** to keep the "ordinary for
+    its author, big for the network" cell silent. It is now the case the platform
+    mark most exists for: the power user whose routine post is still an event by
+    the network's standard, invisible while the band was the only thing rendered.
+    Over 50 real feed cards: **9 author-only, 2 both, 1 platform-only**.
+  - **The platform scope has ONE step, and the data decided that, not taste.**
+    `PCTL_EXPR` saturates at 1.0 for anything ≥2× p90 and the tail past it is
+    fat — 6.8% of scored atproto rows sit at exactly 1.0 against 10.3% at ≥0.9 —
+    so a two-step split would make the modest mark (3.5%) **rarer** than the loud
+    one (6.8%). A scale whose stronger step is commoner than its weaker one is
+    not a scale. A second step needs headroom above p90 **in the scorer** (a p99
+    landmark, or log-scaling the tail), never a threshold in the client. Filed.
+  - **And it needs no per-protocol gate** — a percentile is per-protocol by
+    construction, so one number lands at 10.3% on atproto and 11.1% on
+    activitypub. That problem belongs to the author bands alone.
+  - **The level gate is the trap, and it is tested.** `originTag` is TRUE at
+    thread-parent/thread-reply, so hanging the platform mark off the tag's own
+    gate would scatter it through an expanded conversation — precisely the
+    context D7's level rule excludes. `showPlatformResonance` therefore gates on
+    `spec.resonance`, and `resonance.test.ts` asserts `showOriginTag === true`
+    **and** `showPlatformResonance === false` at those levels, so the two can
+    never be quietly re-coupled.
+  - **Verification:** 11 new tests (`web/src/lib/post/resonance.test.ts`),
+    39 green across `lib/post/`. **Mutation-verified 3/3** — moving the boundary
+    to `>` breaks the exact-p90 test, swapping the level gate to `spec.originTag`
+    breaks the thread-level test, and starting the loud mark at band 2 breaks the
+    collapse test; all three fail alone and the suite restores green. `tsc`
+    clean, root ESLint 0 errors, `next build` compiled, hairline tripwire clean,
+    `/reader` smoked 200, and both marks confirmed over the gateway on a real
+    feed.
+
 - **2026-08-10 (the resonance glyph gets a second axis, two states and a mark
   that points)** — CONSOLIDATED-TODO §9.12, SOCIAL-PROOF-RESONANCE-ADR D7
   amendment. **No migration, no new dial.** Web + gateway:
