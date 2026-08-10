@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-08-10 (the resonance scorer had been dead for 21 days, and lighting the
+  glyph is what found it)** — CONSOLIDATED-TODO §9.12. **No migration, no code
+  change.** Worker rebuild + a one-off backfill:
+  `docker compose build feed-ingest && docker compose up -d feed-ingest`, then
+  `docker compose exec -T postgres psql -U platformpub -d platformpub -v ON_ERROR_STOP=1 -f - < scripts/backfill-resonance.sql`.
+  - **The finding.** With `RESONANCE_GLYPH_ENABLED=1` and bands proven to reach
+    the client, the workspace feeds still returned `resonanceBand: null` on every
+    item — while the author-timeline route returned bands 0/1/2 for the same
+    author. The difference was not the route: it was the age of the rows each
+    happened to return. `max(published_at) WHERE resonance_band IS NOT NULL` sat
+    at **2026-07-20 17:34**, 21 days stale, with a clean cliff at 7 days —
+    26,366 of 34,825 rows banded in the 7–30d window and **0 of 19,751** newer
+    than that. The running `feed-ingest` image was built **2026-07-19 23:05**,
+    one day before the scorer shipped: `dist/lib/` carried no resonance module
+    and the engagement task contained no reference to one. The container was
+    recreated on 2026-08-03 — from the same stale image, which is why its age
+    told the truth and the container's did not.
+  - **Why every signal said fine.** The ambient-baseline cron *was* in the image
+    (it shipped 2026-07-19, one day earlier), so `protocol_engagement_ambient`
+    refreshed daily and looked healthy; engagement counts kept updating;
+    `external_engagement_refresh` logged `complete` with a real `updated` count
+    every run. The one swallowed-error path (`refreshResonanceFor`'s try/catch)
+    logged nothing, correctly — nothing was failing, the call site did not exist.
+    The scoring SQL itself was never at fault: run read-only against three days
+    of unscored rows it returned 11,273 scoreable, 1,991 lit, 408 band 3.
+  - **The gap is permanent by construction, which is the real defect.** The
+    scorer runs only over ids whose counts MOVED in that pass, so a row whose
+    counts have settled is never revisited and keeps a NULL band forever. Any
+    interruption — a stale image, worker downtime, a failed deploy — leaves a
+    hole that no later run fills. Hence the backfill, and hence the two items
+    now filed: a freshness check an operator can see, and the general rule that a
+    delta-keyed writer of a derived column needs a periodic NULL sweep beside it.
+  - **Backfill:** `scripts/backfill-resonance.sql`, a transcription of
+    `EXTERNAL_RESONANCE_SQL` + `scoreTail` + `PCTL_EXPR` with the driving set
+    widened from "these ids" to "everything unscored in the window", dials read
+    from `platform_config` rather than hard-coded. 28,237 rows scored. Its header
+    carries the standing warning that it is a copy and must be re-read against
+    `resonance.ts` before each use.
+  - **And it produced the measurement the ADR wanted.** Seven days of fresh data:
+    **atproto 22.4% lit / 5.02% band 3**, **activitypub 10.1% / 1.25%** — a 4×
+    band-3 spread against a ~1% target, so one in twenty Bluesky posts currently
+    draws `···`. A global `resonance_band3_min` bump fixes one protocol and
+    breaks the other; per-protocol gates are now filed as the honest fix. This is
+    the vindication of flipping the brake rather than waiting on the
+    measurement — the measurement was **unobtainable** while the glyph was dark,
+    because the thing that would have produced it was itself broken and silent.
+  - **Verification:** rebuilt image confirmed to carry `dist/lib/resonance.js`
+    and both call sites; band coverage after backfill 3,410/3,410 (<1d),
+    16,359/16,359 (1–7d); the three real workspace feeds now return bands 1, 2
+    and 3 over the gateway where all three returned only `null` before.
+
 - **2026-08-10 (headline density stops truncating, and the resonance glyph is
   lit)** — CONSOLIDATED-TODO §9.12. **No migration, no new env var.** Web +
   gateway: `docker compose build web && docker compose up -d web gateway`
