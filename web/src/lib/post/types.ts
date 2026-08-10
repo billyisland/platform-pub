@@ -120,12 +120,18 @@ export interface Post {
   // carrying the same content as this (winning) card — rendered as a quiet
   // "ALSO ON BLUESKY · MASTODON" line. Empty/undefined ⇒ nothing rendered.
   alsoOn?: string[];
-  // SOCIAL-PROOF-RESONANCE-ADR D7: 0-3 resonance band → the byline glyph
-  // (nothing / · / ·· / ···). null/undefined means NO BAND WAS COMPUTED — an
-  // rss/email or dark-nostr item, or one the crons haven't reached — which is
-  // deliberately distinct from band 0 "quiet" even though both render nothing.
-  // The gateway withholds this entirely unless RESONANCE_GLYPH_ENABLED is set.
+  // SOCIAL-PROOF-RESONANCE-ADR D7, the AUTHOR-relative axis: 0-3 band → the
+  // byline glyph (nothing / ▴ / ▲). null/undefined means NO BAND WAS COMPUTED —
+  // an rss/email or dark-nostr item, or one the crons haven't reached — which
+  // is deliberately distinct from band 0 "quiet" even though both render
+  // nothing. The gateway withholds it unless RESONANCE_GLYPH_ENABLED is set.
   resonanceBand?: number | null;
+  // D5, the PLATFORM-relative axis: E's position in its own network's
+  // distribution, 0..1, where 0.5 is exactly that network's median and 0.9 its
+  // p90 (PCTL_EXPR is built on those two landmarks). Only the gloss reads it —
+  // it never decides whether the glyph shows, which stays the author axis's
+  // job. Same null semantics and brake as the band.
+  ambientPctl?: number | null;
 }
 
 // Bare reposts are edges, not Posts (§2.2). Mirror of gateway RepostEdgeDTO.

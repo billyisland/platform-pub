@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-08-10 (the resonance glyph gets a second axis, two states and a mark
+  that points)** — CONSOLIDATED-TODO §9.12, SOCIAL-PROOF-RESONANCE-ADR D7
+  amendment. **No migration, no new dial.** Web + gateway:
+  `docker compose build web gateway && docker compose up -d web gateway`.
+  - **The finding that drove it: D4's ambient veto is unreachable.** The band
+    was designed as two axes — author-relative resonance, vetoed by a
+    network-relative floor — and the tooltip asserted both ("more than this
+    author usually gets, **and** non-trivial for Bluesky"). The veto fired **0
+    times in 19,700 scored rows over seven days**, because D3 shrinks the author
+    baseline *toward* the network median: anything 5.7× its baseline is above
+    that median by construction. The ADR's own test battery had found the band-2
+    veto unreachable; the data says band 1's is too. Worse, the medians are
+    `p50_e = 1` (atproto) and `3` (activitypub) — so the clause promising
+    "non-trivial" was, literally, *got one like*. Three bands were three cuts of
+    ONE axis wearing a two-axis gloss.
+  - **The fix reads the axis that actually measures it.** `fi.ambient_pctl` was
+    already computed and stored for D6 and simply never projected. It now joins
+    `FEED_SELECT` and the `Post` as `ambientPctl`, and the gloss's second clause
+    is read off it. **No new dial**: `PCTL_EXPR` is constructed so 0.5 *is* the
+    network median and 0.9 *is* p90 — the scorer's own landmarks — so the words
+    "decent" and "high" inherit definitions that already exist rather than
+    inventing thresholds to tune. Below the median the clause is **omitted**,
+    not softened: the point of the second clause is to add a fact.
+  - **Two states, not three.** Bands 1–2 both mean "above this author's usual"
+    and read identically on a card, so the mark collapses to `▴` (bands 1–2,
+    `palette.cardMeta`) and `▲` (band 3, `palette.cardTitle`). Retuning who
+    lands where stays the band dials' job.
+  - **And the old mark was dots in a cluster whose first element is a dot** —
+    the parked `TrustPip` — so `·`/`··`/`···` read as one run of punctuation.
+    A filled triangle points, which is the actual claim, and can't be mistaken
+    for the pip at 11px. Aggression rides the palette's own text ramp, never
+    crimson, which means PAID on a card and would make a popular post look like
+    a charged one.
+  - **The platform axis never decides whether the glyph shows** — that stays the
+    author axis's job, per D4. So the 2.3% of rows that are ordinary for their
+    author but high for the network stay silent; considered and declined, since
+    the mark's whole value is meaning exactly one thing.
+  - **`ambient_pctl` is a Postgres NUMERIC, which node-pg returns as a STRING.**
+    Passed through untouched the client would compare `"0.95" >= 0.9` lexically
+    and mis-gloss silently; the mapper `Number()`s it past the null check so
+    absence still survives as absence. Confirmed over the wire: `pctl=0.6529…`
+    arrives as a float, not `"0.6529…"`.
+  - **Verification:** web + gateway `tsc` clean, root ESLint 0 errors,
+    `next build` compiled, hairline tripwire clean, `level-spec` 21/21 green.
+    Glosses rendered from real feed rows read e.g. "Good engagement for Erlend
+    Sogge Heggen, decent for Bluesky." and "…, high for Bluesky."
+  - **Left for the operator:** incidence is still loud — 22.4% of scored atproto
+    rows carry a mark and 5.0% carry `▲`, against a ~1% intent for the top
+    state. That is the band dials (`resonance_band{1,2,3}_min`), an `UPDATE`
+    away, and the per-protocol-gate question already filed at §9.12.
+
 - **2026-08-10 (the resonance scorer had been dead for 21 days, and lighting the
   glyph is what found it)** — CONSOLIDATED-TODO §9.12. **No migration, no code
   change.** Worker rebuild + a one-off backfill:

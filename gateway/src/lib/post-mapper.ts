@@ -86,6 +86,13 @@ export interface Post {
   // client renders nothing for null AND for band 0, but they are not the same
   // claim, so don't collapse them in the mapper.
   resonanceBand?: number | null;
+  // D5 platform axis, 0..1 — E's position in its OWN network's distribution.
+  // Its two landmarks are the scorer's, not new ones: PCTL_EXPR is built so
+  // 0.5 is exactly the network median (p50_e) and 0.9 exactly p90_e, which are
+  // the same cuts the band's own ambient test uses. So the tooltip can name a
+  // platform level without inventing a threshold to tune. Same null semantics
+  // and the same brake as the band.
+  ambientPctl?: number | null;
 }
 
 export interface RepostEdgeDTO {
@@ -303,6 +310,14 @@ export function feedItemToPost(row: any): Post {
     // D7 band, withheld entirely while the brake is off (see resonanceGlyphEnabled).
     // `?? null` keeps absence explicit rather than dropping the key.
     resonanceBand: resonanceGlyphEnabled() ? (row.resonance_band ?? null) : null,
+    // Same brake, same absence semantics. `ambient_pctl` is a Postgres NUMERIC,
+    // which node-pg hands back as a STRING — pass it through untouched and the
+    // client compares "0.95" < 0.9 lexically and silently mis-glosses. Number()
+    // only past the null check, so absence survives as absence.
+    ambientPctl:
+      resonanceGlyphEnabled() && row.ambient_pctl != null
+        ? Number(row.ambient_pctl)
+        : null,
   };
 }
 
@@ -376,5 +391,6 @@ export function commentToPost(
     // resonance corpus entirely — no band exists to render (D7 shows the glyph
     // at feed/focal levels anyway, and a comment is neither).
     resonanceBand: null,
+    ambientPctl: null,
   };
 }

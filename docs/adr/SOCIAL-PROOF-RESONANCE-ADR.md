@@ -370,9 +370,37 @@ leaderboards; no absolute "score" is ever displayed.
    plumbing — **shipped 2026-07-20**. `fi.resonance_band` joins `FEED_SELECT`;
    `post-mapper.ts` carries it as `Post.resonanceBand`; `resolveSpec` gains
    `showResonance` (level `feed`/`focal` AND band ≥ 1, deliberately not
-   tier-masked); `PostResonance.tsx` renders the dots in `palette.cardMeta`
+   tier-masked); `PostResonance.tsx` renders the mark in `palette.cardMeta`
    with the D4 gloss as `title` + `aria-label`; Explain kind `card.resonance`
    sits between `card.byline` and `card.reply`.
+
+   **Amended 2026-08-10 — two states, two axes, and the veto that never fires.**
+   Once lit against real volume the D7 mark was wrong in three ways, all fixed
+   together. **(a) The gloss asserted a second clause the band never checked.**
+   D4 designed the ambient percentile as a *veto*, but the veto is structurally
+   unreachable: the baseline is shrunk toward the network median (D3), so a post
+   5.7× its author's baseline is already above that median by construction. It
+   fired **0 times in 19,700 scored rows over seven days** — and the medians it
+   tests are `p50_e = 1` on atproto and `3` on activitypub, so "non-trivial for
+   Bluesky" meant *got one like*. The three bands were therefore three cuts of a
+   single axis wearing a two-axis gloss. **The fix is to read the axis that
+   measures it**: `fi.ambient_pctl` (already stored for D6) now joins
+   `FEED_SELECT` and the `Post` as `ambientPctl`, and the gloss's second clause
+   is read off it — `≥0.9` "high for X", `≥0.5` "decent for X", below that the
+   clause is **omitted** rather than softened, because a clause that is always
+   present adds nothing. No new dial: `PCTL_EXPR` is built so 0.5 *is* p50 and
+   0.9 *is* p90, the scorer's own two landmarks. **(b) Four bands, two senses.**
+   Bands 1–2 both mean "above this author's usual" at different strengths and
+   read identically on a card, so the mark collapses to two states — `▴`
+   noticed (bands 1–2, `palette.cardMeta`) and `▲` well above (band 3,
+   `palette.cardTitle`). Which posts land where stays the band dials' job.
+   **(c) The old mark was dots in a cluster whose first element is a dot** (the
+   parked `TrustPip`), so it read as punctuation. A filled triangle points,
+   which is the claim; aggression rides the palette's text ramp, never crimson,
+   which means PAID on a card. The platform axis never decides *whether* the
+   glyph shows — that stays the author axis's job (D4's own stance), so a post
+   that is ordinary for its author but big on the network stays silent (2.3% of
+   rows; considered and declined 2026-08-10).
    **Behind the operator brake `RESONANCE_GLYPH_ENABLED`, default ON since
    2026-08-10** (default OFF as shipped). It was held dark pending the
    per-protocol band-3 re-measurement below; the closed beta **inverted** that

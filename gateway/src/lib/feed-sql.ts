@@ -53,9 +53,15 @@ export const FEED_SELECT = `
   -- Resonance band (SOCIAL-PROOF-RESONANCE-ADR D7). NULL is meaningful and
   -- load-bearing: rss/email and dark-nostr rows get no band at all, and a
   -- silent protocol must not read as an unpopular writer. Never COALESCE it.
-  -- (D4/D6 also store fi.resonance + fi.ambient_pctl; the glyph needs only the
-  -- band, and the step-5 ranking blend reads those two in its own scored CTE.)
+  -- (D4/D6 also store fi.resonance; the step-5 ranking blend reads it in its
+  -- own scored CTE.) The band is the AUTHOR-relative axis; ambient_pctl is the
+  -- PLATFORM-relative one, and the glyph's gloss needs both — the band alone
+  -- can only say "more than this author usually draws" and the tooltip claimed
+  -- a second thing it had no field for. NULL on both is meaningful and
+  -- load-bearing: rss/email and dark-nostr rows get neither, and a silent
+  -- protocol must not read as an unpopular writer. Never COALESCE either.
   fi.resonance_band,
+  fi.ambient_pctl,
   -- Author pubkey (native content only — single join covers both articles and notes)
   acc.nostr_pubkey AS nostr_pubkey,
   -- Article-specific (NULL for non-articles)
