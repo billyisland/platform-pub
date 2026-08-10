@@ -23,6 +23,52 @@ starts.
 
 ## Progress
 
+- **2026-08-10 (headline density stops truncating, and the resonance glyph is
+  lit)** — CONSOLIDATED-TODO §9.12. **No migration, no new env var.** Web +
+  gateway: `docker compose build web && docker compose up -d web gateway`
+  (the gateway needs only the restart — the brake is a compose `environment:`
+  default, not a code change).
+  - **(a) Headline density renders the whole headline and the whole note.** The
+    density was implemented by forcing the card body to the `one-line` mode,
+    which clamped an article title to a single line and truncated a note to 90
+    characters — so the mode that exists for skimming hid the very text being
+    skimmed. `PostBody` gains a fourth mode, `headline`: title unclamped,
+    article standfirst dropped (as before), note/external body verbatim. It is a
+    NEW mode rather than a widened `one-line` because `one-line` is the
+    `condensed` **level**'s (`level-spec.ts`) — a different axis from density,
+    and one that genuinely wants a single line. Poll rendering under the
+    density is unchanged (still hidden, alongside media and the action row) —
+    the whole-note rule is about the note's text.
+  - **(b) `RESONANCE_GLYPH_ENABLED` default `0` → `1`.** The brake shipped
+    2026-07-20 gated on "re-measure band-3 incidence per protocol on prod before
+    showing the glyph". That gate was **inverted rather than discharged**: while
+    the beta is closed the only reader is the operator, so browsing real
+    ingested posts *is* the prod measurement, and a display-only mark held dark
+    to protect an audience of one costs more than it buys. The reason it is safe
+    to lead with is that the band gates are `platform_config` dials
+    (`resonance_band{1,2,3}_min`), so a wrong distribution is an `UPDATE`, not a
+    deploy — the brake and the tuning are independently reversible. Dev
+    distribution at flip time: atproto 14,823 scored / 2,297 lit (bands
+    1209/620/468), activitypub 11,896 / 1,396 (764/481/151); external nostr,
+    rss and native contribute nothing (no ambient row, or all band 0) — absence,
+    not zero, exactly as D4 intends. **The dev band-3 spread is the open
+    question the follow-up measurement must answer**: 3.2% of scored atproto
+    rows against 1.3% of activitypub, on a target of ~1%, which one global gate
+    cannot land on both. Query + retuning recipe now live at CONSOLIDATED-TODO
+    §9.12; **the default is to be revisited the day the beta opens**, and that
+    instruction is written into the compose comment, `DEPLOYMENT.md`, the ADR
+    and root `CLAUDE.md` rather than left in this log. `RESONANCE_RANKING_ENABLED`
+    (D6 ranking) is a separate claim on a separate brake and stays dark.
+  - **Verification:** `tsc --noEmit` clean across web; root ESLint 0 errors;
+    `next build` clean; hairline tripwire clean on both touched components;
+    web rebuilt and `/reader` smoked 200; `docker compose config` resolves the
+    brake to `"1"` and the ranking brake to `"0"`. **Brake proven live, not
+    assumed**: a short-lived dev session token against
+    `GET /api/v1/author/:id/posts` for a real Bluesky author returns 38 × band 0,
+    7 × band 1, 4 × band 2 and 1 × null — the `0`/`null` distinction is itself
+    the proof (with the brake off the mapper nulls every one), and the 11 lit
+    rows are 11 cards that will now draw `·`/`··`.
+
 - **2026-08-08 (§0q.1 — the resume sweeps stop bypassing the per-account
   halt)** — CONSOLIDATED-TODO §0q.1, PAYMENT-PERIMETER-ADR W4. **No migration,
   no env var, no flag, no web change.** Payment service only:

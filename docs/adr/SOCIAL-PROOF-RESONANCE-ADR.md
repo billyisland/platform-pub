@@ -373,10 +373,18 @@ leaderboards; no absolute "score" is ever displayed.
    tier-masked); `PostResonance.tsx` renders the dots in `palette.cardMeta`
    with the D4 gloss as `title` + `aria-label`; Explain kind `card.resonance`
    sits between `card.byline` and `card.reply`.
-   **Behind the operator brake `RESONANCE_GLYPH_ENABLED`, default OFF** — the
-   band gates were tuned on dev volume and the per-protocol re-measurement
-   below is still outstanding, so the glyph is a claim we hold back until prod
-   distributions support it. The brake gates the MAPPER, not the renderer:
+   **Behind the operator brake `RESONANCE_GLYPH_ENABLED`, default ON since
+   2026-08-10** (default OFF as shipped). It was held dark pending the
+   per-protocol band-3 re-measurement below; the closed beta **inverted** that
+   gate rather than discharging it. With one real reader, the operator browsing
+   real ingested posts *is* the prod measurement, and a display-only mark held
+   back to protect an audience of one buys nothing — while the band gates being
+   `platform_config` dials means a wrong distribution is an `UPDATE`, not a
+   deploy. The re-measurement is now the follow-up, not the precondition
+   (CONSOLIDATED-TODO §9.12 carries the query and the per-protocol-gate
+   caveat), and **the default is to be revisited the day the beta opens** —
+   at that point the original reasoning applies again in full.
+   The brake gates the MAPPER, not the renderer:
    while off, `resonanceBand` is null on every read path and the band never
    leaves the gateway, so there is no client-side flag to keep in sync and no
    half-lit state. Scoring crons are unaffected either way.

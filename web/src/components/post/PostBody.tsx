@@ -13,7 +13,10 @@ import type { VesselPalette } from "../workspace/tokens";
 //
 //   "expanded"  (focal/parent/reply) — full text, no clamp (thread context never clips)
 //   "full"      (feed)               — full text with a collapse-truncate for long bodies
-//   "one-line"  (condensed)          — a single truncated line
+//   "one-line"  (condensed level)    — a single truncated line
+//   "headline"  (headline density)   — the whole headline and nothing under it; a
+//                                      note keeps its whole body, an article drops
+//                                      its standfirst entirely.
 //
 // bodyPx arrives ALREADY scaled by the level's textScale (PostCard does the
 // multiply + readability floor). Content warnings wrap the body; polls render
@@ -21,7 +24,10 @@ import type { VesselPalette } from "../workspace/tokens";
 // title + standfirst only — their body opens in the reader pane (§3.1).
 // =============================================================================
 
-type BodyMode = "expanded" | "full" | "one-line";
+type BodyMode = "expanded" | "full" | "one-line" | "headline";
+
+// Modes that render a body verbatim — no character truncate, no line clamp.
+const UNTRUNCATED: ReadonlySet<BodyMode> = new Set<BodyMode>(["expanded", "headline"]);
 
 // Poll voting is supplied by usePostInteractions (external interact-back); absent
 // ⇒ the poll renders read-only (native, tiers C/D, or non-interactive renders).
@@ -157,13 +163,14 @@ function BodyInner({
     </h3>
   ) : null;
 
-  // Articles: title + standfirst only (body opens in the reader pane).
+  // Articles: title + standfirst only (body opens in the reader pane). Under the
+  // headline density the title carries the card alone, so the standfirst goes.
   if (post.type === "article") {
     const summary = post.body.summary || post.body.text || "";
     return (
       <>
         {title}
-        {summary && mode !== "one-line" && (
+        {summary && mode !== "one-line" && mode !== "headline" && (
           <p
             className="font-serif"
             style={{
@@ -183,7 +190,7 @@ function BodyInner({
   // External notes prefer sanitised HTML when present.
   if (post.body.html) {
     const clampStyle: React.CSSProperties =
-      mode === "expanded"
+      UNTRUNCATED.has(mode)
         ? {}
         : {
             display: "-webkit-box",
@@ -213,12 +220,11 @@ function BodyInner({
   // Native notes + plain-text external: strip inline media URLs for display.
   const raw = post.body.text ?? "";
   const { displayText } = stripMediaUrls(raw);
-  const text =
-    mode === "expanded"
-      ? displayText
-      : mode === "one-line"
-        ? truncateText(displayText, ONE_LINE_CHARS)
-        : truncateText(displayText, NOTE_COLLAPSE_CHARS);
+  const text = UNTRUNCATED.has(mode)
+    ? displayText
+    : mode === "one-line"
+      ? truncateText(displayText, ONE_LINE_CHARS)
+      : truncateText(displayText, NOTE_COLLAPSE_CHARS);
 
   return (
     <>
@@ -244,7 +250,9 @@ function BodyInner({
           {mode === "one-line" ? text : linkifyText(text, palette)}
         </p>
       )}
-      {post.body.poll && mode !== "one-line" && (
+      {/* Poll stays hidden under the headline density, alongside media and the
+          action row — the whole-note rule is about the note's TEXT. */}
+      {post.body.poll && mode !== "one-line" && mode !== "headline" && (
         <PollBlock post={post} palette={palette} pollVote={pollVote} />
       )}
     </>

@@ -158,13 +158,19 @@ services:
       # attaching a card. Anything here that grows a charge or transfer joins in.
       STRIPE_ALLOCATED_FUNDS: ${STRIPE_ALLOCATED_FUNDS:-0}
       # Resonance glyph on feed cards (SOCIAL-PROOF-RESONANCE-ADR D7, step 4,
-      # shipped 2026-07-20). Ships dark: flag off ⇒ the post mapper nulls
+      # shipped 2026-07-20; LIT 2026-08-10). Flag off ⇒ the post mapper nulls
       # Post.resonanceBand on every read path, so the band never leaves the
       # gateway and no glyph renders. Display-only — the feed-ingest scoring
       # crons write feed_items.resonance* either way, so flipping needs no
-      # backfill and is instantly reversible. No web twin, by design.
-      # Gated on prod per-protocol band-3 re-measurement (CONSOLIDATED-TODO §9.12).
-      RESONANCE_GLYPH_ENABLED: ${RESONANCE_GLYPH_ENABLED:-0}
+      # backfill and is instantly reversible in BOTH directions. No web twin.
+      # Default flipped to 1 while the beta is closed: the gate was per-protocol
+      # band-3 re-measurement on prod volume, and with one real reader that
+      # measurement IS the operator browsing real ingested posts. Safe to lead
+      # with because the band gates are platform_config dials
+      # (resonance_band{1,2,3}_min), so a wrong distribution is an UPDATE, not a
+      # deploy. Set RESONANCE_GLYPH_ENABLED=0 in the root .env to douse it.
+      # REVISIT THE DEFAULT THE DAY THE BETA OPENS (CONSOLIDATED-TODO §9.12).
+      RESONANCE_GLYPH_ENABLED: ${RESONANCE_GLYPH_ENABLED:-1}
       # D6 read-time proof blend (step 5). Off = 'scored' feeds rank on the
       # cron-baked fi.score exactly as before; on = every item in a scored feed,
       # native and external alike, ranks by one commensurable expression built

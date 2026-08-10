@@ -75,11 +75,13 @@ export function PostCard({
     READABILITY_FLOOR_PX,
   );
 
-  // Headline density collapses the body to a single line — the article
-  // standfirst/dek is dropped, notes/external clamp to one line — so a feed
-  // reads as source + title only. (Media + actions are already hidden for the
-  // condensed family; see PostMedia/PostActions/chassis.)
-  const bodyMode = ctx.density === "headline" ? "one-line" : spec.body;
+  // Headline density: an article is its headline and nothing else (the
+  // standfirst/dek is dropped), a note is its whole body. Neither is clamped —
+  // a headline that wraps is still one headline, and a truncated note in a feed
+  // you chose to compress just hides the thing you compressed it to skim.
+  // (Media + actions are already hidden for the condensed family; see
+  // PostMedia/PostActions/chassis.)
+  const bodyMode = ctx.density === "headline" ? "headline" : spec.body;
 
   const pollVote = interactions
     ? {

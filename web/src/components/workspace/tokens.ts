@@ -338,7 +338,8 @@ export function isDarkPalette(p: VesselPalette): boolean {
 
 // Density is a three-state cycle: Standard (the full card) → Condensed (tight
 // padding, media + action row hidden, standfirst kept) → Headline (as Condensed,
-// but the standfirst/dek is also dropped — source + title only). A former value
+// but the standfirst/dek is also dropped — an article is its whole headline and
+// nothing else, a note its whole body; neither is clamped). A former value
 // 'full' rendered byte-identically to 'standard', so it was removed;
 // normalizeDensity migrates any persisted 'full' (or junk) to 'standard' on
 // read, so no DB backfill is needed.

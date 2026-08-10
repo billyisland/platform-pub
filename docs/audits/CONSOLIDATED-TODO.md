@@ -759,7 +759,22 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
     **What remains:**
     - **Monotonic writes** is the one battery item still uncovered — it belongs to the engagement cron's count writer, not to the two modules the battery covers.
     - **The A/B itself.** The flag is the mechanism; the measurement is the work, and it needs prod volume. Note from the step-5 smoke: with the flag off, every item in a *scored* external feed scores `fi.score = 0`, so today that surface is ordered **by uuid** — the flag-off state is therefore not a meaningful control for "did resonance help?"; the honest comparison for external-heavy feeds is against **chronological**. (ADR *Step-5 note*.)
-    - **Turning the step-4 glyph brake on** is gated on the two step-3 measurements, both needing prod volume: re-measure band-3 incidence per protocol (one global gate can't land ~1% on both atproto and activitypub) and revisit the free-up-vote weight 5 (dev had 8 scored native items — no signal).
+    - ~~**Turning the step-4 glyph brake on**~~ — **LIT 2026-08-10**, by inverting the gate rather than discharging it first. The gate was "re-measure band-3 incidence per protocol on prod before showing the glyph"; while the beta is closed the only reader is the operator, so *browsing real ingested posts IS the measurement*, and holding a display-only mark dark to protect an audience of one costs more than it buys. Safe to lead with because the band gates are `platform_config` dials — a wrong distribution is an `UPDATE`, not a deploy. `RESONANCE_GLYPH_ENABLED` default `0` → `1` in `docker-compose.yml`; douse via `RESONANCE_GLYPH_ENABLED=0` in the **root** `.env` (compose `environment:` beats `gateway/.env`). **The measurement it was gated on is now the follow-up, not the precondition** — run it on prod after a week of real browsing:
+
+      ```sql
+      SELECT coalesce(source_protocol, 'native') AS proto,
+             count(*) FILTER (WHERE resonance_band IS NOT NULL) AS scored,
+             round(100.0 * count(*) FILTER (WHERE resonance_band = 3)
+                   / nullif(count(*) FILTER (WHERE resonance_band IS NOT NULL), 0), 2) AS band3_pct,
+             round(100.0 * count(*) FILTER (WHERE resonance_band >= 1)
+                   / nullif(count(*) FILTER (WHERE resonance_band IS NOT NULL), 0), 2) AS lit_pct
+        FROM feed_items
+       WHERE deleted_at IS NULL AND published_at > now() - interval '14 days'
+       GROUP BY 1 ORDER BY 2 DESC;
+      ```
+
+      Target is band-3 ≈ 1% per protocol. **A single global gate cannot land 1% on both** — dev sits at atproto 3.2% vs activitypub 1.3% of scored rows, and prod will differ again — so if the spread holds, the honest fix is a per-protocol gate (new dials), not a compromise value that is wrong for both. Retune meanwhile with `UPDATE platform_config SET value = … WHERE key = 'resonance_band3_min'` (currently 6; bands 1/2 at 2.5/4). **Revisit the default the day the beta opens.**
+    - **The free-up-vote weight 5** (`resonance_weight_native_up`) is still unrevisited — dev had 8 scored native items, no signal. Unchanged by the glyph going live: it only bites once native posts draw votes.
     - Later: zap ingestion, native repost recording, "resonant only" filter (partial index already shipped). → `docs/adr/SOCIAL-PROOF-RESONANCE-ADR.md`.
 
 13. ~~**`platform_config` defaults never land on a fresh DB**~~ — **FIXED 2026-07-20**, same day it was found (and it was a *re*-discovery: AUDIT-BACKLOG D1, 2026-06-07, diagnosed the same root cause and took a code-default workaround for one key). Defaults moved out of migrations into `shared/src/db/config-defaults.sql`, applied by `migrate.ts` on every run (`ON CONFLICT DO NOTHING`); **46 dials seeded on dev** — 31 migration-seeded, plus 15 that had no default row anywhere, including the six money dials (`platform_fee_bps`, `free_allowance_pence`, both settlement thresholds, `writer_payout_threshold_pence`, `monthly_fallback_days`) that commit `f8c73e6` silently dropped from `schema.sql` in a `--schema-only` regeneration. `jetstream_healthy`'s bare-UPDATE write became an upsert — the one place the gap caused live misbehaviour (the atproto polling fallback could never engage). CI-enforced by drift-guard Checks 4a/4b/4c. See FIX-PROGRAMME 2026-07-20.
