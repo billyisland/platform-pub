@@ -213,19 +213,11 @@ that now prevents a recurrence, and the recovery levers: **FIX-PROGRAMME
 2026-07-22 "prod incident" entry**. Runnable diagnostic + repair queries (with
 placeholders): `docs/audits/starter-feed-repair-2026-07-22.sql`. Open:
 
-1. **PROD REPAIR — not yet applied (operator, DB-only, no deploy needed). Re-verified on prod 2026-08-10:** `SELECT count(*) FROM feeds WHERE is_starter_template` returns **0** — no feed anywhere carries the flag, so every signup since the incident has been falling through to the client's empty `DEFAULT_FEED_NAME` mint. Note the 2026-08-07 onboarding ship **severed the coupling that made this repair awkward**: the first-session surface now gates on `accounts.onboarded_at IS NULL` rather than the zero-feeds signal, so repairing the template no longer silently switches a surface off (§3.3). Two
-   steps, in this order. (a) The merge target is over-stuffed and blows the 10s
-   `statement_timeout`; split the wrong source cluster back out into its own
-   feed — `feed_sources.created_at` survives a merge (which only UPDATEs
-   `feed_id`), so the two original feeds are two distinct timestamp clusters.
-   (b) Then `UPDATE feeds SET is_starter_template = true` on the trimmed feed,
-   or rebuild the original template from a pre-incident clone (findable by name;
-   provenance pointers were nulled). **Flagging before trimming means every new
-   signup clones a feed that times out.** A hand-built template must also upsert
-   `external_subscriptions` for its external sources — writing `feed_sources`
-   directly bypasses `addSource`, and a row without a subscription lets the GC
-   orphan an in-use source. Until (b) lands, every signup gets the empty
-   client-side "Founder's feed" fallback.
+1. ~~**PROD REPAIR**~~ — **APPLIED on prod 2026-08-10 (operator, DB-only, no deploy).** New template feed `a934368a-369c-4f60-b05d-a2e83d3fb13c`, owned by `billyisland`, `hidden = true`, 72 sources copied verbatim from the working feed `c1a4965a-…` in one transaction (feed + `feed_sources` + a no-op `external_subscriptions` upsert), verified as the ONLY flagged feed before commit. Seeding is live again; it had been dead since 2026-07-22, with `SELECT count(*) FROM feeds WHERE is_starter_template` returning **0** and every signup falling through to the client's empty `DEFAULT_FEED_NAME` mint. Deliberate choices: a **separate** feed rather than flagging the working one (so editing your own feed never silently changes what new members receive — it is a snapshot, and re-copying is a manual act), `hidden` so two identically-named feeds don't sit side by side in the operator workspace (seeding ignores `hidden`, and `cloneFeedForOwner` doesn't copy it, so members get a normal visible feed), and the template keeps the name "Billy Island's demonstration feed" — **note that name is cloned verbatim and is what every new member sees on first login** (operator's call, 2026-08-10; changing it is one UPDATE).
+
+   **Two of this item's own premises did not survive contact with the data — do not re-derive them from the prose below.** (a) *"The merge target is over-stuffed and blows the 10s `statement_timeout`"* — **false as of 2026-08-10**: the largest operator feed held 71 sources, no foreign `created_at` cluster, and the §1d timing shape ran in **2,796 ms** against 90k `feed_items`. There was nothing to trim, and step (a) was skipped entirely. (b) *"rebuild from a pre-incident clone"* was available but **not** the route taken — `evanlake`'s 56-source copy is a genuine surviving clone (single `created_at` cluster on its owner's signup date, `cloned_from_feed_id` nulled by migration 114's FK exactly as this item predicts), but it is a 2026-07-07 snapshot, 16 sources behind the working set. Kept as evidence, not used.
+
+   **Watch the timing number as the corpus grows.** 2.8s is a pessimistic reading (an unbounded `COUNT` where the real read is cursor-paged), but a 72-source feed against 90k items is the thing every new member now inherits, and both sides of that join grow. Re-run the §1d shape before the beta opens.
 
    *(2026-08-07: this repair no longer has a hidden second effect. Until then
    the destroyed template was the only reason the first-session import offer
@@ -233,6 +225,7 @@ placeholders): `docs/audits/starter-feed-repair-2026-07-22.sql`. Open:
    have silently switched that surface off. The welcome sheet now gates on
    `accounts.onboarded_at`, which is independent of feed state, so (b) is once
    again only about the template. See §3.3.)*
+1b. **`cloneFeedForOwner` never writes `external_subscriptions` (MED, live, found 2026-08-10).** It inserts `feeds` + `feed_sources` and stops (`gateway/src/routes/feeds/crud.ts:102`), bypassing `addSource` — the exact thing this item's own repair prose flags as REQUIRED for hand-written rows, except here it is the **code path, on every signup**. Now that seeding is live again (item 1), every new member gets a feed whose external sources carry no subscription row for them. Two consequences. **The latent one is data loss:** `external-sources-gc`'s orphan test is global (`NOT EXISTS` any subscriber), so these sources survive only while the *template owner* keeps them in one of their own feeds; the day the operator removes one from their last feed, `removeSource` drops the only subscription, the GC orphans it, and past the 90-day cull window hard-deletes it — and `feed_sources.external_source_id` is `ON DELETE CASCADE`, so it vanishes from every member feed that cloned it, taking its `external_items`/`feed_items` with it. A member loses content because the operator tidied up. **The immediate one:** a cloned member is not in the external follow graph for those sources (the same row is the graph per the feed-derived-subscriptions invariant), so kind-3 publishing and author-card "Following" state both under-report them. Fix is the upsert the repair playbook already spells out, inside `cloneFeedForOwner`'s transaction, keyed on the NEW owner. **Test it against a real DB** — the invariant is a cross-table one a mocked `pool.query` cannot evaluate.
 2. **`DELETE /feeds/:id` has the same hole (LOW-MED, live).** It guards "cannot
    delete your only feed" but not `is_starter_template`, so the identical global
    damage is reachable by another route. Same shape as the merge guard: refuse,
