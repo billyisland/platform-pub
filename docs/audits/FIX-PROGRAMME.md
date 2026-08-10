@@ -23,6 +23,44 @@ starts.
 
 ## Progress
 
+- **2026-08-10 (the second route to the July incident is closed, and the guard
+  had to go in front of the teardown)** — CONSOLIDATED-TODO §0l.2. **No
+  migration, no flag.** Gateway + one web line + a new test.
+
+  **The hole was known and the fix is the merge guard's, but the placement is
+  the substance.** `DELETE /feeds/:id` guarded "cannot delete your only feed"
+  and not `is_starter_template`, so the identical global damage the 2026-07-22
+  prod incident caused by dragging was still reachable by pressing Delete —
+  destroy the last flagged row and new-user seeding silently ends, visible only
+  on the NEXT signup. The route tears external sources down through
+  `removeSource` **before** it deletes the feed (H6, so the derived
+  subscriptions don't survive the cascade), which means a guard placed at the
+  natural-looking spot — beside the `DELETE` it protects — answers 409 having
+  already stripped the template of the subscriptions its clones depend on. It
+  goes in front of the loop.
+
+  **The `DELETE` also carries `AND is_starter_template = FALSE`.** The flag is
+  only ever set by hand, so the window between the check and the write is small
+  and needs an operator to be flagging a feed someone else is deleting — but the
+  clause is one predicate and it fails closed, and zero rows is then
+  disambiguated by a re-read so the operator gets the 409 rather than a 404 for
+  a feed they can plainly still see. Honest about the residual: if the backstop
+  ever fires, the teardown has already run, so the template survives stripped.
+  That is recoverable where a deleted template is not, which is the whole trade.
+
+  **The test pins the ordering, not the status code — and the mutation is what
+  proves it.** `gateway/tests/feed-delete-starter-guard.test.ts` (5 cases).
+  Removing the early guard leaves the flagged-feed case returning **409
+  anyway**, because the backstop catches it; the test fails on `removeSource`
+  having been called and the `DELETE` having been issued. A test asserting only
+  the status would have stayed green against the bug. Gateway suite 477 → 482,
+  `tsc` clean, root ESLint 0 errors, `next build` clean.
+
+  **One web line with it:** `FeedComposer`'s delete handler rendered
+  `err.message`, which for an `ApiError` is the raw `API error 409: {…}` dump —
+  so the refusal that explains what to do would have arrived as noise. Now uses
+  `apiErrorMessage(err)`, the helper the same file already uses for `addSource`.
+
 - **2026-08-10 (one symbol, two scopes — the platform axis gets its own mark
   instead of a clause)** — SOCIAL-PROOF-RESONANCE-ADR D7 amendment,
   `web/CLAUDE.md` card chassis. **No migration, no new dial.** Web only:

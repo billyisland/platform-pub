@@ -226,12 +226,17 @@ placeholders): `docs/audits/starter-feed-repair-2026-07-22.sql`. Open:
    `accounts.onboarded_at`, which is independent of feed state, so (b) is once
    again only about the template. See §3.3.)*
 1b. **`cloneFeedForOwner` never writes `external_subscriptions` (MED, live, found 2026-08-10).** It inserts `feeds` + `feed_sources` and stops (`gateway/src/routes/feeds/crud.ts:102`), bypassing `addSource` — the exact thing this item's own repair prose flags as REQUIRED for hand-written rows, except here it is the **code path, on every signup**. Now that seeding is live again (item 1), every new member gets a feed whose external sources carry no subscription row for them. Two consequences. **The latent one is data loss:** `external-sources-gc`'s orphan test is global (`NOT EXISTS` any subscriber), so these sources survive only while the *template owner* keeps them in one of their own feeds; the day the operator removes one from their last feed, `removeSource` drops the only subscription, the GC orphans it, and past the 90-day cull window hard-deletes it — and `feed_sources.external_source_id` is `ON DELETE CASCADE`, so it vanishes from every member feed that cloned it, taking its `external_items`/`feed_items` with it. A member loses content because the operator tidied up. **The immediate one:** a cloned member is not in the external follow graph for those sources (the same row is the graph per the feed-derived-subscriptions invariant), so kind-3 publishing and author-card "Following" state both under-report them. Fix is the upsert the repair playbook already spells out, inside `cloneFeedForOwner`'s transaction, keyed on the NEW owner. **Test it against a real DB** — the invariant is a cross-table one a mocked `pool.query` cannot evaluate.
-2. **`DELETE /feeds/:id` has the same hole (LOW-MED, live).** It guards "cannot
-   delete your only feed" but not `is_starter_template`, so the identical global
-   damage is reachable by another route. Same shape as the merge guard: refuse,
-   or require the flag be cleared first. Deliberate deletion is a less likely
-   slip than a drag, which is why it wasn't batched — but the consequence is
-   identical.
+2. ~~**`DELETE /feeds/:id` has the same hole**~~ — **FIXED 2026-08-10** (FIX-PROGRAMME
+   2026-08-10). Refuses with the merge guard's own 409 `starter_template_source`.
+   Two details worth keeping: the check sits **before** the `removeSource`
+   teardown loop, since a refusal raised after it leaves the template alive but
+   stripped of the subscriptions its clones depend on; and the `DELETE` carries
+   `AND is_starter_template = FALSE` so a hand-flag landing between the check and
+   the write fails closed rather than deleting, reporting 409 instead of a
+   misleading 404. Pinned by `gateway/tests/feed-delete-starter-guard.test.ts`,
+   whose flagged-feed case is an **ordering** assertion — mutate the early guard
+   away and the status code stays 409 (the backstop catches it) while
+   `removeSource` has already run, which is the failure the test exists to catch.
 3. **Nothing surfaces which feed is the template (product call).** The flag is
    set and read only by hand (`UPDATE feeds SET is_starter_template = …`); no UI
    marks a template vessel, so it looks exactly like an ordinary feed right up

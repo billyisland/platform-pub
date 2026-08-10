@@ -16,6 +16,16 @@ const createFeedSchema = z.object({
   name: z.string().trim().max(80).default(""),
 });
 
+// Shared 409 for DELETE /feeds/:id — used by both the pre-teardown guard and
+// the DELETE's fail-closed backstop, so the two can never drift apart. Same
+// `error` code as the merge guard: to a client both mean "this feed seeds
+// every new account, unflag it first", and one code keeps the handling single.
+const STARTER_TEMPLATE_DELETE_ERROR = {
+  error: "starter_template_source",
+  message:
+    "This feed seeds every new account. Unflag it as the starter template before deleting it.",
+} as const;
+
 // Curated per-feed colour schemes (migration 112). Must mirror the scheme ids
 // in web/src/components/workspace/tokens.ts — adding a scheme touches both.
 // The web client normalises unknown ids to the light default, so a stale
@@ -396,6 +406,27 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
           .status(409)
           .send({ error: "Cannot delete your only feed" });
 
+      // A starter template is not an ordinary feed: it is the row
+      // seedStarterFeeds clones for every new account, so destroying the last
+      // flagged one silently ends new-user seeding platform-wide and every
+      // subsequent signup falls through to the client's empty "Founder's feed"
+      // mint. The damage is global, delayed, and invisible from the gesture
+      // that caused it — it lands on the NEXT signup. Merge has refused this
+      // since the 2026-07-22 prod incident; DELETE was the same hole by another
+      // route (§0l.2). Refuse rather than quietly moving the flag elsewhere:
+      // which feed seeds every new account is an operator decision, not a side
+      // effect. Checked BEFORE the teardown below — a 409 raised after
+      // removeSource has run would leave the template alive but stripped of the
+      // subscriptions its cloned feeds depend on.
+      const {
+        rows: [flagged],
+      } = await pool.query<{ is_starter_template: boolean }>(
+        `SELECT is_starter_template FROM feeds WHERE id = $1 AND owner_id = $2`,
+        [id, ownerId],
+      );
+      if (flagged?.is_starter_template)
+        return reply.status(409).send(STARTER_TEMPLATE_DELETE_ERROR);
+
       // Tear down external sources through removeSource FIRST (H6). A bare
       // DELETE cascades feed_sources away without passing through the
       // feed-derived-subscription teardown: the derived external_subscriptions
@@ -414,12 +445,31 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
         await removeSource(id, ownerId, s.id, { recordExclusion: false });
       }
 
+      // Fail closed on the flag as well as the owner. The guard above is the
+      // real one; this closes the window where an operator flags the feed by
+      // hand (the only way it is ever set) between that check and this write.
+      // In that window the teardown has already run, so the template survives
+      // stripped of its subscriptions — bad, and recoverable, where a deleted
+      // template is neither.
       const { rowCount } = await pool.query(
-        `DELETE FROM feeds WHERE id = $1 AND owner_id = $2`,
+        `DELETE FROM feeds
+          WHERE id = $1 AND owner_id = $2 AND is_starter_template = FALSE`,
         [id, ownerId],
       );
-      if (rowCount === 0)
+      if (rowCount === 0) {
+        // Zero rows means the feed vanished OR it was flagged in that window.
+        // Say which — a 404 for a feed the operator can plainly still see is
+        // the kind of misleading error that sends someone hunting the wrong bug.
+        const {
+          rows: [survivor],
+        } = await pool.query<{ is_starter_template: boolean }>(
+          `SELECT is_starter_template FROM feeds WHERE id = $1 AND owner_id = $2`,
+          [id, ownerId],
+        );
+        if (survivor?.is_starter_template)
+          return reply.status(409).send(STARTER_TEMPLATE_DELETE_ERROR);
         return reply.status(404).send({ error: "Feed not found" });
+      }
       return reply.status(204).send();
     },
   );

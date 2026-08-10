@@ -370,7 +370,10 @@ export function FeedComposer({
       await workspaceFeedsApi.remove(feed.id);
       onDeleted?.(feed.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete feed.");
+      // Server copy when there is any — the starter-template refusal explains
+      // what to do about it, and ApiError.message is the raw "API error 409:
+      // {…}" dump, which explains nothing.
+      setError(apiErrorMessage(err) ?? "Failed to delete feed.");
       setDeleting(false);
       setConfirmingDelete(false);
     }
