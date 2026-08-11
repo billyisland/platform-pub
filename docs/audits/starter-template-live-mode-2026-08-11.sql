@@ -31,6 +31,16 @@
 -- ALSO WORTH KNOWING: the clone is taken on first WORKSPACE LOAD, not at admit
 -- time (`listFeedsForOwner` seeds for any owner with zero feeds). A member
 -- admitted today who first signs in next week gets NEXT WEEK's feed.
+--
+-- -----------------------------------------------------------------------------
+-- AS RUN, 2026-08-11. Part 1 found the 08-10 snapshot ALREADY DELETED and zero
+-- feeds flagged platform-wide — seeding was dead a second time. So Parts 1c and
+-- 3 were never needed and Part 2 collapsed to the single UPDATE flagging
+-- c1a4965a-2785-483a-918d-ccad67fce19c. Both halves of the file are kept: Part 2
+-- is still the correct shape whenever a snapshot DOES exist, and Part 4 is the
+-- revert. **Run Part 5 as well** — it is the half of a seeding repair that had
+-- never been run before, and it found someone.
+-- -----------------------------------------------------------------------------
 -- =============================================================================
 
 
@@ -207,3 +217,51 @@ BEGIN;
   SELECT id, name, hidden, is_starter_template FROM feeds WHERE is_starter_template;
 
 COMMIT;
+
+
+-- =============================================================================
+-- PART 5 — WHO WAS MISSED.  Run this after ANY seeding outage, not just this
+-- one. Restoring the flag fixes the next signup; it does nothing for the people
+-- who signed up while it was down, and nothing in the product will ever tell
+-- you about them. The 2026-08-10 repair restored seeding and never asked, which
+-- is why `edlake` sat in front of an empty workspace from 2026-07-22 until
+-- 2026-08-11.
+--
+-- The signature of a missed account: created inside the outage window, holding
+-- exactly ONE feed, with ZERO sources — the client's `DEFAULT_FEED_NAME` mint
+-- ("Founder's feed"), which is what WorkspaceView falls back to when the
+-- bootstrap returns nothing.
+-- =============================================================================
+
+-- 5a. The roll. Widen <OUTAGE_START> to the beginning of the window; the
+-- accounts to look at are those whose only feed has 0 sources.
+SELECT a.username, a.created_at, f.id AS feed_id, f.name,
+       (SELECT COUNT(*) FROM feed_sources fs WHERE fs.feed_id = f.id) AS sources
+  FROM accounts a
+  LEFT JOIN feeds f ON f.owner_id = a.id
+ WHERE a.created_at > '<OUTAGE_START>'
+ ORDER BY a.created_at DESC, f.sort_rank;
+
+-- 5b. Before deleting any feed, look at what the delete would take with it.
+-- Expect 0 — a feed with no sources surfaces no items to save — but this is a
+-- DELETE, so look rather than assume.
+SELECT COUNT(*) FROM feed_saves WHERE feed_id = '<EMPTY_FEED_ID>';
+
+-- 5c. The repair, ONE ACCOUNT AT A TIME, and only AFTER a feed is flagged again
+-- — delete this while nothing carries the flag and the member simply gets a
+-- fresh empty mint on their next load.
+--
+-- Bare SQL is correct HERE and nowhere else in this file: a zero-source feed has
+-- no `feed_sources`, so there are no derived `external_subscriptions` for
+-- `removeSource` to tear down and nothing for a raw DELETE to strand. It also
+-- has to be SQL — `DELETE /feeds/:id` refuses to delete a member's only feed,
+-- which is exactly what this is.
+--
+-- Leaving them at ZERO feeds is the point: `listFeedsForOwner` seeds any owner
+-- with none, so their next workspace load clones the template as if they had
+-- signed up today.
+DELETE FROM feeds WHERE id = '<EMPTY_FEED_ID>';
+
+-- 5d. Confirm: the account now holds no feeds, and will be seeded on next load.
+SELECT COUNT(*) FROM feeds f JOIN accounts a ON a.id = f.owner_id
+ WHERE a.username = '<MISSED_USERNAME>';
