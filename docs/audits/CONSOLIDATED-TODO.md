@@ -873,6 +873,18 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
     **Explicitly NOT in scope: the empty-vessel placeholder** (§2.7), deferred by the operator the same day. Explore therefore survives this item as the empty-feed default — read §2.7 before assuming this item removes explore from the site.
 
+    **This item now has a dependent: §9.17 (feed formulas) cannot start until it lands.** That raises its priority — it was previously justified only by its own two arguments (Follow with no feed consequence; a column with one legal value).
+
+17. **Feed formulas — a feed as a transmissible object** (design accepted 2026-08-11, **unbuilt**). Spec: `docs/adr/FEED-FORMULAS-ADR.md`. Publishing a feed's *composition* as an immutable artifact with a share token, redeemable by any account into a new fully-owned feed. **Blocked on §9.16** — a `reach` row is deictic and unrepresentable in a portable formula; that item already names this as its justification.
+
+    **Six settled decisions** (ADR §4): snapshot, never live-synced (D1); token link only, no directory in v1 (D2); redemption flows through the exported `addSource` core and explicitly **not** through `cloneFeedForOwner`, whose lock-free/job-free shortcuts are licensed only by the zero-feeds precondition a redeemer lacks (D3); sources stored by portable identity, never local FK (D4); attribution travels, adoption counts do not (D7); the NIP-51-shaped serialisation format is committed now and the Nostr publish deferred to Phase 4 (D8).
+
+    **It is also the structural fix for §0l.** D6 retires `feeds.is_starter_template`: the operator's default seed becomes a designated formula, which has no `feeds` row to delete, nothing on the workspace floor that reads as a stray duplicate, and an `ON DELETE SET NULL` back-reference so deleting the feed it was cut from leaves it whole. The template has now been destroyed twice for exactly the reason this removes. Both hand-written delete guards retire with the flag — **but only in Phase 2, after seeding is verified running off the formula**; dropping the flag in the same migration would re-open the outage it exists to close.
+
+    **Two traps recorded in the ADR** and worth carrying even if the build is far off. (1) `from_starter` is on the wire and forks live Explain copy (`ExplainOverlay.tsx:323`) — it must be re-derived from `from_formula_id`, not dropped. (2) The seed path and the share path share a mechanism but **must not share a brake**: gating default-seed redemption on `FEED_FORMULAS_ENABLED` would silently end new-account seeding the day the flag goes off, which is §0l again from the opposite direction.
+
+    **One pre-check before Phase 0 starts:** confirm the currently-flagged template `c1a4965a-…` carries no `reach` row. The 2026-08-10 prod survey answered this for the *then*-flagged set and returned zero — but that ran before `c1a4965a` was flagged on 08-11, so it does not cover the feed that matters. One query.
+
 ## 10. Deliberately parked (not pickup work — listed to keep it out of the queue)
 
 - **Trust graph** (behind `TRUST_SYSTEM_ENABLED`; Phases 5–6 gated on scale) and the dormant PipPanel/PipTrigger. Known spec gaps parked with it: Layer 4 "valued set" signals hand-waved; Layer 1 signals for external authors not persisted by adapters.
