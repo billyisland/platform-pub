@@ -84,9 +84,10 @@ starts.
   `external_subscriptions` row for its one external source · revoke 204s · a second
   redeem 410s · the page still resolves flagged `revoked` · the already-redeemed feed is
   untouched. With the flag off all six routes 404 while `GET /workspace/feeds` still
-  200s. **Not done, and recorded as not done: the browser look.** No browser was
-  available in the session, so both surfaces have been read as markup and never seen —
-  which is precisely the gap that put four chassis defects into the landing page.
+  200s. **The browser look was held as a gate, not skipped.** No browser was available
+  in the session, so rather than push two surfaces that had been read as markup and
+  never seen — precisely the gap that put four chassis defects into the landing page —
+  the commit sat unpushed until the developer opened both. Confirmed good, then pushed.
 
 - **2026-08-11 (a feed becomes a thing you can hand to someone)** —
   **Migration 178, dark behind `FEED_FORMULAS_ENABLED`.** FEED-FORMULAS-ADR Phase 1,
