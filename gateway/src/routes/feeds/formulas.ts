@@ -244,22 +244,22 @@ export type FreezeResult =
  * any INSERT, so the caller's transaction is untouched either way, and the
  * route needs the counts to say anything useful.
  */
-export async function freezeFeedIntoFormula(
+/**
+ * Read a feed's sources in the form `freezeSource` consumes, in composer order.
+ *
+ * ONE home, because freeze and PREVIEW must not drift. The preview's whole job
+ * is to tell an author what a recipient would receive, so a preview computed
+ * over a different row set — or a different ORDER BY — is a preview of
+ * something that will never be published. Composer order (§11): feed_sources
+ * has no ordering column, so position comes from created_at with id as the
+ * tiebreak, the same ORDER BY loadFeedSources uses, so the formula page lists
+ * sources in the order the author sees them.
+ */
+async function loadFeedSourcesForFreeze(
   client: { query: typeof pool.query },
-  params: {
-    feedId: string;
-    ownerId: string;
-    name: string;
-    description: string | null;
-    appearance: Record<string, unknown>;
-    maxSources: number;
-  },
-): Promise<FreezeResult> {
-  // Composer order (§11): feed_sources has no ordering column, so position
-  // comes from created_at with id as the tiebreak — the same ORDER BY
-  // loadFeedSources already uses, so the formula page lists sources in the
-  // order the author sees them.
-  const { rows: sourceRows } = await client.query<FeedSourceForFreeze>(
+  feedId: string,
+): Promise<FeedSourceForFreeze[]> {
+  const { rows } = await client.query<FeedSourceForFreeze>(
     `SELECT fs.source_type, fs.weight, fs.sampling_mode, fs.exclude_replies, fs.tag_name,
        acc.nostr_pubkey AS account_pubkey, acc.display_name AS account_display_name,
        acc.username AS account_username, acc.avatar_blossom_url AS account_avatar,
@@ -274,16 +274,40 @@ export async function freezeFeedIntoFormula(
      LEFT JOIN external_sources xs ON xs.id = fs.external_source_id
      WHERE fs.feed_id = $1
      ORDER BY fs.created_at ASC, fs.id ASC`,
-    [params.feedId],
+    [feedId],
   );
+  return rows;
+}
 
+/** Partition a feed's sources into what travels and how much does not. */
+function partitionForFreeze(rows: FeedSourceForFreeze[]): {
+  frozen: FrozenSource[];
+  excluded: number;
+} {
   const frozen: FrozenSource[] = [];
   let excluded = 0;
-  for (const row of sourceRows) {
+  for (const row of rows) {
     const f = freezeSource(row);
     if (f) frozen.push(f);
     else excluded++;
   }
+  return { frozen, excluded };
+}
+
+export async function freezeFeedIntoFormula(
+  client: { query: typeof pool.query },
+  params: {
+    feedId: string;
+    ownerId: string;
+    name: string;
+    description: string | null;
+    appearance: Record<string, unknown>;
+    maxSources: number;
+  },
+): Promise<FreezeResult> {
+  const { frozen, excluded } = partitionForFreeze(
+    await loadFeedSourcesForFreeze(client, params.feedId),
+  );
 
   // A formula with nothing in it would redeem to an empty feed, which then
   // auto-serves the explore placeholder (§2.7) — so the recipient would receive
@@ -436,6 +460,70 @@ async function loadFormulaSources(
     [formulaId],
   );
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Preview — the recipient's-eye view, BEFORE the freeze
+// ---------------------------------------------------------------------------
+
+/**
+ * What a recipient would receive if this feed were published right now.
+ *
+ * §6 requires this to exist and to run BEFORE the freeze: "publishing exposes a
+ * follow graph … the preview must show the recipient's-eye view before the
+ * freeze, so nobody publishes something whose legibility they had not
+ * considered." D5 adds the harder half — the excluded count has to be on the
+ * PUBLISH preview, not only on the finished page, or an author with three email
+ * sources believes they published their whole feed and only learns otherwise by
+ * opening their own link.
+ *
+ * It runs the real `freezeSource` over the real `loadFeedSourcesForFreeze`, so
+ * the answer is the freeze's own answer rather than a second implementation of
+ * the allow-list. The alternative — deriving portability client-side — would
+ * put a copy of D5 in the web, where it would drift silently the first time a
+ * protocol is added to the enum (the three publish-side validators are the
+ * standing lesson about what that costs).
+ *
+ * The two refusals are REPORTED rather than thrown, because the preview's job
+ * is to show the author the refusal before they press anything: `empty` is what
+ * freeze would 400 on, `too_large` what it would 409 on.
+ */
+export async function previewFeedFormula(
+  client: { query: typeof pool.query },
+  feedId: string,
+  maxSources: number,
+): Promise<{
+  sources: ReturnType<typeof formulaSourceToResponse>[];
+  sourceCount: number;
+  excludedCount: number;
+  refusal: "empty" | "too_large" | null;
+}> {
+  const { frozen, excluded } = partitionForFreeze(
+    await loadFeedSourcesForFreeze(client, feedId),
+  );
+  return {
+    // Projected through the SAME function the published page uses, so the
+    // preview and the page cannot render the same composition two ways. The
+    // adapter is only shape: a FrozenSource has not been assigned a row yet.
+    sources: frozen.map((f, i) =>
+      formulaSourceToResponse({
+        position: i,
+        source_type: f.sourceType,
+        protocol: f.protocol,
+        display_name: f.displayName,
+        avatar_url: f.avatarUrl,
+        tag_value: f.tagValue,
+      }),
+    ),
+    sourceCount: frozen.length,
+    excludedCount: excluded,
+    refusal:
+      frozen.length === 0
+        ? "empty"
+        : frozen.length > maxSources
+          ? "too_large"
+          : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +720,42 @@ async function resolveFormulaSource(
 // ---------------------------------------------------------------------------
 
 export function registerFeedFormulaRoutes(app: FastifyInstance) {
+  // -------------------------------------------------------------------------
+  // GET /workspace/feeds/:id/formula/preview — what a recipient would receive
+  //
+  // Read-only, and the composer's publish sheet renders it before offering the
+  // button (§6, D5). Registered BEFORE the POST below only for readability;
+  // Fastify routes on method + path, so the order is not load-bearing.
+  // -------------------------------------------------------------------------
+  app.get<{ Params: { id: string } }>(
+    "/feeds/:id/formula/preview",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!formulasEnabled()) return reply.status(404).send({ error: "Not found" });
+      const ownerId = req.session!.sub;
+      const { id } = req.params;
+      if (!UUID_RE.test(id))
+        return reply.status(400).send({ error: "Invalid feed id" });
+
+      // Owner-scoped, like every other feed read: a preview names every source
+      // in the feed, so it is exactly as private as the feed itself.
+      const feed = await loadFeed(id, ownerId);
+      if (!feed) return reply.status(404).send({ error: "Feed not found" });
+
+      const cap = await formulaMaxSources();
+      const preview = await previewFeedFormula(pool, id, cap);
+      return reply.send({
+        preview: {
+          ...preview,
+          // The defaults the freeze would apply if the author changes neither.
+          name: feed.name,
+          appearance: feed.appearance ?? {},
+          maxSources: cap,
+        },
+      });
+    },
+  );
+
   // -------------------------------------------------------------------------
   // POST /workspace/feeds/:id/formula — freeze this feed's composition
   // -------------------------------------------------------------------------

@@ -25,6 +25,8 @@ import { registerFeedFormulaRoutes } from "./formulas.js";
 // POST   /workspace/feeds/:id/sources           — add a source (slice 4)
 // PATCH  /workspace/feeds/:id/sources/:sid      — update weight/sampling/muted
 // DELETE /workspace/feeds/:id/sources/:sid      — remove a source (slice 4)
+// GET    /workspace/feeds/:id/formula/preview   — recipient's-eye view, pre-freeze (formulas)
+// POST   /workspace/feeds/:id/formula           — freeze this composition (formulas)
 //
 // Slice 3 shipped schema + CRUD + an empty-sources placeholder for /items:
 // when a feed has no feed_sources rows the route falls back to the caller's

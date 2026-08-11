@@ -11,6 +11,7 @@ import pg from "pg";
 import {
   freezeFeedIntoFormula,
   freezeSource,
+  previewFeedFormula,
   redeemFormulaForOwner,
 } from "../src/routes/feeds/formulas.js";
 
@@ -321,6 +322,98 @@ describe.skipIf(!DB_URL)("freeze — a feed becomes a formula", () => {
       [feedId],
     );
     expect(rows).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Preview — the recipient's-eye view before the freeze (§6, D5).
+  //
+  // THE PROPERTY THAT MATTERS IS AGREEMENT WITH THE FREEZE, not that the
+  // preview is individually plausible. A preview computed over a different row
+  // set, a different ORDER BY, or a second copy of the allow-list is a preview
+  // of something that will never be published — and it fails in the reassuring
+  // direction, since the author is shown MORE than travels and learns otherwise
+  // only by opening their own link. So every assertion below compares the two
+  // rather than checking the preview against a hand-written expectation.
+  // ---------------------------------------------------------------------------
+  describe("preview", () => {
+    it("names exactly what the freeze would carry, in the same order", async () => {
+      const p = await previewFeedFormula(client as never, feedId, 200);
+      const r = await freeze();
+      if (!r.ok) throw new Error("freeze refused");
+      const { rows } = await client.query<{
+        position: number;
+        source_type: string;
+        display_name: string | null;
+        tag_value: string;
+      }>(
+        `SELECT position, source_type, display_name, tag_value
+           FROM feed_formula_sources WHERE formula_id = $1 ORDER BY position`,
+        [r.formulaId],
+      );
+      expect(p.sourceCount).toBe(r.sourceCount);
+      expect(p.sources.map((s) => [s.position, s.kind])).toEqual(
+        rows.map((x) => [x.position, x.source_type]),
+      );
+      // The labels are what the author actually reads, so they are the thing
+      // that must match — a preview agreeing on kinds while showing different
+      // names would still mislead.
+      expect(p.sources.map((s) => s.label)).toEqual(
+        rows.map((x) =>
+          x.source_type === "tag" ? `#${x.tag_value}` : (x.display_name ?? x.tag_value),
+        ),
+      );
+    });
+
+    it("states the excluded count, which is the whole of D5", async () => {
+      const p = await previewFeedFormula(client as never, feedId, 200);
+      const r = await freeze();
+      if (!r.ok) throw new Error("freeze refused");
+      expect(p.excludedCount).toBe(1);
+      expect(p.excludedCount).toBe(r.excludedCount);
+      // And the excluded one is genuinely absent rather than merely counted:
+      // the email source's secret alias must not reach a preview either, since
+      // the preview is rendered in the author's browser and copied about.
+      for (const s of p.sources) {
+        expect(s.protocol).not.toBe("email");
+        expect(s.label).not.toContain("in.all.haus");
+      }
+    });
+
+    it("writes nothing — it is a read, and pressing nothing must publish nothing", async () => {
+      await previewFeedFormula(client as never, feedId, 200);
+      const { rows } = await client.query(
+        `SELECT 1 FROM feed_formulas WHERE source_feed_id = $1`,
+        [feedId],
+      );
+      expect(rows).toHaveLength(0);
+    });
+
+    it("reports the refusal the freeze would raise, rather than throwing", async () => {
+      // too_large: the author sees the cap before pressing publish.
+      const big = await previewFeedFormula(client as never, feedId, 2);
+      expect(big.refusal).toBe("too_large");
+      expect(big.sourceCount).toBe(3);
+
+      // empty: strip the portable sources and leave the email one behind, so
+      // the refusal arrives WITH the count that explains it.
+      await client.query(
+        `DELETE FROM feed_sources WHERE feed_id = $1 AND source_type <> 'external_source'`,
+        [feedId],
+      );
+      await client.query(
+        `DELETE FROM feed_sources fs USING external_sources xs
+          WHERE fs.external_source_id = xs.id AND fs.feed_id = $1 AND xs.protocol = 'rss'`,
+        [feedId],
+      );
+      const empty = await previewFeedFormula(client as never, feedId, 200);
+      expect(empty.refusal).toBe("empty");
+      expect(empty.sources).toHaveLength(0);
+      expect(empty.excludedCount).toBe(1);
+      // Agreement again: the freeze refuses on the same grounds.
+      const r = await freeze();
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe("empty");
+    });
   });
 });
 

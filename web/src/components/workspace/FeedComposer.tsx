@@ -17,6 +17,8 @@ import { getNetworkCapabilities } from "../../lib/api/linked-accounts";
 import { useFollowImportRun } from "../../hooks/useFollowImportRun";
 import { FollowImportStatus } from "../network/FollowImportStatus";
 import { FeedSyncSection } from "./FeedSyncSection";
+import { FeedFormulaSection } from "./FeedFormulaSection";
+import { formulasAvailable } from "../../lib/api/formulas";
 import { Glasshouse } from "./Glasshouse";
 import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
@@ -149,6 +151,13 @@ export function FeedComposer({
     null,
   );
 
+  // Feed formulas (FEED-FORMULAS-ADR Phase 1). FEED_FORMULAS_ENABLED is a
+  // SERVER flag and stays the only one — there is no NEXT_PUBLIC twin to flip
+  // in lockstep. The web asks instead, because this is the layout case the
+  // brake rule carves out: an action that 404s when pressed is worse than an
+  // action that is absent, so the section has to know before it renders.
+  const [canPublishFormula, setCanPublishFormula] = useState(false);
+
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -176,6 +185,7 @@ export function FeedComposer({
     void getNetworkCapabilities().then((c) =>
       setImportable(c.followImportProtocols ?? []),
     );
+    void formulasAvailable().then(setCanPublishFormula);
   }, [open]);
 
   // Escape + scroll-lock are owned by Glasshouse; this effect only resets the
@@ -768,6 +778,12 @@ export function FeedComposer({
             </div>
           </>
         )}
+
+        {/* Publish this feed as a formula (FEED-FORMULAS-ADR §3). Below
+            appearance because the colour scheme travels with the composition
+            (§5), so the author sets the look they are handing over before they
+            are offered the chance to hand it over. */}
+        {canPublishFormula && <FeedFormulaSection feedId={feed.id} />}
 
         {onReorder && allFeeds && allFeeds.length > 1 && (
           <>

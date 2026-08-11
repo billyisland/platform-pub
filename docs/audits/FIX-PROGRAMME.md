@@ -23,6 +23,71 @@ starts.
 
 ## Progress
 
+- **2026-08-11 (the formula gets a surface, and the author gets to see what they are handing over)** —
+  **FEED-FORMULAS-ADR Phase 1's web half**, plus the one route the morning's server
+  half turned out not to have; CONSOLIDATED-TODO §9.17. Still dark behind
+  `FEED_FORMULAS_ENABLED`. As-built: ADR §13.
+
+  **§8 had listed "freeze/preview/redeem" in Phase 1 all along, and what shipped was
+  the wrong preview.** `GET /formulas/:token` is what a RECIPIENT sees, which is a
+  different object from the one §6 requires — the author's, *before* the freeze,
+  because "publishing exposes a follow graph … so nobody publishes something whose
+  legibility they had not considered". D5 is the sharper half: the excluded count has
+  to be on the PUBLISH preview or an author with three email sources learns they
+  published two-thirds of a feed by opening their own link and counting. So
+  `GET /workspace/feeds/:id/formula/preview` — owner-scoped, flag-gated, read-only —
+  runs the real `freezeSource` over the real query and returns the same projection the
+  public page uses, plus the refusal the freeze *would* raise (`empty` / `too_large`)
+  so the sheet says why the button is unavailable instead of letting an author press it
+  and read a 400.
+
+  **The freeze's query is now one body (`loadFeedSourcesForFreeze`), and that is
+  correctness rather than tidiness.** Preview and freeze must agree about the row set
+  AND the `ORDER BY`, and a drifted preview fails in the reassuring direction — it
+  shows the author MORE than travels. So every preview assertion compares against what
+  the freeze then writes, rather than against a hand-written expectation.
+
+  **Nothing about portability is derived client-side.** `WorkspaceFeedSource` carries
+  no `protocol`, so the web literally cannot tell an email source from an RSS one — but
+  the reason not to fix that by widening the wire is the deeper one: a client-side copy
+  of the D5 allow-list drifts the first time a protocol joins the enum, which is the
+  standing lesson of the three publish-side validators.
+
+  **The brake needed a web-visible answer and got a probe, not a twin.** The composer's
+  action is the layout case the dark-ship rule carves out (an action that 404s on press
+  is worse than one that is absent), so rather than a `NEXT_PUBLIC` flag to keep in
+  lockstep, `formulasAvailable()` probes `GET /my/formulas` once per session — 200 ⇒
+  live, 404 ⇒ dark, anything else ⇒ dark for that render and cached as *nothing*, the
+  same terminal-vs-ambiguous split as the Stripe classifiers and the internal-parity
+  probe. Reaching the route IS the proof, so there is no second value to drift.
+
+  **Two rules the surfaces carry that the ADR only implies.** A revoked formula's page
+  shows the refusal and NOT the composition — the route still returns the sources
+  (revocation is a flag, not a delete, D10) but rendering a retracted source list
+  publishes exactly what the author withdrew. And "My formulas" shipped WITH the publish
+  action rather than after it: §7 lists it as a Phase 1 surface, and building the action
+  alone would have meant a link that exists for exactly as long as the sheet stays open,
+  since nothing else in the app can retrieve one.
+
+  Files: `web/src/app/f/[token]/page.tsx`, `web/src/components/workspace/FeedFormulaSection.tsx`,
+  `web/src/lib/api/formulas.ts`, `FeedComposer.tsx`, `gateway/src/routes/feeds/formulas.ts`,
+  `DEPLOYMENT.md`.
+
+  **Evidence.** Gateway 572 → 576; four mutations run and all four caught (preview blind
+  to the excluded count · preview in reverse composer order · preview never reporting a
+  refusal · preview writing a row). Root `tsc` + ESLint 0 errors, `check-hairlines.sh`
+  clean on every touched file, `next build` green with `/f/[token]` in the route table.
+  Loop driven end to end against a rebuilt dev stack on a four-source feed whose fourth
+  is a real `email` row: preview excludes and counts it and writes nothing · publish
+  returns the link · the logged-out projection carries no `in.all.haus` alias anywhere ·
+  redeem as a second account mints a feed with `from_formula_id` set and an
+  `external_subscriptions` row for its one external source · revoke 204s · a second
+  redeem 410s · the page still resolves flagged `revoked` · the already-redeemed feed is
+  untouched. With the flag off all six routes 404 while `GET /workspace/feeds` still
+  200s. **Not done, and recorded as not done: the browser look.** No browser was
+  available in the session, so both surfaces have been read as markup and never seen —
+  which is precisely the gap that put four chassis defects into the landing page.
+
 - **2026-08-11 (a feed becomes a thing you can hand to someone)** —
   **Migration 178, dark behind `FEED_FORMULAS_ENABLED`.** FEED-FORMULAS-ADR Phase 1,
   server half; CONSOLIDATED-TODO §9.17. A *formula* is a feed's composition frozen at
