@@ -219,6 +219,8 @@ placeholders): `docs/audits/starter-feed-repair-2026-07-22.sql`. Open:
 
    **Watch the timing number as the corpus grows.** 2.8s is a pessimistic reading (an unbounded `COUNT` where the real read is cursor-paged), but a 72-source feed against 90k items is the thing every new member now inherits, and both sides of that join grow. Re-run the §1d shape before the beta opens.
 
+   **SUPERSEDED IN PART, 2026-08-11 — the separate-snapshot choice is reversed for the pre-launch month.** Operator ruling: while the beta holds no genuine members (only the operator's friends on test accounts), building the welcome mat is itself ongoing work, and a snapshot means every improvement reaches new members only when someone remembers to re-copy 72 rows by hand — with the two feeds drifting silently in between. So the flag moves onto the operator's **working, visible** feed and the hidden snapshot is deleted: one feed, edited live, cloned as-is by whoever signs up next. Recipe (survey → move the flag in one transaction → dispose of the snapshot **through the UI**, because a raw `DELETE FROM feeds` strands the derived subscriptions the H6 teardown exists to drop): `docs/audits/starter-template-live-mode-2026-08-11.sql`, whose Part 4 is the revert. **What the reversal costs, stated so it is a choice and not a discovery:** there is no staging left — a half-finished edit is what the next signup clones, and a removed source leaves every future clone at once. **What it buys beyond the live edit:** a flagged feed cannot be deleted or merged away, so the operator's daily-driver feed becomes the one feed on the site that cannot be destroyed by accident. **Revert when the beta opens** — that is the day the snapshot rationale above becomes correct again, and Part 4 restores it. Note also that the clone is taken on first WORKSPACE LOAD, not at admit time, so a member admitted today who first signs in next week gets next week's feed.
+
    *(2026-08-07: this repair no longer has a hidden second effect. Until then
    the destroyed template was the only reason the first-session import offer
    still appeared — it fired on the zero-feeds branch — so landing (b) would
@@ -243,6 +245,16 @@ placeholders): `docs/audits/starter-feed-repair-2026-07-22.sql`. Open:
    to the point of destroying it. The guard now catches the merge path, but a
    badge on the vessel bar — or an operator row in the admin dashboard — is what
    would have prevented the gesture. Decide scope.
+
+   **The 2026-08-11 live-mode ruling changes what this item is for.** It was
+   about the destroying gesture, which both guards now refuse. Under live mode
+   the template is the operator's daily-driver feed, so the unmarked state is no
+   longer about deletion at all: **every ordinary edit now ships to the next
+   signup, and nothing on the surface says so while you are making it.** A
+   badge would now be telling the operator what an edit *means*, not what a drag
+   would destroy — a different and better argument for the same small feature.
+   Scope it as one marker in `FeedComposer` (it already renders the flag's 409
+   copy on refusal, so the string exists), not an admin-dashboard row.
 4. **The 10s timeout is a feed-size cliff, not a merge bug (MED, latent).** Any
    feed accumulating enough sources hits it — `sourceFilteredItems`'s `matched`
    CTE joins `feed_items × feed_sources` under a polymorphic `OR` with a

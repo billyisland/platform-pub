@@ -218,8 +218,14 @@ async function seedStarterFeeds(ownerId: string): Promise<number> {
     );
     let rank = 1;
     for (const t of templates) {
-      // A template owned by the new account would self-reference; skip (can't
-      // happen for a brand-new account, but cheap and defensive).
+      // No self-reference check, and none is needed: seeding runs only for an
+      // owner with ZERO feeds (checked twice above, the second time under the
+      // lock), and a template's owner necessarily has at least the template.
+      // So `t.owner_id === ownerId` is unreachable here. (The comment this
+      // replaces claimed a defensive skip that was never in the code — worth
+      // correcting rather than deleting, because the reason it is safe is the
+      // zero-feeds precondition, which is also what licenses the two departures
+      // from addSource inside cloneFeedForOwner.)
       await cloneFeedForOwner(client, t.id, ownerId, rank);
       rank++;
     }
