@@ -109,7 +109,11 @@ const patchFeedSchema = z
 // Clone one template feed for a new owner inside an open transaction. Returns
 // the new feed id. sortRank is supplied by the caller so a batch of clones gets
 // a stable 1..N order.
-async function cloneFeedForOwner(
+// Exported for the DB-backed test only (feed-clone-subscriptions.test.ts) —
+// what it must write spans feeds → feed_sources → external_subscriptions →
+// external_sources, which only Postgres can evaluate. It already takes its
+// client, so the test drives it inside a transaction it rolls back.
+export async function cloneFeedForOwner(
   client: { query: typeof pool.query },
   templateId: string,
   ownerId: string,
@@ -135,6 +139,45 @@ async function cloneFeedForOwner(
             tag_name, reach_kind, weight, sampling_mode, exclude_replies
        FROM feed_sources WHERE feed_id = $2`,
     [feed.id, templateId],
+  );
+  // Keep the feed-derived-subscription invariant. The INSERT above writes
+  // feed_sources directly, bypassing addSource — so without this the new owner
+  // holds feed rows pointing at external sources they have no subscription to,
+  // and the harm runs in two directions. The latent one is data loss:
+  // external-sources-gc's orphan test is GLOBAL (`NOT EXISTS` any subscriber),
+  // so a cloned source survives only while the TEMPLATE owner keeps it in one
+  // of their own feeds; the day they remove it from their last one it drops to
+  // zero subscribers, is orphaned, and past the cull window hard-deleted — and
+  // feed_sources.external_source_id is ON DELETE CASCADE, so it silently
+  // vanishes from every member feed that cloned it, taking its external_items
+  // and feed_items with it. A member loses content because the operator tidied
+  // up. The immediate one: this same row IS the external follow graph, so
+  // without it a cloned member is absent from kind-3 publishing and reads as
+  // not-Following on the author card for sources sitting in their own feed.
+  //
+  // Two deliberate departures from addSource. No `feed_sub` advisory lock:
+  // seeding runs only for an owner with ZERO feeds, under its own per-owner
+  // feed-seed lock, so there is no concurrent teardown for this subscriber to
+  // race (and taking a second lock here would add a deadlock surface for no
+  // gain). No fetch job either — the source is already subscribed and polling
+  // for the template owner, and enqueueing one per clone would stampede the
+  // worker on every signup.
+  await client.query(
+    `INSERT INTO external_subscriptions (subscriber_id, source_id)
+     SELECT $1, fs.external_source_id
+       FROM feed_sources fs
+      WHERE fs.feed_id = $2 AND fs.source_type = 'external_source'
+     ON CONFLICT (subscriber_id, source_id) DO NOTHING`,
+    [ownerId, feed.id],
+  );
+  // A new subscriber means the source should be polling, exactly as addSource
+  // treats one — revives anything the GC had deactivated or marked orphaned.
+  await client.query(
+    `UPDATE external_sources
+        SET is_active = TRUE, orphaned_at = NULL, updated_at = now()
+      WHERE id IN (SELECT external_source_id FROM feed_sources
+                    WHERE feed_id = $1 AND source_type = 'external_source')`,
+    [feed.id],
   );
   return feed.id;
 }

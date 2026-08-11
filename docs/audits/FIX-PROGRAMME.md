@@ -23,6 +23,51 @@ starts.
 
 ## Progress
 
+- **2026-08-11 (a seeded member finally owns the sources in their own feed)** —
+  CONSOLIDATED-TODO §0l.1b. **No migration, no flag.** Gateway + a DB-backed
+  test. Found while reading the seeding path to write the §0l repair.
+
+  **`cloneFeedForOwner` wrote `feeds` and `feed_sources` and stopped**, bypassing
+  `addSource` — which is precisely what §0l's own repair prose marks REQUIRED for
+  hand-written rows, except this was the code path, on every signup, for as long
+  as starter seeding has worked. It mattered more the moment the template was
+  restored (same session): every new member was about to start accumulating feed
+  rows pointing at external sources they held no `external_subscriptions` row
+  for.
+
+  **Why that is data loss and not bookkeeping.** `external-sources-gc`'s orphan
+  test is GLOBAL — `NOT EXISTS` any subscriber, not any subscriber *of yours* —
+  so a cloned source survived only while the TEMPLATE owner kept it in one of
+  their own feeds. The day they removed it from their last one it fell to zero
+  subscribers, was orphaned, and past the 90-day cull window hard-deleted; and
+  `feed_sources.external_source_id` is `ON DELETE CASCADE`, so it vanished out of
+  every member feed that had cloned it, carrying its `external_items` and
+  `feed_items` with it. A member loses content because the operator tidied up,
+  with nothing linking the cause to the effect. The second harm is immediate
+  rather than latent: the same row IS the external follow graph, so a cloned
+  member was absent from kind-3 publishing and read as not-Following on the
+  author card for sources sitting in their own feed.
+
+  **Two deliberate departures from `addSource`, both in the code.** No
+  `feed_sub` advisory lock — seeding runs only for an owner with ZERO feeds,
+  under its own per-owner `feed-seed` lock, so there is no concurrent teardown
+  for this subscriber to race, and taking a second lock would buy a deadlock
+  surface for nothing. And no fetch job — the source is already subscribed and
+  polling for the template owner, so enqueueing one per clone would stampede the
+  worker on every signup.
+
+  **DB-backed, because the claim spans four tables.** `cloneFeedForOwner` is now
+  exported for the test alone; it already took its client, so the test drives it
+  inside a transaction it always rolls back (`gateway/tests/feed-clone-subscriptions.test.ts`,
+  5 cases). The case worth having is the failure mode run end to end: clone,
+  then delete the operator's own subscription as `removeSource` would, then
+  evaluate the GC's phase-0 predicate verbatim and assert the source is NOT
+  orphanable. **Mutation run:** removing the INSERT fails 3 of 5. The two
+  survivors are correct and worth naming — the revival case passes because the
+  `external_sources` UPDATE is untouched, and the idempotency case passes because
+  with nothing inserted there is nothing left to conflict. Gateway suite 482 →
+  533 with a DB URL (47 files, no skips), `tsc` clean, root ESLint 0 errors.
+
 - **2026-08-10 (the second route to the July incident is closed, and the guard
   had to go in front of the teardown)** — CONSOLIDATED-TODO §0l.2. **No
   migration, no flag.** Gateway + one web line + a new test.
