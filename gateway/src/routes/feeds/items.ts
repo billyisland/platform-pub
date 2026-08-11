@@ -236,12 +236,15 @@ async function sourceFilteredItems(
   // paginator exactly as before, once.
   const asOfSecs = cursor?.asOf ?? Date.now() / 1000;
   if (blend) {
-    const aExplore = params.push(blend.alphaExplore);
-    const aFollowing = params.push(blend.alphaFollowing);
+    // α is the constant following value since the reach source kind was
+    // retired (migration 177) — a feed's carrying reach:explore was the only
+    // explore-surface discriminator, so the §9.12 A/B needs a new one before
+    // feed_alpha_explore can matter again (see feedAlphaCte).
+    const alpha = params.push(blend.alphaFollowing);
     const gravity = params.push(blend.gravity);
     const floor = params.push(blend.floor);
     const asOf = params.push(asOfSecs);
-    alphaCte = `${feedAlphaCte(2, aExplore, aFollowing)},`;
+    alphaCte = `${feedAlphaCte(alpha)},`;
     scoredModeExpr = proofBlendScoreSql(gravity, floor, asOf);
   }
 
@@ -259,7 +262,9 @@ async function sourceFilteredItems(
     -- One UNION ALL branch per source_type, each an index-friendly equijoin,
     -- then GROUP BY to collapse multi-source matches (MAX weight / bool_or
     -- allow_replies — a writer subscribed via two sources gets the louder).
-    -- This used to be a single join whose ON was the OR of all five arms; an
+    -- (The reach:following / reach:explore arms were retired with the reach
+    -- source kind, migration 177 — §9.16.)
+    -- This used to be a single join whose ON was the OR of all arms; an
     -- OR-of-arms join has no hashable key, so the planner brute-forced
     -- feed_items × feed_sources — 24.9M pair evaluations (~4.5s) for one page
     -- of a 717-source follow-import feed (EXPLAIN'd 2026-07-25). The branches
@@ -293,41 +298,6 @@ async function sourceFilteredItems(
           JOIN article_tags at_join ON at_join.tag_id = t_join.id
           JOIN feed_items fi ON fi.article_id = at_join.article_id
          WHERE fs.feed_id = $2 AND fs.muted_at IS NULL AND fs.source_type = 'tag'
-           AND fi.deleted_at IS NULL
-        UNION ALL
-        -- reach:following — the caller's native follow graph (people +
-        -- their own posts + followed publications). Mirrors the GET
-        -- /feed/:feedId following projector's NATIVE membership; external
-        -- subscriptions are NOT bundled in (they're composed as explicit
-        -- external_source rows — the whole point of the vessel model), a
-        -- deliberate scope choice, not a silent cap.
-        SELECT fi.id, fs.weight, NOT fs.exclude_replies
-          FROM feed_sources fs
-          JOIN feed_items fi ON (
-            fi.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
-            OR fi.author_id = $1
-            OR EXISTS (
-              SELECT 1 FROM articles a2
-              JOIN publication_follows pf ON pf.publication_id = a2.publication_id
-              WHERE a2.id = fi.article_id AND pf.follower_id = $1
-            )
-          )
-         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
-           AND fs.source_type = 'reach' AND fs.reach_kind = 'following'
-           AND fi.deleted_at IS NULL
-        UNION ALL
-        -- reach:explore — platform-wide recent top-level natives (same
-        -- membership as the legacy/explore projector: 48h window, article|
-        -- note, not the reader's own). Scoring/limit bound the scan.
-        SELECT fi.id, fs.weight, NOT fs.exclude_replies
-          FROM feed_sources fs
-          JOIN feed_items fi ON (
-            fi.published_at > now() - INTERVAL '48 hours'
-            AND fi.item_type IN ('article', 'note')
-            AND fi.author_id <> $1
-          )
-         WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
-           AND fs.source_type = 'reach' AND fs.reach_kind = 'explore'
            AND fi.deleted_at IS NULL
       ) arms
       GROUP BY fi_id
@@ -437,9 +407,10 @@ async function sourceFilteredItems(
 // 'note')`), so the commensurability argument that drives D6 — native and
 // external ranking in the same units — does not bite here, and its cursor
 // filters on the fi.score COLUMN directly, which a computed expression would
-// force into a different cursor shape for no behavioural gain. The real explore
-// surface is a `reach:explore` source inside a composed feed, which goes
-// through sourceFilteredItems above and DOES take feed_alpha_explore.
+// force into a different cursor shape for no behavioural gain. Since the reach
+// source kind was retired (migration 177, §9.16) this fallback is the ONLY
+// explore surface left — the deliberate default for a feed with zero sources
+// (§2.7, explicitly deferred out of that retirement's scope).
 async function placeholderExploreItems(
   readerId: string,
   rawCursor: string | undefined,

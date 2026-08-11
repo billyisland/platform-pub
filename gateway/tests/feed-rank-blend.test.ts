@@ -27,22 +27,23 @@ import {
 
 const DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
-// Params mirror the host query's layout: $1 feed_id, $2 fi_id[], then the five
-// blend params in the order items.ts pushes them.
-const P_EXPLORE = 3;
-const P_FOLLOWING = 4;
-const P_GRAVITY = 5;
-const P_FLOOR = 6;
-const P_ASOF = 7;
+// Params mirror the host query's layout: $1 fi_id[], then the four blend
+// params in the order items.ts pushes them. (α became a single constant param
+// when the reach source kind — the only explore-surface discriminator — was
+// retired, migration 177/§9.16; feedAlphaCte now just binds it.)
+const P_ALPHA = 2;
+const P_GRAVITY = 3;
+const P_FLOOR = 4;
+const P_ASOF = 5;
 
 // The host's `scored` CTE, reduced to just the ranking expression. `matched` is
 // stubbed with a flat weight of 1 so weight never confounds the proof term;
 // there is a dedicated weight test below that varies it.
 function rankSql(weight = "1::float8"): string {
   return `
-    WITH ${feedAlphaCte(1, P_EXPLORE, P_FOLLOWING).trim()},
+    WITH ${feedAlphaCte(P_ALPHA).trim()},
     matched AS (
-      SELECT id AS fi_id, ${weight} AS weight FROM feed_items WHERE id = ANY($2::uuid[])
+      SELECT id AS fi_id, ${weight} AS weight FROM feed_items WHERE id = ANY($1::uuid[])
     )
     SELECT fi.id AS fi_id, ${proofBlendScoreSql(P_GRAVITY, P_FLOOR, P_ASOF)} AS effective_score
     FROM feed_items fi
@@ -53,9 +54,7 @@ function rankSql(weight = "1::float8"): string {
 
 describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
   let client: pg.Client;
-  let feedId: string;
-  let ownerId: string;
-  // One pinned asOf per test: cross-call score comparisons (alpha/mute/weight)
+  // One pinned asOf per test: cross-call score comparisons (alpha/weight)
   // rely on both evaluations seeing identical ages, which SQL now() used to
   // give for free (transaction-stable) and a per-call Date.now() does not.
   let testAsOf: number;
@@ -71,12 +70,6 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
   beforeEach(async () => {
     testAsOf = Date.now() / 1000;
     await client.query("BEGIN");
-    ownerId = await insertAccount(client, "rank-owner");
-    const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO feeds (owner_id, name, sort_rank) VALUES ($1, 'rank fixture', 0) RETURNING id`,
-      [ownerId],
-    );
-    feedId = rows[0].id;
   });
   afterEach(async () => {
     await client.query("ROLLBACK");
@@ -130,26 +123,15 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
     return fi.rows[0].id;
   }
 
-  /** Add a reach source to the fixture feed — this is what selects alpha. */
-  async function addReach(kind: "following" | "explore"): Promise<void> {
-    await client.query(
-      `INSERT INTO feed_sources (feed_id, source_type, reach_kind)
-       VALUES ($1, 'reach', $2)`,
-      [feedId, kind],
-    );
-  }
-
   async function rank(
     ids: string[],
-    opts: { alphaExplore?: number; alphaFollowing?: number; gravity?: number; floor?: number; weight?: string; asOf?: number } = {},
+    opts: { alpha?: number; gravity?: number; floor?: number; weight?: string; asOf?: number } = {},
   ): Promise<{ id: string; score: number }[]> {
     const { rows } = await client.query<{ fi_id: string; effective_score: string }>(
       rankSql(opts.weight),
       [
-        feedId,
         ids,
-        opts.alphaExplore ?? 0.4,
-        opts.alphaFollowing ?? 0.8,
+        opts.alpha ?? 0.8,
         opts.gravity ?? 1.5,
         opts.floor ?? 0.05,
         opts.asOf ?? testAsOf,
@@ -286,40 +268,21 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
     expect(order[0].score).toBeCloseTo(order[1].score, 10);
   });
 
-  // --- alpha selection ------------------------------------------------------
+  // --- alpha (a bound constant since the reach retirement, §9.16) -----------
 
-  it("uses the explore alpha iff the feed carries a reach:explore source", async () => {
+  it("binds the caller's α — the ambient share moves with (1−α) exactly", async () => {
     // One item with all its proof in ambient_pctl and none in resonance: a
-    // LOWER alpha (explore) must score it HIGHER, since (1-alpha) multiplies
-    // the ambient term. That makes the alpha choice observable in the score.
+    // LOWER alpha must score it HIGHER, since (1-alpha) multiplies the ambient
+    // term. alpha 0.4 vs 0.8 ⇒ ambient weighted 0.6 vs 0.2 ⇒ 3x — which pins
+    // that the α the caller binds is the α the SQL actually ranks with (the
+    // CTE is a constant now; a hard-coded α would pass every ordering test
+    // above while making the dial decorative).
     const ambientOnly = await item({ resonance: 0, ambientPctl: 1, ageHours: 5 });
 
-    const following = (await rank([ambientOnly]))[0].score;
-    await addReach("explore");
-    const explore = (await rank([ambientOnly]))[0].score;
+    const at08 = (await rank([ambientOnly], { alpha: 0.8 }))[0].score;
+    const at04 = (await rank([ambientOnly], { alpha: 0.4 }))[0].score;
 
-    // alpha 0.4 vs 0.8 ⇒ ambient weighted 0.6 vs 0.2 ⇒ 3x.
-    expect(explore).toBeCloseTo(following * 3, 10);
-  });
-
-  it("ignores a MUTED reach:explore source when choosing alpha", async () => {
-    const ambientOnly = await item({ resonance: 0, ambientPctl: 1, ageHours: 5 });
-    const before = (await rank([ambientOnly]))[0].score;
-    await client.query(
-      `INSERT INTO feed_sources (feed_id, source_type, reach_kind, muted_at)
-       VALUES ($1, 'reach', 'explore', now())`,
-      [feedId],
-    );
-    const after = (await rank([ambientOnly]))[0].score;
-    expect(after).toBeCloseTo(before, 10);
-  });
-
-  it("treats a reach:following source as the following surface", async () => {
-    const ambientOnly = await item({ resonance: 0, ambientPctl: 1, ageHours: 5 });
-    const bare = (await rank([ambientOnly]))[0].score;
-    await addReach("following");
-    const withFollowing = (await rank([ambientOnly]))[0].score;
-    expect(withFollowing).toBeCloseTo(bare, 10);
+    expect(at04).toBeCloseTo(at08 * 3, 10);
   });
 
   // --- pinned as-of (§0i.2 — time-shifted pagination) -----------------------
@@ -373,15 +336,6 @@ describe.skipIf(!DB_URL)("D6 read-time proof blend (step 5)", () => {
     expect(weighted[0].id).toBe(silent);
   });
 });
-
-async function insertAccount(client: pg.Client, slug: string): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    `INSERT INTO accounts (nostr_pubkey, nostr_privkey_enc)
-     VALUES ($1, $2) RETURNING id`,
-    [`fixture-${slug}-${randHex()}`, "fixture-enc"],
-  );
-  return rows[0].id;
-}
 
 function randHex(): string {
   return process.hrtime.bigint().toString(16);

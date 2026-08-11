@@ -76,7 +76,6 @@ export type ExplainKind =
   | "feedComposer.addSource"
   | "feedComposer.source"
   | "feedComposer.volume"
-  | "feedComposer.reach"
   | "feedComposer.colour"
   | "feedComposer.view"
   | "feedComposer.orientation"

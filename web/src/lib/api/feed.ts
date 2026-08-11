@@ -1,8 +1,9 @@
 import { request } from './client'
 
 // The legacy global `GET /feed?reach=` timeline + its `FeedReach` type were
-// retired with the FeedView card stack (FEED-RETIREMENT Slice 7). Global reach
-// now lives as composable `reach:following` / `reach:explore` feed sources.
+// retired with the FeedView card stack (FEED-RETIREMENT Slice 7); the interim
+// `reach:following` / `reach:explore` feed sources were themselves retired in
+// migration 177 (§9.16 — Follow now writes concrete `account` sources).
 // This module survives only for the replies API below.
 
 // =============================================================================

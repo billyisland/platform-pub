@@ -46,10 +46,7 @@ export type WorkspaceFeedSourceKind =
   | "account"
   | "publication"
   | "external_source"
-  | "tag"
-  | "reach";
-
-export type ReachKind = "following" | "explore";
+  | "tag";
 
 // Origin binding of an import-minted feed (FOLLOW-GRAPH-IMPORT-ADR §6.3):
 // which network graph it came from, for the FeedComposer's "Sync now".
@@ -62,7 +59,6 @@ export interface FeedImportBinding {
 export interface WorkspaceFeedSource {
   id: string;
   sourceType: WorkspaceFeedSourceKind;
-  reachKind?: ReachKind;
   accountId?: string;
   externalSourceId?: string;
   weight: number;
@@ -86,7 +82,6 @@ export type AddWorkspaceFeedSourceInput =
   | { sourceType: "account"; accountId: string }
   | { sourceType: "publication"; publicationId: string }
   | { sourceType: "tag"; tagName: string }
-  | { sourceType: "reach"; reachKind: ReachKind }
   | { sourceType: "external_source"; externalSourceId: string }
   | {
       sourceType: "external_source";

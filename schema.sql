@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict vRJ1STXqJxx2iUJqBiB8n6XBggfQg7nrHC9ny14zzOuG7LoDtOMDgvdHF0jkzJ6
+\restrict U3M2WebXsJ8JQk0xlTI3NimCKXw2p3jCL3O1HZwSkJYnmAtXKzQSZAUAMkMdqOk
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1380,12 +1380,10 @@ CREATE TABLE public.feed_sources (
     muted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     exclude_replies boolean DEFAULT false NOT NULL,
-    reach_kind text,
-    CONSTRAINT feed_sources_reach_kind_check CHECK (((reach_kind IS NULL) OR (reach_kind = ANY (ARRAY['following'::text, 'explore'::text])))),
     CONSTRAINT feed_sources_sampling_mode_check CHECK ((sampling_mode = ANY (ARRAY['chronological'::text, 'scored'::text, 'random'::text]))),
-    CONSTRAINT feed_sources_source_type_check CHECK ((source_type = ANY (ARRAY['account'::text, 'publication'::text, 'external_source'::text, 'tag'::text, 'reach'::text]))),
+    CONSTRAINT feed_sources_source_type_check CHECK ((source_type = ANY (ARRAY['account'::text, 'publication'::text, 'external_source'::text, 'tag'::text]))),
     CONSTRAINT feed_sources_tag_name_length CHECK (((tag_name IS NULL) OR ((char_length(tag_name) >= 1) AND (char_length(tag_name) <= 64)))),
-    CONSTRAINT feed_sources_target_matches_type CHECK ((((source_type = 'account'::text) AND (account_id IS NOT NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'publication'::text) AND (publication_id IS NOT NULL) AND (account_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'external_source'::text) AND (external_source_id IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (tag_name IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'tag'::text) AND (tag_name IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'reach'::text) AND (reach_kind IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL))))
+    CONSTRAINT feed_sources_target_matches_type CHECK ((((source_type = 'account'::text) AND (account_id IS NOT NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL)) OR ((source_type = 'publication'::text) AND (publication_id IS NOT NULL) AND (account_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL)) OR ((source_type = 'external_source'::text) AND (external_source_id IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (tag_name IS NULL)) OR ((source_type = 'tag'::text) AND (tag_name IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL))))
 );
 
 
@@ -4122,13 +4120,6 @@ CREATE INDEX feed_sources_feed_idx ON public.feed_sources USING btree (feed_id);
 --
 
 CREATE UNIQUE INDEX feed_sources_publication_uniq ON public.feed_sources USING btree (feed_id, publication_id) WHERE (source_type = 'publication'::text);
-
-
---
--- Name: feed_sources_reach_uniq; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX feed_sources_reach_uniq ON public.feed_sources USING btree (feed_id, reach_kind) WHERE (source_type = 'reach'::text);
 
 
 --
@@ -7588,7 +7579,8 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict vRJ1STXqJxx2iUJqBiB8n6XBggfQg7nrHC9ny14zzOuG7LoDtOMDgvdHF0jkzJ6
+\unrestrict U3M2WebXsJ8JQk0xlTI3NimCKXw2p3jCL3O1HZwSkJYnmAtXKzQSZAUAMkMdqOk
+
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7767,4 +7759,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('173_notification_dedup_partial.sql'),
     ('174_notifications_dedup_drive.sql'),
     ('175_payouts_halted_accounts.sql'),
-    ('176_accounts_onboarded_at.sql');
+    ('176_accounts_onboarded_at.sql'),
+    ('177_retire_reach_source_kind.sql');

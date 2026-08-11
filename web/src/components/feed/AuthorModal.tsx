@@ -37,7 +37,9 @@ interface AuthorModalProps {
   zIndex?: number;
   // The workspace feed this byline was hovered in. External "Follow" = add the
   // source to THIS feed; absent ⇒ no feed context, so the external Follow
-  // affordance is omitted (native follow is global, unaffected).
+  // affordance is omitted. Native Follow is the global graph toggle AND — with
+  // feed context, since the reach retirement (§9.16) — writes the concrete
+  // `account` source into this feed too (without it, only the graph toggles).
   feedId?: string;
   // Native author's 64-hex pubkey (from the feed-card byline) — lets the panel
   // host the per-feed VOLUME control for followed native authors. Absent for
@@ -488,8 +490,45 @@ function FollowButton({
           // Native follow lives in the shared store — optimistic update,
           // revert, and author-card cache bust all happen there — so a toggle
           // here live-updates every other follow affordance for this writer.
-          if (nativeFollowing) await useFollows.getState().unfollow(target.id);
-          else await useFollows.getState().follow(target.id);
+          //
+          // Since the reach retirement (migration 177, §9.16) the graph row
+          // alone has no feed consequence, so with feed context the same
+          // gesture also writes/removes the concrete `account` source for
+          // THIS feed — converging with the external branch below: one Follow
+          // button, one meaning, on either side of the native/external seam.
+          // Best-effort: the graph toggle is the primary action and stands
+          // even if the source write fails (DUPLICATE — already a source
+          // here — lands in the same catch by design).
+          if (nativeFollowing) {
+            await useFollows.getState().unfollow(target.id);
+            if (feedId) {
+              try {
+                const { sources } = await workspaceFeeds.listSources(feedId);
+                const row = sources.find(
+                  (s) => s.sourceType === "account" && s.accountId === target.id,
+                );
+                if (row) {
+                  await workspaceFeeds.removeSource(feedId, row.id);
+                  invalidateAuthorCardCache();
+                }
+              } catch {
+                /* source row stays; removable by hand in the FeedComposer */
+              }
+            }
+          } else {
+            await useFollows.getState().follow(target.id);
+            if (feedId) {
+              try {
+                await workspaceFeeds.addSource(feedId, {
+                  sourceType: "account",
+                  accountId: target.id,
+                });
+                invalidateAuthorCardCache();
+              } catch {
+                /* already a source here, or a transient failure — the follow stood */
+              }
+            }
+          }
         } else if (feedId) {
           const prev = following;
           setFollowing(!prev);

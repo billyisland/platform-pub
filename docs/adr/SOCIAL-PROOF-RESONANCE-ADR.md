@@ -296,7 +296,11 @@ eat it.
 **α is derived from the feed's composition, not stored:** a feed carrying a
 non-muted `reach:explore` source *is* the explore surface; anything else is
 following-shaped. That keeps the surface decision derived from what the user
-actually composed, with no third place to fall out of sync. The blend of "moment for this writer"
+actually composed, with no third place to fall out of sync. *(SUPERSEDED
+2026-08-11: the reach source kind was retired — migration 177, CONSOLIDATED-TODO
+§9.16 — taking the only explore-surface discriminator with it. α is now the
+constant `feed_alpha_following`; `feed_alpha_explore` stays seeded but dormant,
+and the explore A/B below needs a NEW discriminator before it can run.)* The blend of "moment for this writer"
 vs. "big on the network" thereby becomes a per-surface product decision,
 tunable post-launch without touching the estimator or bands. `fi.score` and
 `feed-scores-refresh`'s gravity write remain untouched as the flag-off
@@ -461,12 +465,16 @@ leaderboards; no absolute "score" is ever displayed.
    `feed_proof_floor` correction + read-time clamping above (migration 161).
    The empty-vessel `placeholderExploreItems` fallback is deliberately NOT
    converted — it selects native items only, so D6's commensurability argument
-   doesn't bite, and its cursor filters the `fi.score` column directly; the real
-   explore surface is a `reach:explore` source inside a composed feed, which
-   goes through `sourceFilteredItems` and does take `feed_alpha_explore`.
-   Covered by `gateway/tests/feed-rank-blend.test.ts` (live-DB, rolled back,
+   doesn't bite, and its cursor filters the `fi.score` column directly. *(The
+   passage this note replaced called the composed `reach:explore` source "the
+   real explore surface"; that source kind was retired 2026-08-11 — migration
+   177, §9.16 — so the placeholder is now the only explore surface, α is the
+   constant `feed_alpha_following`, and the A/B below additionally needs a new
+   explore-surface discriminator.)* Covered by
+   `gateway/tests/feed-rank-blend.test.ts` (live-DB, rolled back,
    exercising the real builders; seven implementation mutations verified to
-   fail it). **A/B of the explore feed is still outstanding** — the flag is the
+   fail it — the α harness re-verified by mutation after the 177 rework).
+   **A/B of the explore feed is still outstanding** — the flag is the
    mechanism, the measurement is the work.
 6. Later: zap ingestion, native repost recording (activates the seeded
    weight), "resonant only" filter, financial-backing axis.

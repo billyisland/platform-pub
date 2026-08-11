@@ -93,7 +93,7 @@ const patchFeedSchema = z
 // ---------------------------------------------------------------------------
 // Starter-feed seeding (FEED-RETIREMENT Slice 3, workstream B).
 //
-// A brand-new account follows nobody, so a bare reach:following vessel would be
+// A brand-new account follows nobody, so a bare default vessel would be
 // empty. Instead new accounts get a CLONE of each operator-designated template
 // feed (feeds.is_starter_template = true): a real, fully-editable owned feed,
 // not a special-cased default object. The clone copies the template's name,
@@ -128,15 +128,15 @@ export async function cloneFeedForOwner(
      RETURNING id`,
     [templateId, ownerId, sortRank],
   );
-  // Copy every source row verbatim (all five source_types, incl. reach), minus
-  // the identity/parent columns. A fresh id + the new feed_id; weight, sampling,
+  // Copy every source row verbatim (all four source_types), minus the
+  // identity/parent columns. A fresh id + the new feed_id; weight, sampling,
   // exclude_replies and the polymorphic target all carry over.
   await client.query(
     `INSERT INTO feed_sources
        (feed_id, source_type, account_id, publication_id, external_source_id,
-        tag_name, reach_kind, weight, sampling_mode, exclude_replies)
+        tag_name, weight, sampling_mode, exclude_replies)
      SELECT $1, source_type, account_id, publication_id, external_source_id,
-            tag_name, reach_kind, weight, sampling_mode, exclude_replies
+            tag_name, weight, sampling_mode, exclude_replies
        FROM feed_sources WHERE feed_id = $2`,
     [feed.id, templateId],
   );
@@ -618,7 +618,6 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
                      OR (t.source_type = 'publication' AND t.publication_id = feed_sources.publication_id)
                      OR (t.source_type = 'external_source' AND t.external_source_id = feed_sources.external_source_id)
                      OR (t.source_type = 'tag' AND t.tag_name = feed_sources.tag_name)
-                     OR (t.source_type = 'reach' AND t.reach_kind = feed_sources.reach_kind)
                    )
                )`,
             [targetId, sourceFeedId],

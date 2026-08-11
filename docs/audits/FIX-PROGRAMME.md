@@ -23,6 +23,39 @@ starts.
 
 ## Progress
 
+- **2026-08-11 (the reach source kind is retired — Explore goes, Following becomes rows)** —
+  **Migration 177, no flag.** CONSOLIDATED-TODO §9.16 core. `feed_sources.source_type
+  = 'reach'` carried two things wearing one name; both are gone from the schema in
+  one migration (rows deleted — dev held zero, prod held 3 operator-only test rows
+  at the 2026-08-10 count, to be re-counted at deploy — `reach_kind` +
+  `feed_sources_reach_uniq` + `feed_sources_reach_kind_check` dropped,
+  `source_type_check`/`target_matches_type` rewritten without their reach arms).
+  Gateway: the two `matched` CTE arms out of `feeds/items.ts` (the only place
+  `follows` ever affected what anyone saw), the `sources.ts` schema
+  variant/branch/column/response case/three SELECTs, `crud.ts`'s clone INSERT +
+  merge-dedup arm. Web: `ReachKind` + union members, the FeedComposer chips +
+  `handleAddReach`, the `feedComposer.reach` Explain caption; `profile.follow` /
+  `pub.follow` captions reworded to stop promising the Following stream.
+  **D6's α collapsed to the constant `feed_alpha_following`** — `feedAlphaCte`
+  keeps its CTE shape for a future explore discriminator, `feed_alpha_explore`
+  stays seeded-but-dormant (Check 4c makes un-seeding impossible by
+  construction), and the §9.12 explore A/B now formally carries a
+  new-discriminator prerequisite (notes in SOCIAL-PROOF-RESONANCE-ADR §297/§465
+  + the DEPLOYMENT.md `RESONANCE_RANKING_ENABLED` row).
+  **Interim Follow convergence in the same commit**: `AuthorModal`'s native
+  Follow, pressed with feed context, now writes/removes the concrete `account`
+  source for that feed beside the global graph toggle — one Follow gesture, one
+  meaning, either side of the native/external seam. The full ruled
+  materialisation (`follows` as a projection of `feed_sources`, the feed-picker
+  on feed-less surfaces, and the undecided fate of existing graph-only follows
+  rows) stays queued as §9.16's residual.
+  Validation: schema regenerated throwaway-from-committed, drift guard 8/8;
+  gateway 552/552 (incl. the rebuilt DB-backed `feed-rank-blend` harness —
+  α-constant mutation kills 11 tests), web 222/222, both `tsc` clean, root
+  ESLint 0 errors, `next build` green, hairline tripwire clean; dev migrated +
+  gateway/web images rebuilt. FEED-RETIREMENT-PLAN carries the superseding
+  status note.
+
 - **2026-08-11 (a new member is called something, and it is no longer `user`)** —
   **No migration, no flag.** shared + gateway + a new test. Found by walking the
   live admit path while re-testing signup after the §0r Postmark fix.

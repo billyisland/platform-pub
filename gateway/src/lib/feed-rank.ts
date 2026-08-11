@@ -38,9 +38,10 @@ export function resonanceRankingEnabled(): boolean {
 }
 
 export interface ProofBlendParams {
-  /** α on a feed with no explore reach source — "a moment for this writer". */
+  /** The α every composed feed ranks with — "a moment for this writer". */
   alphaFollowing: number;
-  /** α on a feed carrying a reach:explore source — "big on the network". */
+  /** DORMANT since the reach retirement (see feedAlphaCte): the "big on the
+   *  network" α, waiting on a new explore-surface discriminator (§9.12). */
   alphaExplore: number;
   /** HN-style time-decay exponent. Shared with feed-scores-refresh (same family). */
   gravity: number;
@@ -81,22 +82,24 @@ export async function loadProofBlendParams(): Promise<ProofBlendParams> {
 }
 
 /**
- * The per-feed α, as a scalar CTE. Splice into the host query's WITH list.
+ * The α, as a scalar CTE. Splice into the host query's WITH list.
  *
- * α is chosen from the feed's own composition rather than a stored column: a
- * feed carrying a non-muted `reach:explore` source IS the explore surface, and
- * anything else is a following-shaped surface. That keeps the surface decision
- * derived from what the user actually composed, with no third place to fall out
- * of sync (`$aExplore`/`$aFollowing` are the two bound params).
+ * Once per-feed, now a constant: α used to be chosen from the feed's own
+ * composition (a feed carrying a non-muted `reach:explore` source was the
+ * explore surface), but the reach source kind was retired (migration 177,
+ * CONSOLIDATED-TODO §9.16) and with it the only explore-surface discriminator.
+ * Every composed feed is a following-shaped surface, so the caller binds the
+ * `feed_alpha_following` value alone. `alphaExplore` stays loaded and its dial
+ * stays seeded (a historically-seeded dial cannot be un-seeded — drift-guard
+ * Check 4c) but is DORMANT: the §9.12 explore A/B behind
+ * RESONANCE_RANKING_ENABLED needs a new discriminator before it can run.
+ * The CTE shape is kept (rather than binding α inline in proofBlendScoreSql)
+ * so a future discriminator slots back in without touching the score SQL.
  */
-export function feedAlphaCte(feedIdParam: number, aExplore: number, aFollowing: number): string {
+export function feedAlphaCte(alphaParam: number): string {
   return `
     feed_alpha AS (
-      SELECT (CASE WHEN EXISTS (
-        SELECT 1 FROM feed_sources
-         WHERE feed_id = $${feedIdParam} AND muted_at IS NULL
-           AND source_type = 'reach' AND reach_kind = 'explore'
-      ) THEN $${aExplore}::float8 ELSE $${aFollowing}::float8 END) AS alpha
+      SELECT $${alphaParam}::float8 AS alpha
     )`;
 }
 

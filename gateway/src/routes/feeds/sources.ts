@@ -83,14 +83,6 @@ const addSourceSchema = z.union([
     sourceType: z.literal("tag"),
     tagName: z.string().trim().min(1).max(64),
   }),
-  // reach — the global following/explore dial as a composable source
-  // (FEED-RETIREMENT Slice 0 = option (a)). Binds no FK; membership is
-  // computed in sourceFilteredItems' matched CTE from the caller's follow
-  // graph (following) or the platform-wide recent-natives window (explore).
-  z.object({
-    sourceType: z.literal("reach"),
-    reachKind: z.enum(["following", "explore"]),
-  }),
   z.object({
     sourceType: z.literal("external_source"),
     externalSourceId: z.string().uuid(),
@@ -142,8 +134,7 @@ export interface AddSourceOptions {
 
 interface SourceRow {
   id: string;
-  source_type: "account" | "publication" | "external_source" | "tag" | "reach";
-  reach_kind: "following" | "explore" | null;
+  source_type: "account" | "publication" | "external_source" | "tag";
   weight: string;
   sampling_mode: string;
   muted_at: Date | null;
@@ -203,7 +194,7 @@ function sourceRowToResponse(row: SourceRow) {
       avatar: row.external_avatar,
       href: row.external_source_id ? `/source/${row.external_source_id}` : null,
     };
-  } else if (row.source_type === "tag") {
+  } else {
     display = {
       kind: "tag",
       label: `#${row.tag_name}`,
@@ -211,23 +202,10 @@ function sourceRowToResponse(row: SourceRow) {
       avatar: null,
       href: row.tag_name ? `/tag/${encodeURIComponent(row.tag_name)}` : null,
     };
-  } else {
-    // reach — a computed global stream, not a single target, so no href.
-    display = {
-      kind: "reach",
-      label: row.reach_kind === "following" ? "Following" : "Explore",
-      sublabel:
-        row.reach_kind === "following"
-          ? "Everyone you follow"
-          : "Across all.haus",
-      avatar: null,
-      href: null,
-    };
   }
   return {
     id: row.id,
     sourceType: row.source_type,
-    reachKind: row.reach_kind ?? undefined,
     accountId: row.account_id ?? undefined,
     externalSourceId: row.external_source_id ?? undefined,
     weight: Number(row.weight),
@@ -283,16 +261,6 @@ export async function addSource(
     );
     const inserted = await insertSource(feedId, "tag", {
       tag_name: input.tagName,
-    });
-    return { source: inserted, ensured: null };
-  }
-
-  if (input.sourceType === "reach") {
-    // No target to validate — reach membership is computed at read time.
-    // The (feed_id, reach_kind) partial unique blocks a duplicate following/
-    // explore row (surfaced as DUPLICATE by the unique-violation handler).
-    const inserted = await insertSource(feedId, "reach", {
-      reach_kind: input.reachKind,
     });
     return { source: inserted, ensured: null };
   }
@@ -514,20 +482,19 @@ export async function addSource(
 
 async function insertSource(
   feedId: string,
-  sourceType: "account" | "publication" | "external_source" | "tag" | "reach",
+  sourceType: "account" | "publication" | "external_source" | "tag",
   target: {
     account_id?: string;
     publication_id?: string;
     external_source_id?: string;
     tag_name?: string;
-    reach_kind?: string;
   },
   db: { query: typeof pool.query } = pool,
 ) {
   try {
     const { rows } = await db.query<SourceRow>(
-      `INSERT INTO feed_sources (feed_id, source_type, account_id, publication_id, external_source_id, tag_name, reach_kind)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO feed_sources (feed_id, source_type, account_id, publication_id, external_source_id, tag_name)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, source_type, weight, sampling_mode, muted_at, created_at,
                  account_id, publication_id, external_source_id, tag_name,
                  NULL::text AS account_username, NULL::text AS account_display_name, NULL::text AS account_avatar,
@@ -541,7 +508,6 @@ async function insertSource(
         target.publication_id ?? null,
         target.external_source_id ?? null,
         target.tag_name ?? null,
-        target.reach_kind ?? null,
       ],
     );
     // The display fields above are NULLs from the bare INSERT — re-hydrate
@@ -550,7 +516,6 @@ async function insertSource(
     const { rows: hydrated } = await db.query<SourceRow>(
       `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
          fs.exclude_replies,
-         fs.reach_kind,
          fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
          acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
          pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -720,7 +685,6 @@ export async function loadFeedSources(feedId: string) {
   const { rows } = await pool.query<SourceRow>(
     `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
        fs.exclude_replies,
-       fs.reach_kind,
        fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
        acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
        pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -1033,7 +997,6 @@ export function registerFeedSourcesRoutes(app: FastifyInstance) {
       const { rows } = await pool.query<SourceRow>(
         `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
            fs.exclude_replies,
-           fs.reach_kind,
            fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
            acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
            pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,

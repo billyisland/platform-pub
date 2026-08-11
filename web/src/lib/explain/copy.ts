@@ -88,8 +88,6 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "This is one of the feed's sources. Click its name to look at it; the × at the end of the row removes it from this feed.",
   "feedComposer.volume":
     "This is the source's volume in this feed: quieter to the left, louder to the right. The × in front mutes it without removing it. When it's turned down, RANDOM and TOP decide which of its posts get through, and NO REPLIES keeps only its freestanding posts.",
-  "feedComposer.reach":
-    "These add the site's shared streams to the feed: Following is everyone you follow, Explore is the wider platform. Either can sit alongside your individual sources.",
   "feedComposer.colour":
     "Select a colour scheme for this feed. (Light or dark mode follows your sitewide appearance setting.)",
   "feedComposer.view":
@@ -176,7 +174,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   profile:
     "This is a profile page. It tells you the same stuff whether it's for an all.haus account or an account on another network: who they are, what they've posted, and the ways to follow them.",
   "profile.follow":
-    "This follows the writer: their posts reach any of your feeds carrying the Following stream. Everyone you follow is listed under Network in the ∀ menu.",
+    "This follows the writer: everyone you follow is listed under Network in the ∀ menu. Their posts arrive by feed — add them to one as a source, and the Follow button on a feed card does both at once for the feed you're in.",
   // Teaches the feed-derived external-follow invariant from the doer's side,
   // reciprocating network.following (A.4).
   "profile.followFeeds":
@@ -197,7 +195,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   "pub.nav":
     "These are the publication's pages: its latest pieces, what it is, who makes it, and everything it's published. Each opens here in place.",
   "pub.follow":
-    "This follows the publication: its new pieces reach any of your feeds carrying the Following stream, and arrive by email until you say otherwise.",
+    "This follows the publication: its new pieces arrive by email until you say otherwise. To see it in your workspace, add the publication to a feed as a source.",
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed around your workspace.",
   "vessel.gear":
