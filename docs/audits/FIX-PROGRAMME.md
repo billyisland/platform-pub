@@ -23,6 +23,56 @@ starts.
 
 ## Progress
 
+- **2026-08-11 (a new member is called something, and it is no longer `user`)** —
+  **No migration, no flag.** shared + gateway + a new test. Found by walking the
+  live admit path while re-testing signup after the §0r Postmark fix.
+
+  **Every closed-beta account is provisioned by
+  `provisionAccount(email, email.split('@')[0])`, so `deriveUsername` alone
+  decides the handle** — and the welcome sheet then SHOWS it to the member while
+  deliberately declining to let them change it there (the 30-day cooldown makes a
+  hasty choice expensive, `Welcome.tsx`). A derived handle is what someone lives
+  with for a month, which is what made the floor matter: the base fell back to
+  the **literal `user`** whenever both the display name and the email's local
+  part cleaned to under three characters. `ed@all.haus` → `ed` → `user`; the next
+  short address → `user-a1b2c3`. A perfectly good name discarded for a word about
+  nobody, on a path where nothing asks the member first.
+
+  **Three more escapes of the same family, all found once the rule was written
+  down.** `deriveUsername` could also emit an **underscore** (its email branch
+  filtered `[^a-z0-9_-]` while the change-username validator forbids `_`), a
+  **leading or trailing hyphen** (`-ed-@…` → `-ed-`), and a **37-character
+  handle** (it sliced the base to the full 30 and *then* appended a 7-character
+  collision suffix). Each is a handle its owner could never have chosen and — the
+  sharper way to put it — **could not retype to keep**, since `POST
+  /auth/change-username` would refuse it.
+
+  **The fix is one rule with one home.** `shared/src/auth/username-rule.ts` is a
+  new LEAF module holding the four literals, and it is a separate file on
+  purpose: living in `accounts.ts` they could only be imported by dragging in the
+  account service, and — the load-bearing half — the suites that mock
+  `accounts.js` wholesale would have had to restate the rule inside the mock,
+  pinning the mock's idea of it rather than the real one. `SignupSchema` (which
+  had drifted to 40 chars + underscores), the change-username route, its
+  `check-username` twin, and `deriveUsername` now all read the same constants.
+  Derivation keeps the person in the answer: a short-but-usable base is kept and
+  disambiguated (`ed-a1b2c3`) rather than discarded, and `user` survives only as
+  the floor for a string with no usable characters at all — suffixed even then,
+  because a bare `user` is a handle we hand out repeatedly.
+
+  **`gateway/tests/derive-username.test.ts`, 21 cases**, whose mock answers from
+  the SQL it is handed: it holds a real set of taken handles and evaluates the
+  route's own `username = $1 OR username LIKE $2` against both params, so a
+  derivation that stopped checking availability fails rather than passing against
+  a fixture. **Mutation run, all five:** restoring the `user` floor fails 3,
+  keeping `_` fails 3, dropping the hyphen trim fails 2, suffixing without
+  truncating fails 1, dropping the availability read fails 2. Worth recording why
+  the short-address cases assert the *handle* and not merely its legality —
+  `user` **is** a legal username, so a USERNAME_RE-only test passes against the
+  bug. That is exactly why it went unnoticed. Gateway 503 passed / 51 skipped,
+  shared 117, `tsc` clean both, root ESLint 0 errors. No web change, so no
+  `next build`.
+
 - **2026-08-11 (a seeded member finally owns the sources in their own feed)** —
   CONSOLIDATED-TODO §0l.1b. **No migration, no flag.** Gateway + a DB-backed
   test. Found while reading the seeding path to write the §0l repair.

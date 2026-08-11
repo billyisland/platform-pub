@@ -1,4 +1,10 @@
 import { z } from 'zod'
+import {
+  USERNAME_MIN_LENGTH,
+  USERNAME_MAX_LENGTH,
+  USERNAME_RE,
+  USERNAME_RULE_MESSAGE,
+} from './username-rule.js'
 import { pool, withTransaction, loadConfig } from '../db/client.js'
 import { createSession } from './session.js'
 import logger from '../lib/logger.js'
@@ -43,9 +49,11 @@ import type { FastifyReply } from 'fastify'
 export const SignupSchema = z.object({
   email: z.string().email(),
   displayName: z.string().min(1).max(100),
-  username: z.string().min(3).max(40).regex(/^[a-z0-9_-]+$/, {
-    message: 'Username must be lowercase alphanumeric, hyphens, or underscores',
-  }),
+  username: z
+    .string()
+    .min(USERNAME_MIN_LENGTH)
+    .max(USERNAME_MAX_LENGTH)
+    .regex(USERNAME_RE, { message: USERNAME_RULE_MESSAGE }),
 })
 
 export type SignupInput = z.infer<typeof SignupSchema>

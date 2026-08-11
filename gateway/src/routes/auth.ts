@@ -9,6 +9,12 @@ import {
   connectPaymentMethod,
 } from "@platform-pub/shared/auth/accounts.js";
 import {
+  USERNAME_RE,
+  USERNAME_MIN_LENGTH,
+  USERNAME_MAX_LENGTH,
+  USERNAME_RULE_MESSAGE,
+} from "@platform-pub/shared/auth/username-rule.js";
+import {
   createSession,
   destroySession,
   verifySession,
@@ -1064,10 +1070,15 @@ export async function authRoutes(app: FastifyInstance) {
   // and sets up a 90-day redirect from the old username.
   // ---------------------------------------------------------------------------
 
-  const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
-
+  // USERNAME_RE / the length bounds / the message are imported, not restated —
+  // this route is the authority on what a handle may be, and `deriveUsername`
+  // has to mint inside it. They had drifted (see the rule's home in
+  // shared/auth/accounts.ts).
   const ChangeUsernameSchema = z.object({
-    newUsername: z.string().min(3).max(30),
+    newUsername: z
+      .string()
+      .min(USERNAME_MIN_LENGTH)
+      .max(USERNAME_MAX_LENGTH),
   });
 
   app.post(
@@ -1083,10 +1094,7 @@ export async function authRoutes(app: FastifyInstance) {
       const newUsername = parsed.data.newUsername.toLowerCase();
 
       if (!USERNAME_RE.test(newUsername)) {
-        return reply.status(400).send({
-          error:
-            "Username must be 3-30 characters, lowercase alphanumeric and hyphens only",
-        });
+        return reply.status(400).send({ error: USERNAME_RULE_MESSAGE });
       }
 
       const { rows: account } = await pool.query<{
