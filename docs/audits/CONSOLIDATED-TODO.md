@@ -586,6 +586,27 @@ additive DDL.
 
 ---
 
+## 0r. 2026-08-11 prod incident — every outbound email has been failing since ≤07-25
+
+Found sideways, while trying to log into a test account to delete it. `ed@all.haus` requested a magic link at 09:45:30; the `magic_links` row was created and never used. The gateway log for that second:
+
+```
+{"status":401,"body":"{\"ErrorCode\":10,\"Message\":\"Request does not contain a valid Server token.\"}","msg":"Postmark email failed"}
+{"err":{"message":"Postmark API error: 401"},"email":"ed@***","msg":"Magic link email failed"}
+```
+
+`EMAIL_PROVIDER=postmark`, `APP_URL=https://all.haus` — both correct. The 401 proves a key was PRESENT (a missing one throws `POSTMARK_API_KEY not set` before the fetch), so the token in `gateway/.env` is wrong: rotated, revoked, or an *Account* token pasted where a *Server* token belongs (ErrorCode 10 covers both). The same account's previous link, 2026-07-25 15:54:30, was **used 76 seconds later** — so delivery worked then and the token broke at some point after.
+
+1. **OPERATOR FIX** — new Server token from Postmark (Servers → server → API Tokens) into `gateway/.env`, then `docker compose up -d gateway` (an `env_file` change needs a container recreate; `restart` won't reload it). Verify by requesting a link and grepping `docker compose logs gateway --since 3m | grep -i postmark` — silence is success, only failures log.
+
+2. **The blast radius is every email the platform sends**, not just logins: magic links for all nine accounts, publish notifications to subscribers, and the waitlist digest. For up to 17 days. Anyone who tried to log in got "check your email" and nothing, **by design** — `auth.ts` catches the send error and still returns 200 so delivery failures can't be used to probe whether an account exists. That anti-enumeration choice is correct and is also what made this invisible from the outside.
+
+3. **THE DURABLE ITEM: the gateway never verifies the credential it depends on, and this class is already solved here.** `internal-parity.ts` exists precisely because a drifted `INTERNAL_SERVICE_TOKEN` had payment 403 every gateway call while the site looked healthy — and its answer is to PROVE the secret at boot against a route behind the peer's own guard, exit on a definitive rejection, re-probe every 5 minutes, and report through `/health` + a `/admin/overview` banner. Postmark's token is the same shape of dependency with none of that. It should not be fatal (email dying must not take down free reading and auth — same argument as the peer re-probe), so the right shape is: a boot + periodic probe of Postmark's own auth-checking endpoint, sticky both ways, surfaced on the admin overview beside the parity banner, and counted — **a send-failure count on the overview would have shown this on day one.** Scope it with `internal-parity.ts` open beside it; the terminal-vs-ambiguous split is the same one (401/403 terminal, 5xx/timeout ambiguous).
+
+4. **Generalisable, and worth stating next to the §0l lesson from the same day:** a failure that is *caught, logged, and otherwise swallowed* is indistinguishable from success at every surface a human looks at. §0l's version was a seeding outage visible only on the next signup; this one is a credential outage visible only in a log line nobody had reason to grep. Both ran for weeks. **When a catch block exists so that a failure doesn't break the request, something else must carry the fact that it failed.**
+
+---
+
 ## 1. Money & payments (highest stakes)
 
 Waves 1–3 of the 2026-07-05 logic-economy audit all shipped (migrations 139–147): F9 paid voting removed (free, one-vote cap), F4 payout-completion-off-create + `transfer.reversed` (incl. partial reversals), F5 full publication-aware chargeback (per-split prorated reversals), F10 fixed share-of-revenue splits with cumulative clamp, F14 allowance split persisted, Wave-5 hardening (periodic `resumePendingSettlements`, calendar renewal in the expiry worker, pairing comment), plus the Wave-3 subscription collection gate. The F3 tribute chargeback residual also closed (claimed-but-unpaid accruals now reversed, `chargeback.ts:38-53`). What remains:
