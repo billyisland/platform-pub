@@ -1,6 +1,6 @@
 # Feed Formulas — a feed as a transmissible object
 
-**Status:** Accepted in design discussion (2026-08-11). **Unbuilt.** This document records the model, the decisions, and the phasing; no code exists yet. Six decisions were settled with the operator in the design conversation (§4 D1/D2/D6/D7/D8/D9); the rest are derived from existing invariants and were not open questions.
+**Status:** Accepted in design discussion (2026-08-11). **Unbuilt.** This document records the model, the decisions, and the phasing; no code exists yet. Six decisions were settled with the operator in the design conversation (§4 D1/D2/D6/D7/D8/D9); the rest are derived from existing invariants and were not open questions. A same-day review against the codebase settled four more (operator, 2026-08-11): the default seed is undeletable and unrevocable (D11), a publication travels by its public key rather than its row id (D4 as amended), a redeemed feed arrives in the author's colour scheme with no choice at add time (§5), and the formula page lists sources in the author's composer order (§11).
 
 **Hard dependency:** `CONSOLIDATED-TODO.md` §9.16 (retire the `reach` source kind) must land first. That item already names this feature as its justification — a `reach` row is deictic, resolving against `$1`, the caller, which is precisely what makes a feed containing one mean something different for everyone else. §9.16 is decided and pre-checked against prod but unbuilt (`gateway/src/routes/feeds/sources.ts:91` still accepts `sourceType: "reach"`).
 
@@ -60,13 +60,14 @@ That last clause is the whole design. §0l has fired twice — the flagged templ
 - **D1 — A formula is an immutable snapshot, and a redeemed feed is fully owned.** No live link, no background sync, no upstream that can reach into somebody's workspace. Publishing again mints a *new* formula rather than mutating the old one. Rationale: this is the §0l lesson generalised, and it matches the standing philosophy that local intent wins (FOLLOW-GRAPH-IMPORT D4/§11.5 — a deliberate local removal is never resurrected).
 - **D2 — Token link only in v1.** One unguessable token per formula, one public preview page, no directory and no ranking. A curatorial object with a public popularity surface becomes a thing to game; `visibility` is a column so Phase 3 is a value, not a rewrite.
 - **D3 — Redemption flows through the `addSource` core.** The feed-derived-subscription invariant says only `addSource`/`removeSource` write `external_subscriptions`; a bulk redeem that re-implements that write is how the invariant dies. **This is the one place `cloneFeedForOwner` must not be reused.** Its two documented departures from `addSource` — no `feed_sub` advisory lock, no fetch job — are licensed *entirely* by the zero-feeds precondition, and a member redeeming a formula has neither: they hold existing feeds, so a concurrent `removeSource` teardown can race the subscription upsert, and the formula may name sources that do not exist locally at all. Redemption is a sibling of the clone path, not a parameter on it.
-- **D4 — Sources are stored by portable identity, never by local row id.** `cloneFeedForOwner` copies `external_source_id` — safe only because template and clone are minted in the same instant on the same instance. A formula is redeemed weeks later, may name a source the GC has since culled, and must one day serialise off-platform. So a formula source stores `(protocol, canonical uri)` / npub / publication id / tag string, and redemption *resolves* it through `addSource`'s `(protocol, sourceUri)` branch, which creates-or-finds the row. Slower per source; correct.
-- **D5 — `email`-protocol sources never travel, and their absence is stated.** `external_sources.ingest_address` is a per-subscriber secret alias (`inbound-mail.ts:76`). Copying the row hands a recipient the author's private address; resolving it by identity would mint a new alias and subscribe them to a newsletter in the author's name. Both are unacceptable, so email sources are excluded at freeze time — **with a visible count on both the publish preview and the formula page** ("3 email sources can't be shared"). Silent omission is the wrong failure: an author would believe they had published their whole feed.
+- **D4 — Sources are stored by portable identity, never by local row id.** `cloneFeedForOwner` copies `external_source_id` — safe only because template and clone are minted in the same instant on the same instance. A formula is redeemed weeks later, may name a source the GC has since culled, and must one day serialise off-platform. So a formula source stores `(protocol, canonical uri)` / npub / publication pubkey / tag string, and redemption *resolves* it through `addSource`'s `(protocol, sourceUri)` branch, which creates-or-finds the row. Slower per source; correct. **A publication's portable identity is its `publications.nostr_pubkey`** (operator, 2026-08-11 — unique, `publications_nostr_pubkey_key`), never its row id: the row id is exactly the local FK this decision forbids for external sources, and it is meaningless the day a formula serialises off-platform. Redeem resolves pubkey → publication through that unique key; the precise wire tag it rides in (`a` coordinate vs `p`) travels with D8's deliberately-unpinned kind question.
+- **D5 — `email`-protocol sources never travel, and their absence is stated.** `external_sources.ingest_address` is a per-subscriber secret alias (`inbound-mail.ts:76`). Copying the row hands a recipient the author's private address; resolving it by identity would mint a new alias and subscribe them to a newsletter in the author's name. Both are unacceptable, so email sources are excluded at freeze time — **with a visible count on both the publish preview and the formula page** ("3 email sources can't be shared"). Silent omission is the wrong failure: an author would believe they had published their whole feed. **The freeze fails closed by allow-list, not by naming email**: anything outside the four portable protocols (`rss`/`nostr_external`/`atproto`/`activitypub`) is excluded and counted — the `external_protocol` enum already carries `farcaster`/`matrix`/`telegram` with no composer path today, and a future protocol addition must not leak into formulas by default.
 - **D6 — The starter template becomes a formula, and `feeds.is_starter_template` is retired.** The operator designates a formula as the default seed; `seedStarterFeeds` redeems it for an owner with zero feeds. This kills the twice-realised failure at the root: a formula has no `feeds` row to delete, no duplicate-looking twin on the floor, and its `source_feed_id` back-reference is `ON DELETE SET NULL`, so deleting the feed it was cut from leaves the formula whole. The merge and delete guards (409 `starter_template_source`) retire with the flag.
 - **D7 — Attribution travels; counts do not.** A redeemed feed records and displays its origin ("from Billy Island's Long Reads"). The author is told nothing about uptake — no add count, private or public. An adoption metric on a curatorial object is an engagement surface by another name, and the platform's whole position is that there isn't one.
 - **D8 — The serialisation format is committed now, the Nostr publish is built later.** Each formula source is stored as a NIP-51-set-shaped triple — tag kind, value, optional hint — so that publishing a formula as a signed replaceable event (via key-custody and the relay outbox, like every other outbound event) is a later phase and not a re-cut. The mapping is mechanical: native account and external-nostr → pubkey tag, hashtag source → hashtag tag, RSS/atproto/AP source → URL tag, publication → addressable-event tag. **The exact kind is deliberately unpinned** — a follow-set vs curation-set vs custom addressable kind is a question for the session that builds it, and nothing in the storage shape depends on the answer.
 - **D9 — Redemption mints one new feed, never merges into an existing one.** The member redistributes afterwards with the existing merge and move tools. Same reasoning as FOLLOW-GRAPH-IMPORT D1.
 - **D10 — Revoking cannot un-add.** `revoked_at` stops future redemptions and nothing else; no feed anywhere is touched. Stated here explicitly because "revoke" reads as though it ought to reach into people's workspaces, and a future reader will otherwise try to make it do that.
+- **D11 — The designated default seed is undeletable and unrevocable** (operator, 2026-08-11). D6 removes the *feed-shaped* death of new-account seeding but the formula reintroduces three quieter ones — the author account's `ON DELETE CASCADE` sweeping the formula away, a revoke landing on the designated row, and nothing enforcing that exactly one row is designated — each of which is the §0l outage again: global, delayed, invisible from the act that caused it. So the guarantees move into the schema, where a route rebuild cannot un-deploy them (the §0l lesson that "a guard on master is not a guard"): a partial unique index caps designation at one (`WHERE is_default_seed`); a row CHECK forbids `is_default_seed AND revoked_at IS NOT NULL`; and a `BEFORE DELETE` trigger refuses to delete a designated row — which is what turns the author-account CASCADE into a refused account deletion rather than a silently dead seed path. Undesignating is therefore only possible by designating a replacement (the admin endpoint swaps both rows in one transaction) — never by removal. The zero-designated state exists only before Phase 2 cuts over, while `is_starter_template` still carries seeding.
 
 ---
 
@@ -81,7 +82,7 @@ That last clause is the whole design. §0l has fired twice — the flagged templ
 | `external_source`, protocol `email` | ❌ **excluded, counted, stated** | per-subscriber secret alias (D5) |
 | `reach` source | ❌ **unrepresentable** | deictic; §9.16 removes the kind entirely — this ADR does not carry a fallback, because the dependency is hard |
 | `weight`, `sampling_mode`, `exclude_replies` | ✅ | composition — the tuning *is* the formula |
-| `feeds.appearance` (colour scheme) | ✅, overridable at redeem | the look is part of the curatorial claim (`web/CLAUDE.md` per-feed schemes) |
+| `feeds.appearance` (colour scheme) | ✅ verbatim | the look is part of the curatorial claim (`web/CLAUDE.md` per-feed schemes); the feed *arrives* styled and the recipient restyles it afterwards like any feed — no choice at add time (operator, 2026-08-11) |
 | `feed_sources.muted_at` | ❌ | personal noise-management, not composition; sources arrive unmuted |
 | `hidden`, `sort_rank` | ❌ | workspace-local placement, meaningless to a recipient |
 | Items, saves, read state | ❌ | a formula is a composition, never content |
@@ -109,7 +110,7 @@ That last clause is the whole design. §0l has fired twice — the flagged templ
 | My formulas | settings or composer | list, copy link, revoke |
 | Default-seed designation | `/admin/*` | replaces the hand-run `UPDATE`; one designated formula, changeable |
 
-Gateway routes: `POST /feeds/:id/formula` (freeze + publish), `GET /formulas/:token` (`optionalAuth`, public projection), `POST /formulas/:token/redeem` (`requireAuth`), `GET /my/formulas`, `DELETE /formulas/:id` (sets `revoked_at`), plus the admin designation endpoint on `admin-dashboard.ts`.
+Gateway routes: `POST /feeds/:id/formula` (freeze + publish), `GET /formulas/:token` (`optionalAuth`, public projection), `POST /formulas/:token/redeem` (`requireAuth`), `GET /my/formulas`, `DELETE /formulas/:id` (sets `revoked_at`; 409 on the designated default seed, per D11 — the schema CHECK backs the refusal), plus the admin designation endpoint on `admin-dashboard.ts` (swaps designation to a replacement in one transaction; never merely clears it).
 
 ---
 
@@ -136,7 +137,7 @@ Existing, unchanged: feed-derived external subscriptions (only `addSource`/`remo
 Proposed additions for `CLAUDE.md` once Phase 1 ships:
 
 - **A formula is frozen, and redemption goes through `addSource`.** A published formula is an immutable composition stored by portable identity; redeeming it resolves each source through the `addSource` core, never by copying `external_source_id` and never through `cloneFeedForOwner` (whose lock-free, job-free shortcuts are licensed only by the zero-feeds precondition a redeemer does not have).
-- **The default seed is a formula, not a feed.** What every new account receives is an operator-designated `feed_formulas` row. It has no presence on the workspace floor and survives the deletion of the feed it was cut from. Never reintroduce a flag on `feeds` that makes an ordinary-looking feed load-bearing for every future signup.
+- **The default seed is a formula, not a feed — and the designated formula is undeletable and unrevocable.** What every new account receives is an operator-designated `feed_formulas` row. It has no presence on the workspace floor, survives the deletion of the feed it was cut from, and is schema-guarded against the quiet deaths (D11): at most one designated, never revoked while designated, never deletable — including via the author account's CASCADE. Undesignating happens only by designating a replacement. Never reintroduce a flag on `feeds` that makes an ordinary-looking feed load-bearing for every future signup.
 - **Email sources never enter a formula, and their exclusion is reported.** `external_sources.ingest_address` is a per-subscriber secret.
 
 ---
@@ -150,7 +151,7 @@ CREATE TABLE feed_formulas (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   author_id      uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   source_feed_id uuid REFERENCES feeds(id) ON DELETE SET NULL,  -- provenance only; never read at redeem
-  name           text NOT NULL,
+  name           text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 80),  -- feeds_name_length; redeem copies it into feeds.name
   description    text,
   appearance     jsonb NOT NULL DEFAULT '{}'::jsonb,
   token          text NOT NULL UNIQUE,
@@ -159,12 +160,21 @@ CREATE TABLE feed_formulas (
   source_count   integer NOT NULL,
   excluded_count integer NOT NULL DEFAULT 0,
   created_at     timestamptz NOT NULL DEFAULT now(),
-  revoked_at     timestamptz
+  revoked_at     timestamptz,
+  CONSTRAINT feed_formulas_seed_never_revoked CHECK (NOT is_default_seed OR revoked_at IS NULL)  -- D11
 );
+
+-- D11: at most one designated seed, and it cannot be deleted (the trigger is
+-- what turns the author-account CASCADE into a refused account deletion).
+CREATE UNIQUE INDEX uq_feed_formulas_default_seed ON feed_formulas (is_default_seed) WHERE is_default_seed;
+-- + BEFORE DELETE trigger refusing WHEN (OLD.is_default_seed)
 
 CREATE TABLE feed_formula_sources (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   formula_id  uuid NOT NULL REFERENCES feed_formulas(id) ON DELETE CASCADE,
+  -- composer order (operator, 2026-08-11): feed_sources has no ordering column,
+  -- so freeze assigns position from the author's composer order — created_at,
+  -- id as tiebreak — and the formula page renders it.
   position    integer NOT NULL,
   -- wire form (D8): NIP-51-set-shaped, so Phase 4 is a mapping and not a re-cut
   tag_kind    text NOT NULL CHECK (tag_kind IN ('p','t','r','a')),
@@ -176,8 +186,10 @@ CREATE TABLE feed_formula_sources (
   display_name text,
   avatar_url  text,
   weight      numeric NOT NULL DEFAULT 4.0,
-  sampling_mode text NOT NULL DEFAULT 'chronological',
-  exclude_replies boolean NOT NULL DEFAULT false
+  sampling_mode text NOT NULL DEFAULT 'chronological'
+    CHECK (sampling_mode IN ('chronological','scored','random')),  -- mirror feed_sources_sampling_mode_check
+  exclude_replies boolean NOT NULL DEFAULT false,
+  UNIQUE (formula_id, position)
 );
 
 ALTER TABLE feeds ADD COLUMN from_formula_id uuid REFERENCES feed_formulas(id) ON DELETE SET NULL;
@@ -185,7 +197,7 @@ ALTER TABLE feeds ADD COLUMN from_formula_id uuid REFERENCES feed_formulas(id) O
 
 Both `tag_*` and `source_type`/`protocol` are stored though each is derivable from the other: the first is what serialises outward, the second is what `addSource` consumes, and writing the mapping down once at freeze time is cheaper than re-deriving it at both ends. `feeds.cloned_from_feed_id` is **retained and no longer written** — it is the only provenance already-seeded members have.
 
-**`from_starter` must survive the move.** It is on the wire and forks live Explain copy (`ExplainOverlay.tsx:323`). Re-derive it as `EXISTS (SELECT 1 FROM feed_formulas ff WHERE ff.id = f.from_formula_id AND ff.is_default_seed)`, in the same three `FeedRow` SELECTs that compute it today (`feeds/shared.ts` `loadFeed`, `listFeedsForOwner`, `createFeedForOwner`). Add an optional `origin: { formulaName, authorName }` beside it for D7 attribution — two different questions that today share one field.
+**`from_starter` must survive the move.** It is on the wire and forks live Explain copy (`ExplainOverlay.tsx:323`). Re-derive it as `EXISTS (SELECT 1 FROM feed_formulas ff WHERE ff.id = f.from_formula_id AND ff.is_default_seed)` at every site that computes it today — **grep for `from_starter` rather than trusting a list: there are five sites, not three** (`feeds/shared.ts` `loadFeed`; `crud.ts` `listFeedsForOwner`, two inline SELECTs inside `registerFeedCrudRoutes`'s handlers, and `createFeedForOwner`'s literal `false AS from_starter`, which stays a literal). Add an optional `origin: { formulaName, authorName }` beside it for D7 attribution — two different questions that today share one field.
 
 **Files:** new `gateway/src/routes/feeds/formulas.ts` (freeze + redeem engine, registered from `feeds/index.ts`); `feeds/shared.ts` (the `from_starter` re-derivation + `origin`); `feeds/crud.ts` (`seedStarterFeeds` repointed in Phase 2; `cloneFeedForOwner` and the two starter guards deleted with the flag); `gateway/src/routes/admin-dashboard.ts` (designation); `web/src/app/f/[token]/page.tsx`; `web/src/components/workspace/FeedComposer.tsx` (publish action); `docker-compose.yml` + `DEPLOYMENT.md` (`FEED_FORMULAS_ENABLED`, default 0).
 
