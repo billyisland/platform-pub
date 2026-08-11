@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict U3M2WebXsJ8JQk0xlTI3NimCKXw2p3jCL3O1HZwSkJYnmAtXKzQSZAUAMkMdqOk
+\restrict kxjAGFODEMObQtPTRBepEgaPMallV1gZBWueML2vCAtvX0JPSUpBya6JK1rCSLw
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -554,6 +554,21 @@ BEGIN
   RAISE EXCEPTION
     'ledger_entries is append-only: % is not permitted (post a reversing entry instead)',
     TG_OP;
+END;
+$$;
+
+
+--
+-- Name: refuse_default_seed_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.refuse_default_seed_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION
+    'feed_formulas row % is the designated default seed and cannot be deleted; designate a replacement first', OLD.id
+    USING ERRCODE = 'restrict_violation';
 END;
 $$;
 
@@ -1270,6 +1285,57 @@ CREATE TABLE public.feed_engagement (
 
 
 --
+-- Name: feed_formula_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.feed_formula_sources (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    formula_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    tag_kind text NOT NULL,
+    tag_value text NOT NULL,
+    tag_hint text,
+    source_type text NOT NULL,
+    protocol public.external_protocol,
+    display_name text,
+    avatar_url text,
+    weight numeric DEFAULT 4.0 NOT NULL,
+    sampling_mode text DEFAULT 'chronological'::text NOT NULL,
+    exclude_replies boolean DEFAULT false NOT NULL,
+    CONSTRAINT feed_formula_sources_protocol_matches_type CHECK (((source_type = 'external_source'::text) = (protocol IS NOT NULL))),
+    CONSTRAINT feed_formula_sources_sampling_mode_check CHECK ((sampling_mode = ANY (ARRAY['chronological'::text, 'scored'::text, 'random'::text]))),
+    CONSTRAINT feed_formula_sources_source_type_check CHECK ((source_type = ANY (ARRAY['account'::text, 'publication'::text, 'external_source'::text, 'tag'::text]))),
+    CONSTRAINT feed_formula_sources_tag_kind_check CHECK ((tag_kind = ANY (ARRAY['p'::text, 't'::text, 'r'::text, 'a'::text]))),
+    CONSTRAINT feed_formula_sources_tag_matches_type CHECK (((source_type = 'tag'::text) = (tag_kind = 't'::text)))
+);
+
+
+--
+-- Name: feed_formulas; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.feed_formulas (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    author_id uuid NOT NULL,
+    source_feed_id uuid,
+    name text NOT NULL,
+    description text,
+    appearance jsonb DEFAULT '{}'::jsonb NOT NULL,
+    token text NOT NULL,
+    visibility text DEFAULT 'token'::text NOT NULL,
+    is_default_seed boolean DEFAULT false NOT NULL,
+    source_count integer NOT NULL,
+    excluded_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    CONSTRAINT feed_formulas_description_check CHECK (((description IS NULL) OR (char_length(description) <= 500))),
+    CONSTRAINT feed_formulas_name_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80))),
+    CONSTRAINT feed_formulas_seed_never_revoked CHECK (((NOT is_default_seed) OR (revoked_at IS NULL))),
+    CONSTRAINT feed_formulas_visibility_check CHECK ((visibility = ANY (ARRAY['token'::text, 'public'::text])))
+);
+
+
+--
 -- Name: feed_import_bindings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1402,6 +1468,7 @@ CREATE TABLE public.feeds (
     hidden boolean DEFAULT false NOT NULL,
     is_starter_template boolean DEFAULT false NOT NULL,
     cloned_from_feed_id uuid,
+    from_formula_id uuid,
     CONSTRAINT feeds_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80)))
 );
 
@@ -3228,6 +3295,38 @@ ALTER TABLE ONLY public.feed_engagement
 
 
 --
+-- Name: feed_formula_sources feed_formula_sources_formula_id_position_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_formula_sources
+    ADD CONSTRAINT feed_formula_sources_formula_id_position_key UNIQUE (formula_id, "position");
+
+
+--
+-- Name: feed_formula_sources feed_formula_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_formula_sources
+    ADD CONSTRAINT feed_formula_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: feed_formulas feed_formulas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_formulas
+    ADD CONSTRAINT feed_formulas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: feed_formulas feed_formulas_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_formulas
+    ADD CONSTRAINT feed_formulas_token_key UNIQUE (token);
+
+
+--
 -- Name: feed_import_bindings feed_import_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4578,6 +4677,13 @@ CREATE INDEX idx_feed_engagement_target ON public.feed_engagement USING btree (t
 
 
 --
+-- Name: idx_feed_formulas_author; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_feed_formulas_author ON public.feed_formulas USING btree (author_id, created_at DESC);
+
+
+--
 -- Name: idx_feed_items_article; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5621,6 +5727,13 @@ CREATE UNIQUE INDEX uq_dispute_active_credit ON public.dispute_edges USING btree
 
 
 --
+-- Name: uq_feed_formulas_default_seed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_feed_formulas_default_seed ON public.feed_formulas USING btree (is_default_seed) WHERE is_default_seed;
+
+
+--
 -- Name: uq_idlink_global; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5772,6 +5885,13 @@ CREATE TRIGGER articles_size_tier_default BEFORE INSERT ON public.articles FOR E
 --
 
 CREATE TRIGGER external_items_dedup_fp BEFORE INSERT OR UPDATE OF canonical_url, content_text ON public.external_items FOR EACH ROW EXECUTE FUNCTION public.external_items_set_fingerprint();
+
+
+--
+-- Name: feed_formulas feed_formulas_refuse_seed_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER feed_formulas_refuse_seed_delete BEFORE DELETE ON public.feed_formulas FOR EACH ROW WHEN (old.is_default_seed) EXECUTE FUNCTION public.refuse_default_seed_delete();
 
 
 --
@@ -6320,6 +6440,30 @@ ALTER TABLE ONLY public.feed_engagement
 
 
 --
+-- Name: feed_formula_sources feed_formula_sources_formula_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_formula_sources
+    ADD CONSTRAINT feed_formula_sources_formula_id_fkey FOREIGN KEY (formula_id) REFERENCES public.feed_formulas(id) ON DELETE CASCADE;
+
+
+--
+-- Name: feed_formulas feed_formulas_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_formulas
+    ADD CONSTRAINT feed_formulas_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: feed_formulas feed_formulas_source_feed_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_formulas
+    ADD CONSTRAINT feed_formulas_source_feed_id_fkey FOREIGN KEY (source_feed_id) REFERENCES public.feeds(id) ON DELETE SET NULL;
+
+
+--
 -- Name: feed_import_bindings feed_import_bindings_feed_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6453,6 +6597,14 @@ ALTER TABLE ONLY public.feed_sources
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_cloned_from_feed_id_fkey FOREIGN KEY (cloned_from_feed_id) REFERENCES public.feeds(id) ON DELETE SET NULL;
+
+
+--
+-- Name: feeds feeds_from_formula_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feeds
+    ADD CONSTRAINT feeds_from_formula_id_fkey FOREIGN KEY (from_formula_id) REFERENCES public.feed_formulas(id) ON DELETE SET NULL;
 
 
 --
@@ -7579,9 +7731,12 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict U3M2WebXsJ8JQk0xlTI3NimCKXw2p3jCL3O1HZwSkJYnmAtXKzQSZAUAMkMdqOk
+\unrestrict kxjAGFODEMObQtPTRBepEgaPMallV1gZBWueML2vCAtvX0JPSUpBya6JK1rCSLw
 
 
+--
+-- Data for Name: _migrations; Type: TABLE DATA; Schema: public; Owner: -
+--
 
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
@@ -7760,4 +7915,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('174_notifications_dedup_drive.sql'),
     ('175_payouts_halted_accounts.sql'),
     ('176_accounts_onboarded_at.sql'),
-    ('177_retire_reach_source_kind.sql');
+    ('177_retire_reach_source_kind.sql'),
+    ('178_feed_formulas.sql');

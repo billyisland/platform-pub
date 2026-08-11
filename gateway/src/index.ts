@@ -60,6 +60,7 @@ import { trustRoutes } from "./routes/trust.js";
 import { readingPositionRoutes } from "./routes/reading-positions.js";
 import { privacyPreferencesRoutes } from "./routes/privacy-preferences.js";
 import { feedsRoutes } from "./routes/feeds/index.js";
+import { formulaPublicRoutes } from "./routes/feeds/formulas.js";
 import { extractRoutes } from "./routes/extract.js";
 import { authorCardRoutes } from "./routes/author-card.js";
 import { authorRoutes } from "./routes/author.js";
@@ -288,6 +289,12 @@ async function start() {
   // Mounted under /api/v1/workspace because external-feeds.ts already owns the
   // /api/v1/feeds namespace for RSS/Mastodon/Bluesky/Nostr subscriptions.
   await app.register(feedsRoutes, { prefix: "/api/v1/workspace" });
+
+  // Feed formulas — the public half (FEED-FORMULAS-ADR §7). GET /formulas/:token
+  // is the preview a logged-out visitor opens, so it is deliberately NOT under
+  // the workspace prefix. Freeze lives with the feeds plugin above; the whole
+  // engine is dark behind FEED_FORMULAS_ENABLED.
+  await app.register(formulaPublicRoutes, { prefix: "/api/v1" });
 
   // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
   // Mounted at the root so the canonical URL is

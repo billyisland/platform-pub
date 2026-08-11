@@ -23,6 +23,63 @@ starts.
 
 ## Progress
 
+- **2026-08-11 (a feed becomes a thing you can hand to someone)** —
+  **Migration 178, dark behind `FEED_FORMULAS_ENABLED`.** FEED-FORMULAS-ADR Phase 1,
+  server half; CONSOLIDATED-TODO §9.17. A *formula* is a feed's composition frozen at
+  a moment, stored by portable identity, given an unguessable token, and redeemable by
+  any account into an ordinary fully-owned feed. New `feed_formulas` +
+  `feed_formula_sources` + `feeds.from_formula_id`; freeze / public preview / redeem /
+  list / revoke in `gateway/src/routes/feeds/formulas.ts`, split across two prefixes
+  because the preview is a genuinely public page and must not be served from a path
+  called `workspace`.
+
+  **The point of the whole feature is that a formula is not a `feeds` row.** §0l has
+  fired twice — the flagged starter template dragged into a merge, then its hidden
+  replacement deleted as a stray duplicate — both times because the shared thing looked
+  like a feed, so somebody tidied it away. Phase 2 makes the seed a formula, which has
+  nothing on the workspace floor to tidy. Phase 1 is the object it will be.
+
+  **D11's guards are in the schema, not in a route**, on the §0l lesson that a guard on
+  master is not a guard: a partial unique index caps designation at one, a row CHECK
+  forbids revoking a designated row, and a `BEFORE DELETE` trigger refuses to delete
+  one — which is what turns the author account's `ON DELETE CASCADE` into a *refused
+  account deletion* instead of a silently dead seeding path. Probed in psql, and the
+  probe that mattered was the one that first lied: the account-delete refusal initially
+  "passed" against an unrelated `articles_writer_id_fkey`, so it was re-run against a
+  throwaway account with a no-formula control to prove the refusal was the trigger.
+
+  **Three departures from the ADR, all recorded in its new §12.** The revoked gate went
+  into the redeem CORE rather than the route (a core that mints feeds from a shared
+  artifact must enforce its own precondition — Phase 2 adds exactly the second caller
+  that would forget), and the test asserts both the refusal *and* that no feed is minted,
+  since a gate after `createFeedForOwner` would leave an empty feed behind on every
+  attempt. Freeze refuses an empty composition, which the ADR did not call for: a
+  sourceless feed auto-serves `placeholderExploreItems`, so a formula with nothing in it
+  would show its recipient the platform stream while claiming to be a stranger's
+  curation — §2.7's placeholder becoming a correctness problem in a surface nobody had
+  considered it against. And `from_starter` was NOT re-derived (that is Phase 2's job,
+  since `is_starter_template` still carries seeding); what landed instead is the part
+  worth having early — the provenance projection is now ONE function,
+  `feedProvenanceSql(alias)`, replacing the five hand-copies whose existence is why the
+  ADR has to tell a reader to *grep* rather than trust a list.
+
+  **Evidence.** 17 new tests + 3 parity cases, suite 552 → 572. Five mutations run and
+  all five caught: `email` made portable, composer order reversed, frozen tuning not
+  applied at redeem, the revoked gate removed, the relay hint attached to every protocol
+  instead of nostr alone. The freeze half is client-threaded and rolls back; the redeem
+  half **cannot** be, and that is design rather than shortcut — §6 forbids wrapping the
+  redeem loop in one transaction, so `addSource` opens its own and cannot see an
+  uncommitted fixture — so it commits and cleans up after itself. Then the loop was
+  driven live against a rebuilt gateway: compose → freeze → logged-out public page →
+  redeem as a second account → revoke → 410, with the redeemed feed untouched by the
+  revoke. With the flag off all five routes 404 while an ordinary feeds route still
+  200s, which is what makes the 404s the brake rather than a broken gateway.
+
+  **One incidental find worth knowing:** the config fallback-parity suites read
+  `shared/dist/db/config-defaults.sql`, not `src`. A newly-seeded dial fails parity with
+  `inFile: undefined` until `shared` is rebuilt — a stale build artifact that presents
+  exactly like a drifted fallback.
+
 - **2026-08-11 (the reach source kind is retired — Explore goes, Following becomes rows)** —
   **Migration 177, no flag.** CONSOLIDATED-TODO §9.16 core. `feed_sources.source_type
   = 'reach'` carried two things wearing one name; both are gone from the schema in

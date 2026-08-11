@@ -143,6 +143,15 @@ services:
       # self-import (ADR §2 / §6.6).
       FOLLOW_IMPORT_ENABLED: ${FOLLOW_IMPORT_ENABLED:-0}
       FOLLOW_IMPORT_ACTIVITYPUB_ENABLED: ${FOLLOW_IMPORT_ACTIVITYPUB_ENABLED:-0}
+      # Feed formulas (FEED-FORMULAS-ADR Phase 1). Ships dark: flag off ⇒ freeze,
+      # the public formula page, redeem, list and revoke all 404, so the feature
+      # is absent rather than half-lit. Server-only — there is no NEXT_PUBLIC
+      # twin, because the web only needs to omit an action, not change layout.
+      # PHASE 2 WARNING: when seedStarterFeeds is repointed at a designated
+      # formula, that path must NOT be gated on this flag — turning it off would
+      # then silently end new-account seeding, which is the §0l outage from the
+      # opposite direction (ADR §6).
+      FEED_FORMULAS_ENABLED: ${FEED_FORMULAS_ENABLED:-0}
       # Pledge drives + commissioning (parked 2026-07-13). Ships dark: flag off
       # ⇒ every /drives route 403s (feature_disabled), so no drive/pledge/
       # commission can be created or read; fulfilment plumbing goes inert. The

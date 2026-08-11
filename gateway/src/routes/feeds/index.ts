@@ -5,6 +5,7 @@ import { registerFeedSourcesRoutes } from "./sources.js";
 import { registerAuthorVolumeRoutes } from "./author-volume.js";
 import { registerFeedSavesRoutes } from "./saves.js";
 import { registerFeedBootstrapRoutes } from "./bootstrap.js";
+import { registerFeedFormulaRoutes } from "./formulas.js";
 
 // =============================================================================
 // Workspace feeds (slices 3 + 4)
@@ -48,4 +49,8 @@ export async function feedsRoutes(app: FastifyInstance) {
   registerAuthorVolumeRoutes(app);
   registerFeedSavesRoutes(app);
   registerFeedBootstrapRoutes(app);
+  // Freeze only (POST /workspace/feeds/:id/formula) — the public preview and
+  // redeem halves are mounted at /api/v1 from index.ts, since a formula page
+  // is a public page and must not be served from a path called "workspace".
+  registerFeedFormulaRoutes(app);
 }

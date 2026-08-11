@@ -8,6 +8,7 @@ import {
   removeSource,
   type AddSourceInput,
 } from "../routes/feeds/sources.js";
+import { ENQUEUE_SPACING_MS } from "../routes/feeds/shared.js";
 import { getProfile as atprotoGetProfile, getFollows } from "./atproto-resolve.js";
 import {
   extractFromMastodonUrl,
@@ -72,10 +73,8 @@ const BATCH_SIZE = 25;
 const VOLUME_SAMPLE_THRESHOLD = 50;
 const SAMPLED_WEIGHT = 1.0;
 
-// §6.4b — spacing between consecutive sources' subscribe-time ingest jobs.
-// A 500-source import trickles its jobs over ~4 minutes instead of dumping
-// 500 immediate fetches on a 10-concurrency worker.
-const ENQUEUE_SPACING_MS = 500;
+// §6.4b spacing — now shared with formula redemption, the second bulk-add
+// path. Defined in routes/feeds/shared.ts, imported below.
 
 // One resolved followed account, as persisted in follow_imports.identities.
 // `uri` is the canonical stored form for the protocol (DID / hex pubkey /

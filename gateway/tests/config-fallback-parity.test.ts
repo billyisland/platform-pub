@@ -19,6 +19,7 @@ vi.mock("../src/lib/platform-config.js", () => ({
 }));
 
 const { loadProofBlendParams } = await import("../src/lib/feed-rank.js");
+const { formulaMaxSources } = await import("../src/routes/feeds/formulas.js");
 
 describe("feed-rank fallbacks vs config-defaults.sql", () => {
   beforeEach(() => {
@@ -40,5 +41,37 @@ describe("feed-rank fallbacks vs config-defaults.sql", () => {
     configMock.current = new Map([["feed_gravity", "2.25"]]);
     const p = await loadProofBlendParams();
     expect(p.gravity).toBe(2.25);
+  });
+});
+
+describe("feed-formula source cap fallback vs config-defaults.sql", () => {
+  beforeEach(() => {
+    configMock.current = new Map();
+  });
+
+  it("the in-code fallback matches the seeded default", async () => {
+    // Same rule, one dial: the fallback is a SECOND copy of the number, and it
+    // substitutes silently in exactly the case it exists for — the row missing.
+    // A drifted copy means the operator's UPDATE tunes a value nothing reads.
+    expect(diffAgainstDefaults({ feed_formula_max_sources: await formulaMaxSources() }))
+      .toEqual([]);
+  });
+
+  it("a seeded value wins over the fallback", async () => {
+    configMock.current = new Map([["feed_formula_max_sources", "12"]]);
+    expect(await formulaMaxSources()).toBe(12);
+  });
+
+  it("falls back rather than trusting junk in the row", async () => {
+    // A non-numeric or non-positive value must not become a cap of NaN or 0 —
+    // the first compares false against everything (so the cap never fires) and
+    // the second refuses every formula ever published.
+    for (const junk of ["", "not-a-number", "0", "-5"]) {
+      configMock.current = new Map([["feed_formula_max_sources", junk]]);
+      expect(await formulaMaxSources()).toBeGreaterThan(0);
+      expect(
+        diffAgainstDefaults({ feed_formula_max_sources: await formulaMaxSources() }),
+      ).toEqual([]);
+    }
   });
 });

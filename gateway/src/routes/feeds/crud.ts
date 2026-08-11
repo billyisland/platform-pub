@@ -6,6 +6,7 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import {
   UUID_RE,
   type FeedRow,
+  feedProvenanceSql,
   feedRowToResponse,
   loadFeed,
   tagged,
@@ -256,8 +257,7 @@ export async function listFeedsForOwner(ownerId: string): Promise<FeedRow[]> {
   const { rows } = await pool.query<FeedRow>(
     `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
        (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count,
-       EXISTS (SELECT 1 FROM feeds t
-               WHERE t.id = f.cloned_from_feed_id AND t.is_starter_template) AS from_starter
+       ${feedProvenanceSql("f")}
      FROM feeds f
      WHERE f.owner_id = $1
      ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,
@@ -271,17 +271,37 @@ export async function listFeedsForOwner(ownerId: string): Promise<FeedRow[]> {
 // created_at). Extracted from POST /feeds (FOLLOW-GRAPH-IMPORT-ADR §11.1) so
 // the follow-import engine can mint the import's target feed through the same
 // path. Returns the full FeedRow (source_count 0 by construction).
+//
+// `opts` serves formula redemption (FEED-FORMULAS-ADR §5): a redeemed feed
+// arrives in the author's colour scheme, and carries the formula it came from
+// for the D7 attribution line. Both default to today's behaviour — an omitted
+// option cannot change what POST /feeds or the import engine mint. `origin_*`
+// come back NULL on this path by construction: the JOIN would be against a row
+// this INSERT has only just referenced, and the caller (redeem) already holds
+// the formula's name and author.
+export interface CreateFeedOptions {
+  appearance?: Record<string, unknown>;
+  fromFormulaId?: string;
+}
 export async function createFeedForOwner(
   ownerId: string,
   name: string,
   db: { query: typeof pool.query } = pool,
+  opts: CreateFeedOptions = {},
 ): Promise<FeedRow> {
   const { rows } = await db.query<FeedRow>(
-    `INSERT INTO feeds (owner_id, name, sort_rank)
+    `INSERT INTO feeds (owner_id, name, sort_rank, appearance, from_formula_id)
      VALUES ($1, $2,
-       (SELECT COALESCE(MAX(sort_rank), 0) + 1 FROM feeds WHERE owner_id = $1))
-     RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count, false AS from_starter`,
-    [ownerId, name],
+       (SELECT COALESCE(MAX(sort_rank), 0) + 1 FROM feeds WHERE owner_id = $1),
+       COALESCE($3::jsonb, '{}'::jsonb), $4)
+     RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count,
+       false AS from_starter, NULL::text AS origin_formula_name, NULL::text AS origin_author_name`,
+    [
+      ownerId,
+      name,
+      opts.appearance ? JSON.stringify(opts.appearance) : null,
+      opts.fromFormulaId ?? null,
+    ],
   );
   return rows[0];
 }
@@ -360,8 +380,7 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
          WHERE id = $1 AND owner_id = $2
          RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at,
            (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = feeds.id) AS source_count,
-           EXISTS (SELECT 1 FROM feeds t
-                   WHERE t.id = feeds.cloned_from_feed_id AND t.is_starter_template) AS from_starter`,
+           ${feedProvenanceSql("feeds")}`,
         [id, ownerId, ...vals],
       );
       if (rows.length === 0)
@@ -418,8 +437,7 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
       const { rows } = await pool.query<FeedRow>(
         `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
            (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count,
-           EXISTS (SELECT 1 FROM feeds t
-                   WHERE t.id = f.cloned_from_feed_id AND t.is_starter_template) AS from_starter
+           ${feedProvenanceSql("f")}
          FROM feeds f
          WHERE f.owner_id = $1
          ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,

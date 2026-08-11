@@ -318,3 +318,22 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO platform_config (key, value, description) VALUES
   ('payout_halt_escalation_hours',     '24',   'Hours a payout halt (the global payouts_halted flag or a payouts_halted_accounts row) may stand before the ledger reconciler escalates it under the payout_halt_stale alert marker. A halt nobody clears is a policy of not paying (reconcile-ledger.ts::escalateStaleHalts).')
 ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Feed formulas — the publishable source cap (FEED-FORMULAS-ADR §6).
+--
+-- Sized by REDEEM LATENCY, not by storage. Redemption resolves N sources
+-- through addSource one at a time, and a genuinely new identity is probed, so
+-- the cap is really "how long may a redeem request take in the worst case".
+-- In practice almost every source in a v1 formula is already held healthy by
+-- this instance (the author holds it), which short-circuits the probe — 200
+-- bounds the pathological case rather than the normal one.
+--
+-- It is a dial because the right number is only knowable by watching real
+-- redemptions: lower it if redeems start timing out, raise it once redemption
+-- moves to a background job. There is no per-feed source cap anywhere else in
+-- the system, so this is the first thing that stresses that.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('feed_formula_max_sources',        '200',  'Maximum portable sources a feed formula may carry. Bounds worst-case redeem latency (N serial addSource calls, each probing a genuinely new identity), not storage. Read by gateway formulas.ts::formulaMaxSources.')
+ON CONFLICT (key) DO NOTHING;
