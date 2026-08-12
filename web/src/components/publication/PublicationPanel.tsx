@@ -23,7 +23,7 @@ import { PubFollowButton } from "./PubFollowButton";
 import { HomepageBlog } from "./HomepageBlog";
 import { HomepageMagazine } from "./HomepageMagazine";
 import { HomepageMinimal } from "./HomepageMinimal";
-import type { PubArticle } from "./article-shared";
+import { mastheadRole, type PubArticle } from "./article-shared";
 
 interface PubPublic {
   id: string;
@@ -333,7 +333,7 @@ function MastheadView({ slug }: { slug: string }) {
   return (
     <div className="max-w-article mx-auto space-y-6">
       {members.map((m: any) => (
-        <div key={m.account_id} className="flex items-start gap-4">
+        <div key={m.username} className="flex items-start gap-4">
           {m.avatar_blossom_url ? (
             <img
               src={m.avatar_blossom_url}
@@ -345,15 +345,12 @@ function MastheadView({ slug }: { slug: string }) {
           )}
           <div>
             <ProfileLink
-              href={`/@${m.username}`}
+              href={`/${m.username}`}
               className="font-sans font-medium text-black hover:opacity-70"
             >
               {m.display_name || m.username}
             </ProfileLink>
-            <p className="label-ui text-grey-600 mt-0.5">
-              {m.title || m.role}
-              {m.contributor_type !== "staff" && ` · ${m.contributor_type}`}
-            </p>
+            <p className="label-ui text-grey-600 mt-0.5">{mastheadRole(m)}</p>
             {m.bio && (
               <p className="font-sans text-ui-sm text-grey-600 mt-1">{m.bio}</p>
             )}

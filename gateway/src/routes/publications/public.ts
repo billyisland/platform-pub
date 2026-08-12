@@ -118,8 +118,18 @@ export async function publicationPublicRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'Publication not found' })
       }
 
+      // `contributor_type` is selected because both masthead surfaces render a
+      // suffix from it ("· one-off"). It was NOT selected before, so the
+      // overlay's unguarded read printed the literal "· undefined" after every
+      // member's role (§0q.2). Fixing that by guarding alone would have left
+      // dead markup on both surfaces; the field is real (`publication_members`,
+      // NOT NULL DEFAULT 'permanent'), so it is served instead.
+      //
+      // `account_id` is deliberately NOT selected: this endpoint is public and
+      // unauthenticated, and the only thing the id was wanted for was a React
+      // key, which `username` (already public, already unique) serves.
       const { rows } = await pool.query(
-        `SELECT pm.role, pm.title, pm.is_owner,
+        `SELECT pm.role, pm.title, pm.is_owner, pm.contributor_type,
                 a.username, a.display_name, a.avatar_blossom_url, a.bio
          FROM publication_members pm
          JOIN accounts a ON a.id = pm.account_id

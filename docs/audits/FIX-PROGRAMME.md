@@ -23,6 +23,48 @@ starts.
 
 ## Progress
 
+- **2026-08-12 (the publication masthead stops saying "undefined" and its links stop 404ing)** —
+  CONSOLIDATED-TODO §0q items 2 and 3, plus 8e, which item 2 forced.
+
+  **§0q.2 was fixed by SERVING the field, not by guarding the read.** The
+  masthead endpoint never selected `contributor_type`, so the overlay's
+  unguarded `undefined !== 'staff'` printed a literal "· undefined" after every
+  member's role. The audit's minimal fix was the standalone's guard — but the
+  column is real (`publication_members`, NOT NULL DEFAULT `permanent`) and both
+  surfaces already render a suffix from it, so guarding alone would have shipped
+  permanently dead markup on both. **That forced 8e in the same breath:** the
+  sentinel compared against `'staff'`, which the enum (`permanent`/`one_off`)
+  does not contain, so serving the column would have suffixed EVERY member. Now
+  `one_off` → "· one-off", marking the exception. The React key moved to
+  `username` rather than selecting `account_id` — the endpoint is public and
+  unauthenticated, and a username is already public and already unique.
+
+  **§0q.3 was three sites in the audit and four in the code.** Reproduced first
+  (`/@freshseed` 404, `/freshseed` 200), fixed, then all five masthead links
+  re-checked (five 200s against five 404s before). The fourth site was worse
+  than the class it was filed under: `ReadingHistory` built an ARTICLE href as
+  `/@user/slug`, and dropping the `@` would not have fixed it — there is no
+  `/[username]/[slug]` route at all. It now uses `/article/:dTag`, the field its
+  own in-overlay branch already opened the reader with.
+
+  **And one thing checked and found NOT to be a defect**, which is worth as much
+  as the fixes: `NotificationsPanel` builds five `/article/<slug>` hrefs, which
+  read exactly like the same bug. The gateway aliases `nostr_d_tag AS
+  article_slug`, so the field named `slug` carries the d-tag and those hrefs are
+  correct. Established by driving the real query with a real notification and
+  comparing both values against the live route (real slug 404s, this value
+  200s), not by reading. Commented at the alias, since a field whose name lies
+  will read as this bug to the next person too.
+
+  The role line is now `mastheadRole()` in `article-shared.tsx` — the module
+  whose stated job is stopping two surfaces from meaning different things by the
+  same line, which is exactly how this defect survived (the standalone was fixed
+  in the very commit that left the overlay copy broken). A proportionate slice
+  of §0q.8a; the rest of that template share stays open.
+
+  Gateway 593 green, web `tsc` + `next build` clean, root ESLint 0 errors,
+  hairline tripwire clean on all five touched files. No migration.
+
 - **2026-08-12 (the row that could kill new-user seeding is gone from the schema)** —
   **Feed formulas Phase 2 step 2, migration 179** (FEED-FORMULAS-ADR §15;
   CONSOLIDATED-TODO §9.17, now struck). `feeds.is_starter_template` dropped, with

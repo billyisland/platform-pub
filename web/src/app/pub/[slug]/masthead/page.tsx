@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { ProfileLink } from '../../../../components/ui/ProfileLink'
 import { PublicationMasthead } from '../../../../components/publication/PublicationMasthead'
+import { mastheadRole } from '../../../../components/publication/article-shared'
 import { PublicPage } from '../../../../components/public/PublicPage'
 import WorkspacePaneRedirect from '../../../../components/layout/WorkspacePaneRedirect'
 
@@ -70,17 +71,12 @@ export default async function MastheadPage({ params }: { params: { slug: string 
                 )}
                 <div className="min-w-0">
                   <ProfileLink
-                    href={`/@${m.username}`}
+                    href={`/${m.username}`}
                     className="font-sans font-medium text-black hover:opacity-70"
                   >
                     {m.display_name || m.username}
                   </ProfileLink>
-                  <p className="label-ui text-grey-600 mt-1">
-                    {m.title || m.role}
-                    {m.contributor_type && m.contributor_type !== 'staff'
-                      ? ` · ${m.contributor_type}`
-                      : ''}
-                  </p>
+                  <p className="label-ui text-grey-600 mt-1">{mastheadRole(m)}</p>
                   {m.bio && (
                     <p className="font-sans text-ui-sm text-grey-600 mt-2 leading-[1.55]">
                       {m.bio}

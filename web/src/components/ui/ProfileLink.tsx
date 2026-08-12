@@ -10,8 +10,17 @@
 // Back closes it and a refresh resolves to the full page.
 //
 // The target kind is derived from the href alone — /author/:id → external,
-// /:username (or /@:username) → native — so this is a drop-in for any existing
+// /:username → native — so this is a drop-in for any existing
 // `<Link href={profilePath}>`.
+//
+// THE CANONICAL NATIVE PROFILE URL HAS NO `@`. It is `/:username`, which is
+// what the gateway's own `profilePath` emits (`lib/author-resolve.ts`) and what
+// the `app/[username]` route serves. The `@?` in the matcher below is TOLERANCE
+// ON THE OVERLAY PATH ONLY and must not be read as a second supported form:
+// four call sites once built `href={`/@${username}`}`, and because this matcher
+// quietly stripped the `@`, a plain left-click opened the overlay perfectly
+// while new-tab, copy-link and every crawler got a 404 from the real route
+// (§0q.3). All four were corrected; nothing should emit an `@` again.
 // =============================================================================
 
 import Link from "next/link";
@@ -27,7 +36,8 @@ export function profileTargetFromHref(
   | null {
   const ext = href.match(/^\/author\/([^/?#]+)/);
   if (ext) return { kind: "external", authorId: decodeURIComponent(ext[1]) };
-  // Root-level /:username or /@:username (the native profile route).
+  // Root-level /:username — the native profile route. The optional `@` is
+  // tolerance for a malformed href, not a supported URL form (see the header).
   const native = href.match(/^\/@?([^/?#]+)/);
   if (native && native[1]) return { kind: "native", username: native[1] };
   return null;

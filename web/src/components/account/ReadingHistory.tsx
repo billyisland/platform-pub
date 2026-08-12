@@ -39,9 +39,14 @@ export function ReadingHistory({ inOverlay = false }: { inOverlay?: boolean }) {
   if (loading) return <div className="h-12 animate-pulse bg-glasshouse-well" />
   if (items.length === 0) return null
 
+  // `/article/:dTag` is the native article route. This built `/@user/slug`,
+  // which 404s twice over — the `@` (the profile route is `/[username]`, no
+  // stripping), and there is no `/[username]/[slug]` route at all, so dropping
+  // the `@` alone would not have fixed it. `dTag` is the same field the
+  // in-overlay branch below already opens the reader with, so the two paths now
+  // address the same article the same way.
   function articleHref(item: ReadingHistoryItem) {
-    if (item.writer.username && item.slug) return `/@${item.writer.username}/${item.slug}`
-    return null
+    return item.dTag ? `/article/${item.dTag}` : null
   }
 
   function openInReader(item: ReadingHistoryItem) {
@@ -59,7 +64,7 @@ export function ReadingHistory({ inOverlay = false }: { inOverlay?: boolean }) {
           return (
             <div key={`${item.articleId}-${item.readAt}`} className="flex items-center gap-3 px-6 py-4">
               {item.writer.username ? (
-                <ProfileLink href={`/@${item.writer.username}`} className="flex-shrink-0">
+                <ProfileLink href={`/${item.writer.username}`} className="flex-shrink-0">
                   <Avatar src={item.writer.avatar} name={item.writer.displayName || item.writer.username} size={28} />
                 </ProfileLink>
               ) : (

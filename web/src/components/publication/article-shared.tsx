@@ -32,6 +32,29 @@ export function articleKey(a: PubArticle): string {
   return a.nostr_event_id ?? a.nostr_d_tag
 }
 
+/**
+ * The masthead's role line, for BOTH surfaces that render one — the standalone
+ * `/pub/:slug/masthead` page and the `PublicationPanel` overlay. Same argument
+ * as the byline helpers above, one level up: the two surfaces had already drifted
+ * (the standalone was fixed and the overlay's copy kept the broken form, which is
+ * how "· undefined" reached every member's line — §0q.2), so the rule lives here
+ * rather than twice.
+ *
+ * `contributor_type` is `permanent | one_off`, NOT NULL, defaulting to
+ * `permanent`. So the suffix marks the EXCEPTION — a guest contributor — and a
+ * regular member's line is just their title or role. The previous sentinel
+ * compared against `'staff'`, a value the enum does not contain, which would
+ * have suffixed every single member the day the column was served (§0q.8e).
+ */
+export function mastheadRole(m: {
+  title?: string | null
+  role?: string | null
+  contributor_type?: string | null
+}): string {
+  const base = m.title || m.role || ''
+  return m.contributor_type === 'one_off' ? `${base} · one-off` : base
+}
+
 export function articleHref(slug: string, a: PubArticle): string {
   return `/pub/${slug}/${a.nostr_d_tag}`
 }

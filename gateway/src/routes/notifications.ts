@@ -59,6 +59,15 @@ export async function notificationRoutes(app: FastifyInstance) {
          a.avatar_blossom_url AS actor_avatar,
          n.article_id,
          ar.title             AS article_title,
+         -- Named "slug", holds the D-TAG, and the name is the misleading half:
+         -- the articles table has a real slug column and it is NOT this one (a
+         -- d-tag is username-prefixed: alice-my-piece vs my-piece). The web
+         -- builds /article/<this value> from the field at five sites in
+         -- NotificationsPanel, and the article route keys on the d-tag — so
+         -- those hrefs are CORRECT and only look like the 0q.3 bug class.
+         -- Verified live rather than reasoned about: the real slug 404s there,
+         -- this value 200s. Renaming the wire field would close the trap but is
+         -- a client-visible change.
          ar.nostr_d_tag       AS article_slug,
          aw.username          AS article_writer_username,
          n.comment_id,

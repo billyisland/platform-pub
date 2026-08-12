@@ -434,25 +434,39 @@ the end). Six defects, one on a money path, plus a consolidation batch.
    transfer-choosing sites. +3 tests, mutation-proved both halves. Deploy:
    payment-service image only.
 
-2. **MEDIUM — the overlay masthead renders "· undefined" after every member's
-   role.** `PublicationPanel.tsx:355` reads `m.contributor_type`, which the
-   masthead endpoint (`publications/public.ts:122`) never selects, so
-   `undefined !== "staff"` appends the literal text; `:336` keys the list on
-   `m.account_id`, also never selected, so every React key is undefined. The
-   standalone page fixed both lines in this same commit (`masthead/page.tsx:80`)
-   while the overlay copy kept the broken forms — the register drift b06787f4
-   set out to end, in the file it touched. **Fix:** minimal is the
-   standalone's guard + `key={m.username}`; the right one is item 8a (share
-   the masthead template, as home already is).
+2. ~~**MEDIUM — the overlay masthead renders "· undefined" after every member's
+   role.**~~ — **DONE 2026-08-12.** Fixed by SERVING the field rather than by
+   guarding the read: `publication_members.contributor_type` is real (NOT NULL
+   DEFAULT `permanent`) and both surfaces already render a suffix from it, so
+   the endpoint now selects it and the guard-only fix — which would have left
+   permanently dead markup on both — was rejected. **That forced item 8e, so 8e
+   is closed here too:** the sentinel compared against `'staff'`, a value the
+   enum does not contain, so serving the column would have suffixed EVERY member
+   (`· permanent`); it is now `one_off`, rendered as "· one-off", marking the
+   exception rather than the rule. The React key moved to `m.username` rather
+   than selecting `account_id` — this endpoint is public and unauthenticated,
+   and a username is already public, already unique, and already what the
+   standalone keys on. The role line itself is now `mastheadRole()` in
+   `article-shared.tsx`, whose stated job is exactly this (stopping two surfaces
+   from meaning different things by the same line) — a proportionate slice of 8a
+   rather than the whole template share, which stays open.
 
-3. **MEDIUM — `/@username` member links 404 everywhere the overlay intercept
-   doesn't run.** `masthead/page.tsx:73` and `PublicationPanel.tsx:348` (and
-   pre-existing `ReadingHistory.tsx:62`) build `href={'/@' + username}`, but
-   the profile route is `app/[username]` with no `@`-stripping — verified
-   live: `/@prospect` 404s, `/prospect` 200s. Left-click works only because
-   `ProfileLink`'s overlay path strips the `@`; new-tab, copy-link and SEO
-   crawl — the commit's own stated purpose for the standalone routes — get
-   the 404. **Fix:** drop the `@` from the hrefs; nothing else changes.
+3. ~~**MEDIUM — `/@username` member links 404 everywhere the overlay intercept
+   doesn't run.**~~ — **DONE 2026-08-12.** Reproduced live first (`/@freshseed`
+   404, `/freshseed` 200), then all five masthead links re-checked after
+   (200/200/200/200/200 against 404s before). **The audit found three sites; there
+   were four**, and the fourth was worse than the class: `ReadingHistory.tsx:43`
+   built an ARTICLE href as `/@user/slug`, and dropping the `@` would NOT have
+   fixed it — there is no `/[username]/[slug]` route at all. It now uses
+   `/article/:dTag`, the same field the component's own in-overlay branch
+   already opens the reader with. `ProfileLink`'s `@?` tolerance is kept but
+   re-documented as tolerance for a malformed href, never a second supported
+   form — it silently stripping the `@` is precisely why left-click worked and
+   nothing else did. **Checked and NOT a defect** (verified live, not reasoned
+   about): `NotificationsPanel`'s five `/article/${n.article.slug}` hrefs are
+   correct — the gateway aliases `nostr_d_tag AS article_slug`, so the field
+   named `slug` carries the d-tag. Commented at the alias, since a field whose
+   name lies reads as this exact bug to the next person.
 
 4. **MEDIUM (latent — gates §3.5 slice 3) — the `feed_items` upsert drops a
    corrected `published_at`.** `article-publisher.ts:187` takes
@@ -491,7 +505,9 @@ the end). Six defects, one on a money path, plus a consolidation batch.
 
 8. **Consolidation batch (simplification/muddiness — one sitting):**
    - **(a) Finish what b06787f4 started: the registers still fork past the
-     homepage.** The overlay archive is a flat relative-dated `ArticleList`
+     homepage.** *(The masthead's ROLE LINE was shared out to
+     `article-shared.tsx::mastheadRole` on 2026-08-12 with item 2 — the rest of
+     this stands.)* The overlay archive is a flat relative-dated `ArticleList`
      against the standalone's year-grouped absolute dates (contradicting
      `article-shared.tsx`'s own "dates are part of the record" comment); the
      overlay header hand-duplicates the block `PublicationMasthead` owns; a
@@ -514,10 +530,10 @@ the end). Six defects, one on a money path, plus a consolidation batch.
      response, so a gateway 500 paints "NO ARTICLES PUBLISHED YET", cached
      60s (`archive/page.tsx:33`, `masthead/page.tsx:22`, `page.tsx:41`).
      These were `notFound()` before the rework. Distinguish error from empty.
-   - **(e) `contributor_type !== 'staff'`** compares against a value the
-     enum does not contain (`permanent`/`one_off`, schema.sql:95) — dead
-     until someone selects the column, wrong the day they do. Fix the
-     sentinel when (a) wires the field.
+   - ~~**(e) `contributor_type !== 'staff'`**~~ — **DONE 2026-08-12 with item 2**,
+     which served the column and therefore had to settle the sentinel in the
+     same breath (`one_off`, rendered "· one-off"). One home, `mastheadRole()`
+     in `article-shared.tsx`.
    - **(f) Parity transition-log wording overstates what is known** when
      boot seeded `null` (`internal-parity.ts:272`): a first-ever match logs
      "RESTORED", a first-ever mismatch logs "APPEARED AT RUNTIME —
@@ -1232,7 +1248,7 @@ Read the box before the queue — this block says what work EXISTS, not what is 
 **Also worth an eyeball rather than a task: the welcome is in front of every existing prod member**, since migration 176 reads NULL as un-welcomed and nobody has ever been asked for a display name. Log in and take the four steps as a member would.
 
 **Dev-state notes for whoever picks this up.**
-- **A publication fixture sits on the dev DB**: `evidence-audit` dressed as *The Longshore Review* — cover, logo, tagline, about, 8 articles across 2025–26 (3 with covers, 2 paywalled), 3 invented writers on the masthead, all imagery SVG **data URIs** so it needs no network and no Blossom blob. Layout `magazine`. Delete with `DELETE FROM articles WHERE nostr_d_tag LIKE 'lr-%'`; otherwise it is the fastest way back into any publication surface.
+- **A publication fixture sits on the dev DB**: `evidence-audit` dressed as *The Longshore Review* — cover, logo, tagline, about, 8 articles across 2025–26 (3 with covers, 2 paywalled), 3 invented writers on the masthead, all imagery SVG **data URIs** so it needs no network and no Blossom blob. **Two of its five masthead members were set to `contributor_type = 'one_off'` on 2026-08-12**, so the masthead exercises both arms of the role line (§0q.2) instead of rendering five identical ones. Layout `magazine`. Delete with `DELETE FROM articles WHERE nostr_d_tag LIKE 'lr-%'`; otherwise it is the fastest way back into any publication surface.
 - **The dev gateway AND web images carry formulas through Phase 2 step 1**, both rebuilt 2026-08-12, and the stack was left running **dark** (`FEED_FORMULAS_ENABLED=0`) — which is the interesting state, since seeding runs anyway. `FEED_FORMULAS_ENABLED=1 docker compose up -d gateway` relights the share half, no rebuild; a plain `up -d gateway` puts it back to dark (the compose default is `:-0`). Remember the new-tab rule above after any flip.
 - **Dev is already cut over, so it shows the intended end state.** `kellenmoen@test.local` (the dev admin) owns *The house starter* — a three-source formula (account + tag + Guardian RSS) cut from their *Founder's feed* and **designated**, with no flagged template anywhere. `freshseed@test.local` is the fresh account it was proved on: one feed, `fromStarter: true`, `origin: null`. To see the pre-cutover state instead, `UPDATE feed_formulas SET is_default_seed = FALSE WHERE is_default_seed` and flag a feed by hand.
 - **A formulas fixture is on the dev DB.** `wrenfallow@test.local`'s *Founder's feed* now holds four sources — a tag, a Guardian RSS feed, an `account`, and a real `email` source carrying a `secret-alias-wren@in.all.haus` ingest address, which is the only way to see D5 actually exclude something. It has one live published formula. Log in with `curl -c j -X POST localhost:3000/api/v1/auth/dev-login -H 'Content-Type: application/json' -d '{"email":"wrenfallow@test.local"}'` (dev-login exists only at `NODE_ENV=development`). Note this account has `onboarded_at` stamped, so it still cannot serve a `looksDerived` drive.
