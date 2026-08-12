@@ -35,13 +35,15 @@ import { addSource, type AddSourceInput } from "./sources.js";
 //                                "workspace" would be a lie about who it is for.
 // The engine stays in one file either way.
 //
-// WHAT THIS IS NOT: cloneFeedForOwner. That path copies external_source_id
-// verbatim and takes neither the feed_sub advisory lock nor a fetch job —
+// WHAT THIS IS NOT: the starter-template clone this replaced (cloneFeedForOwner,
+// deleted with the flag in migration 179). That path copied external_source_id
+// verbatim and took neither the feed_sub advisory lock nor a fetch job —
 // shortcuts licensed ENTIRELY by its zero-feeds precondition, which a redeemer
 // does not have (they hold existing feeds, so a concurrent removeSource
 // teardown can race the subscription upsert, and the formula may name sources
-// this instance does not hold at all). Redemption is a sibling of the clone
-// path, not a parameter on it (D3).
+// this instance does not hold at all). Redemption was built as a sibling of the
+// clone path rather than a parameter on it (D3), which is what let the clone go
+// without anything needing to be re-argued here.
 // =============================================================================
 
 // Operator brake (§8 Phase 1). Default OFF. It gates PUBLISH and
@@ -238,7 +240,7 @@ export type FreezeResult =
 /**
  * Freeze a feed's composition into a formula, inside the caller's transaction.
  *
- * Exported and client-threaded for the same reason cloneFeedForOwner is: what
+ * Exported and client-threaded because what
  * this must get right spans feed_sources → accounts/publications/external_sources
  * → feed_formula_sources, and the interesting half is which rows DON'T make it
  * and whether the count of them is truthful. A mocked pool.query would answer

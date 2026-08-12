@@ -299,10 +299,11 @@ export interface AdminWaitlistAdmitResult {
 /**
  * What every new account is seeded from (FEED-FORMULAS-ADR D6, Phase 2).
  *
- * Two mechanisms are reported because the move is in flight: the designated
- * formula, and the legacy `is_starter_template` feeds that still seed while
- * nothing is designated. The panel shows both — an operator who cannot see
- * which object is load-bearing is exactly how that object got deleted twice.
+ * One mechanism since migration 179 dropped `feeds.is_starter_template`: the
+ * operator-designated formula. `designated: null` is a real and legal state —
+ * a database where nobody has designated one yet — and the panel says so
+ * plainly rather than rendering an empty box, because an operator who cannot
+ * see which object is load-bearing is exactly how the flag got deleted twice.
  */
 export interface AdminSeedFormula {
   designated: {
@@ -329,12 +330,6 @@ export interface AdminSeedFormula {
   }>
   /** The admin's own feeds — what this panel can cut into a new seed formula. */
   feeds: Array<{ id: string; name: string; sourceCount: number }>
-  legacyTemplates: Array<{
-    id: string
-    name: string
-    ownerUsername: string | null
-    sourceCount: number
-  }>
 }
 
 export interface AdminSeedFormulaResult {

@@ -1,4 +1,13 @@
 -- =============================================================================
+-- DEAD 2026-08-12 — NOTHING IN THIS FILE RUNS ANY MORE. READ THIS FIRST.
+--
+-- `feeds.is_starter_template` was DROPPED in migration 179 (FEED-FORMULAS-ADR
+-- §15), so every statement below errors on an unknown column. Kept as the record
+-- of the 2026-07-22 §0l incident and nothing else. What seeds a new account is
+-- an operator-designated FORMULA — see DEPLOYMENT.md › "The default seed", and
+-- the *Default seed* panel on /admin/config. The formula cannot be merged or
+-- deleted away, which is why this repair has no successor to write.
+-- =============================================================================
 -- Starter-template feed repair — run on PROD against the platformpub DB.
 --   docker exec -i <postgres-container> psql -U platformpub -d platformpub
 -- Part 1 is read-only. Stop, read, then pick the matching repair in Part 2.

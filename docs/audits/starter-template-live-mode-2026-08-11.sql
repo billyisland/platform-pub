@@ -1,17 +1,15 @@
 -- =============================================================================
--- SUPERSEDED 2026-08-12 — READ THIS FIRST.
+-- DEAD 2026-08-12 — NOTHING IN THIS FILE RUNS ANY MORE. READ THIS FIRST.
 --
--- What seeds a new account is no longer a flagged `feeds` row you set by hand.
--- It is an operator-designated FORMULA (FEED-FORMULAS-ADR D6/D11, ADR §14),
--- designated from the *Default seed* panel on /admin/config — which also cuts
--- one of your own feeds into a formula in one click. `seedStarterFeeds` prefers
--- it, and the flag below is only the fallback until you designate one.
+-- `feeds.is_starter_template` was DROPPED in migration 179 (FEED-FORMULAS-ADR
+-- §15), so every statement below now errors on an unknown column. It is kept as
+-- pre-cutover history and nothing else — do not adapt it, and do not go looking
+-- for the column it names.
 --
--- So: designate through the panel. Everything under here still WORKS (that is
--- the point of keeping the fallback) but running it re-establishes the object
--- whose deletability caused both §0l incidents, and after step 2 drops the
--- column it will simply error. Kept for the pre-cutover history and for the
--- survey queries, which are still the fastest way to read the flag's state.
+-- What seeds a new account is an operator-designated FORMULA (D6/D11),
+-- designated from the *Default seed* panel on /admin/config, which will also cut
+-- one of your own feeds into a formula in one click. That is the only mechanism
+-- there is. See DEPLOYMENT.md › "The default seed".
 -- =============================================================================
 -- Starter template — LIVE MODE.  Run on PROD against the platformpub DB.
 --

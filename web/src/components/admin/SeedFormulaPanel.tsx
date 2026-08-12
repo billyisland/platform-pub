@@ -13,10 +13,14 @@ import { apiErrorMessage } from '../../lib/api/client'
 // twice by an operator who could not tell it from an ordinary feed, and both
 // times the damage landed silently on the next signup.
 //
-// So it always says which mechanism is in force — the designated formula, or
-// the legacy flagged feeds while nothing is designated, or neither — rather
-// than only offering the controls. There is no "clear" control, deliberately:
-// undesignating happens only by designating a replacement.
+// So it always states what is in force — the designated formula, or plainly
+// that NOTHING seeds a new account — rather than only offering the controls.
+// That second state is not an error to hide: it is where a fresh database sits
+// until an operator designates one, and it is the only warning anyone gets.
+// There is no "clear" control, deliberately: undesignating happens only by
+// designating a replacement.
+//
+// The legacy-template arm retired with the flag itself in migration 179.
 // =============================================================================
 
 export function SeedFormulaPanel() {
@@ -67,7 +71,7 @@ export function SeedFormulaPanel() {
   }
   if (!data) return <div className="h-32 animate-pulse bg-white mb-10" />
 
-  const { designated, candidates, feeds, legacyTemplates } = data
+  const { designated, candidates, feeds } = data
 
   return (
     <section className="mb-10">
@@ -96,27 +100,10 @@ export function SeedFormulaPanel() {
               </p>
             )}
           </div>
-        ) : legacyTemplates.length > 0 ? (
-          <p className="text-ui-xs text-crimson max-w-article">
-            Nothing is designated, so seeding still runs off{' '}
-            {legacyTemplates.length === 1 ? 'the legacy flagged feed' : 'legacy flagged feeds'}:{' '}
-            {legacyTemplates
-              .map((t) => `${t.name} (@${t.ownerUsername ?? '?'}, ${t.sourceCount})`)
-              .join(', ')}
-            . Deleting {legacyTemplates.length === 1 ? 'it' : 'them'} ends new-account seeding.
-          </p>
         ) : (
           <p className="text-ui-xs text-crimson max-w-article">
             Nothing seeds a new account. Every signup lands on an empty feed they must fill
             themselves.
-          </p>
-        )}
-
-        {designated && legacyTemplates.length > 0 && (
-          <p className="text-ui-xs text-grey-600 max-w-article">
-            {legacyTemplates.length} feed{legacyTemplates.length === 1 ? '' : 's'} still carr
-            {legacyTemplates.length === 1 ? 'ies' : 'y'} the legacy starter-template flag; the
-            formula above takes precedence. The flag retires in a following migration.
           </p>
         )}
 

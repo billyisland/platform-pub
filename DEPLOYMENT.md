@@ -808,33 +808,24 @@ Format: `base64(nonce[24] || ciphertext_with_tag)`, XChaCha20-Poly1305 via `@nob
 
 ---
 
-## Starter-template feeds (new-user onboarding)
+## The default seed (new-user onboarding)
 
-A brand-new account follows nobody, so it is seeded with a **clone of each operator-designated template feed** rather than a bare timeline (FEED-RETIREMENT-PLAN Slice 3). There is no admin UI — a template is just one of your own ordinary feeds flagged `feeds.is_starter_template = true`. Seeding runs **lazily** on a user's first workspace load (`GET /workspace/feeds` → `seedStarterFeeds`, advisory-locked, idempotent) and only when that account has **zero** feeds. Until ≥1 feed is flagged it is a no-op (the client then mints an empty default feed).
+A brand-new account follows nobody, so it is seeded with the **operator-designated default-seed formula** rather than a bare timeline. Seeding runs **lazily** on a user's first workspace load (`GET /workspace/feeds` → `seedStarterFeeds`, advisory-locked, idempotent) and only when that account has **zero** feeds. With nothing designated it is a no-op and the client mints an empty default feed — a legal state, and where a fresh database sits until you designate one.
 
-**Designate a template (on the server):**
+**Designate it in the browser, not in psql:** `/admin/config` → the *Default seed* panel. It takes either an existing formula of yours, or one of your own feeds, which it freezes into a new formula and designates in the same transaction. The panel always states what is in force, including "nothing seeds a new account" — that sentence is the only warning you get, so read it.
 
-```bash
-cd /root/platform-pub
-# prereq — confirm migration 114 applied (the flag column exists):
-docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
-  "SELECT 1 FROM information_schema.columns WHERE table_name='feeds' AND column_name='is_starter_template';"
-# find the feed's UUID (curate it in your workspace first):
-docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
-  "SELECT f.id, f.name FROM feeds f JOIN accounts a ON a.id=f.owner_id WHERE a.username='<you>' ORDER BY f.sort_rank;"
-# flag it:
-docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
-  "UPDATE feeds SET is_starter_template = true WHERE id = '<feed-uuid>';"
-```
-
-Then sign up a fresh account to confirm it lands on a clone (`SELECT cloned_from_feed_id FROM feeds WHERE owner_id=<new user>` should equal the template's id). If the flag is set but a fresh account does **not** get the clone, the running gateway image predates the Slice 3 seeding code — `docker compose build gateway && docker compose up -d gateway`.
+**This replaced `feeds.is_starter_template`**, a flag on an ordinary-looking feed that nothing in any UI marked. It was destroyed twice by an operator tidying up, each time silently ending seeding for every subsequent signup, and it was dropped in migration 179 (FEED-FORMULAS-ADR §15). Any old runbook telling you to `UPDATE feeds SET is_starter_template = true` is dead — the column does not exist.
 
 **Semantics to know:**
 
-- **Live snapshot at seed time, not flag time.** The clone copies the template's `name`, `appearance`, and **current** `feed_sources` rows at the moment a user is seeded. Editing the template afterwards changes what *subsequent* signups receive; it never retro-updates an existing user's clone (the clone is an independent owned feed).
-- **Source types matter for cold start.** `reach`/`following` clones in *empty* (a newcomer follows nobody). Use `reach`/`explore` + specific `account`/`publication`/`tag` and `external_source` rows for immediate content — those clone as literal references and resolve for everyone.
-- **Multiple templates** allowed (each newcomer gets one clone of each, ordered by template `created_at`). Swap/disable with `UPDATE feeds SET is_starter_template = false WHERE id = '…';` — read live each first-load, no redeploy.
+- **A formula is FROZEN at designation.** Editing the feed it was cut from afterwards does not change what new signups receive; re-cut and re-designate to update it. (The flag it replaced worked the other way, which is what made it silently drift.)
+- **Sources resolve by portable identity, not by row id** — a redeemed source is looked up by pubkey / canonical uri / tag and added through `addSource`, so each new member gets their own `external_subscriptions` row and their own follow-graph entry.
+- **`email` sources are excluded from a freeze** and the count of what was left out is shown — an ingest address is a per-subscriber secret.
+- **Undesignate only by designating a replacement.** There is no clear control, and the schema refuses to delete or revoke a designated formula (which also means its author's account cannot be deleted).
+- **Not gated on `FEED_FORMULAS_ENABLED`.** That brake gates publishing and redeem-by-token; the seed path deliberately does not share it, so turning the brake off never ends new-account seeding — and the panel's "cut & designate" works with the brake on.
 - **Not retroactive** — only accounts with zero feeds are seeded; existing users are untouched.
+
+To confirm: sign up a fresh account and check it lands on one feed named from the formula (`SELECT name, from_formula_id FROM feeds WHERE owner_id = '<new user>'`).
 
 ---
 

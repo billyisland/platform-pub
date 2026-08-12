@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict kxjAGFODEMObQtPTRBepEgaPMallV1gZBWueML2vCAtvX0JPSUpBya6JK1rCSLw
+\restrict DLyii8kQWj8HakONpKG7fjguuKofkOrAjaRpbcHLlQ3hzSXtcGlDglesTY5JhYD
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1466,7 +1466,6 @@ CREATE TABLE public.feeds (
     appearance jsonb DEFAULT '{}'::jsonb NOT NULL,
     sort_rank integer NOT NULL,
     hidden boolean DEFAULT false NOT NULL,
-    is_starter_template boolean DEFAULT false NOT NULL,
     cloned_from_feed_id uuid,
     from_formula_id uuid,
     CONSTRAINT feeds_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80)))
@@ -7731,7 +7730,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict kxjAGFODEMObQtPTRBepEgaPMallV1gZBWueML2vCAtvX0JPSUpBya6JK1rCSLw
+\unrestrict DLyii8kQWj8HakONpKG7fjguuKofkOrAjaRpbcHLlQ3hzSXtcGlDglesTY5JhYD
 
 
 --
@@ -7916,4 +7915,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('175_payouts_halted_accounts.sql'),
     ('176_accounts_onboarded_at.sql'),
     ('177_retire_reach_source_kind.sql'),
-    ('178_feed_formulas.sql');
+    ('178_feed_formulas.sql'),
+    ('179_drop_starter_template_flag.sql');

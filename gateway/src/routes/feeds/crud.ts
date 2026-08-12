@@ -19,16 +19,6 @@ const createFeedSchema = z.object({
   name: z.string().trim().max(80).default(""),
 });
 
-// Shared 409 for DELETE /feeds/:id — used by both the pre-teardown guard and
-// the DELETE's fail-closed backstop, so the two can never drift apart. Same
-// `error` code as the merge guard: to a client both mean "this feed seeds
-// every new account, unflag it first", and one code keeps the handling single.
-const STARTER_TEMPLATE_DELETE_ERROR = {
-  error: "starter_template_source",
-  message:
-    "This feed seeds every new account. Unflag it as the starter template before deleting it.",
-} as const;
-
 // Curated per-feed colour schemes (migration 112). Must mirror the scheme ids
 // in web/src/components/workspace/tokens.ts — adding a scheme touches both.
 // The web client normalises unknown ids to the light default, so a stale
@@ -100,109 +90,29 @@ const patchFeedSchema = z
 // Instead new accounts receive the platform's starter composition as a real,
 // fully-editable owned feed — not a special-cased default object.
 //
-// WHAT IT IS SEEDED FROM is mid-move (FEED-FORMULAS-ADR D6, Phase 2). The
-// destination is the operator-designated default-seed FORMULA, which has no
-// `feeds` row to delete, nothing on the workspace floor that reads as a stray
-// duplicate, and schema guards against the quiet deaths (D11). The origin is
-// the flagged template feed (`feeds.is_starter_template`), which has twice been
-// tidied away by an operator who could not tell it from an ordinary feed — the
-// §0l outage this whole move exists to end. Both live here until the following
-// migration drops the flag; seedStarterFeeds prefers the formula.
+// WHAT IT IS SEEDED FROM is the operator-designated default-seed FORMULA
+// (FEED-FORMULAS-ADR D6/D11), redeemed through the same core any shared formula
+// goes through. Designation is an admin act — the *Default seed* panel on
+// /admin/config, `POST /admin/dashboard/seed-formula`.
 //
-// Designation is an admin act (`POST /admin/dashboard/seed-formula`), which
-// replaced the hand-run `UPDATE feeds SET is_starter_template = true`.
-// PREREQ: with nothing designated AND no feed flagged, seeding is a no-op and a
-// new account falls back to the client's empty-default-feed mint.
+// It used to be a clone of a feed flagged `feeds.is_starter_template`, dropped
+// in migration 179 along with the two 409 guards that grew around it. The flag
+// marked an ordinary-looking feed as load-bearing and nothing said so, and it
+// was tidied away twice by an operator who could not tell it from any other
+// feed — each time silently ending seeding for every subsequent signup (§0l).
+// A formula cannot die that way: it is frozen, and undeletable and unrevocable
+// while designated, in the schema rather than in a route.
+//
+// PREREQ: with nothing designated, seeding is a no-op and a new account falls
+// back to the client's empty-default-feed mint. That state is legal — it is
+// where a fresh database sits until the operator designates one.
 // ---------------------------------------------------------------------------
-
-// Clone one template feed for a new owner inside an open transaction. Returns
-// the new feed id. sortRank is supplied by the caller so a batch of clones gets
-// a stable 1..N order.
-// Exported for the DB-backed test only (feed-clone-subscriptions.test.ts) —
-// what it must write spans feeds → feed_sources → external_subscriptions →
-// external_sources, which only Postgres can evaluate. It already takes its
-// client, so the test drives it inside a transaction it rolls back.
-export async function cloneFeedForOwner(
-  client: { query: typeof pool.query },
-  templateId: string,
-  ownerId: string,
-  sortRank: number,
-): Promise<string> {
-  const {
-    rows: [feed],
-  } = await client.query<{ id: string }>(
-    `INSERT INTO feeds (owner_id, name, appearance, sort_rank, cloned_from_feed_id)
-     SELECT $2, t.name, t.appearance, $3, t.id
-       FROM feeds t WHERE t.id = $1
-     RETURNING id`,
-    [templateId, ownerId, sortRank],
-  );
-  // Copy every source row verbatim (all four source_types), minus the
-  // identity/parent columns. A fresh id + the new feed_id; weight, sampling,
-  // exclude_replies and the polymorphic target all carry over.
-  await client.query(
-    `INSERT INTO feed_sources
-       (feed_id, source_type, account_id, publication_id, external_source_id,
-        tag_name, weight, sampling_mode, exclude_replies)
-     SELECT $1, source_type, account_id, publication_id, external_source_id,
-            tag_name, weight, sampling_mode, exclude_replies
-       FROM feed_sources WHERE feed_id = $2`,
-    [feed.id, templateId],
-  );
-  // Keep the feed-derived-subscription invariant. The INSERT above writes
-  // feed_sources directly, bypassing addSource — so without this the new owner
-  // holds feed rows pointing at external sources they have no subscription to,
-  // and the harm runs in two directions. The latent one is data loss:
-  // external-sources-gc's orphan test is GLOBAL (`NOT EXISTS` any subscriber),
-  // so a cloned source survives only while the TEMPLATE owner keeps it in one
-  // of their own feeds; the day they remove it from their last one it drops to
-  // zero subscribers, is orphaned, and past the cull window hard-deleted — and
-  // feed_sources.external_source_id is ON DELETE CASCADE, so it silently
-  // vanishes from every member feed that cloned it, taking its external_items
-  // and feed_items with it. A member loses content because the operator tidied
-  // up. The immediate one: this same row IS the external follow graph, so
-  // without it a cloned member is absent from kind-3 publishing and reads as
-  // not-Following on the author card for sources sitting in their own feed.
-  //
-  // Two deliberate departures from addSource. No `feed_sub` advisory lock:
-  // seeding runs only for an owner with ZERO feeds, under its own per-owner
-  // feed-seed lock, so there is no concurrent teardown for this subscriber to
-  // race (and taking a second lock here would add a deadlock surface for no
-  // gain). No fetch job either — the source is already subscribed and polling
-  // for the template owner, and enqueueing one per clone would stampede the
-  // worker on every signup.
-  await client.query(
-    `INSERT INTO external_subscriptions (subscriber_id, source_id)
-     SELECT $1, fs.external_source_id
-       FROM feed_sources fs
-      WHERE fs.feed_id = $2 AND fs.source_type = 'external_source'
-     ON CONFLICT (subscriber_id, source_id) DO NOTHING`,
-    [ownerId, feed.id],
-  );
-  // A new subscriber means the source should be polling, exactly as addSource
-  // treats one — revives anything the GC had deactivated or marked orphaned.
-  await client.query(
-    `UPDATE external_sources
-        SET is_active = TRUE, orphaned_at = NULL, updated_at = now()
-      WHERE id IN (SELECT external_source_id FROM feed_sources
-                    WHERE feed_id = $1 AND source_type = 'external_source')`,
-    [feed.id],
-  );
-  return feed.id;
-}
 
 // Idempotent: give an owner who has none of their own feeds the platform's
 // starter composition. Guarded by a per-owner advisory lock so two concurrent
 // first loads (e.g. signup racing the first workspace fetch) can't double-seed.
 // Returns the number of feeds seeded (0 if the owner already has feeds, or
-// there is nothing designated and no template flagged).
-//
-// TWO paths, and the ordering between them is the whole of FEED-FORMULAS Phase
-// 2 (ADR §8, D6). The designated default-seed formula wins; the flagged-template
-// clone is the fallback that keeps seeding alive on a database where nothing has
-// been designated yet, and it retires with `is_starter_template` in the
-// FOLLOWING migration — never in the same step, because until the formula is
-// designated the flag is the only thing keeping new-account seeding alive.
+// nothing is designated).
 //
 // NOT gated on FEED_FORMULAS_ENABLED, deliberately and permanently (§6): that
 // brake gates publish and redeem-by-token. Gating the seed on it would mean
@@ -239,8 +149,6 @@ export async function seedStarterFeeds(ownerId: string): Promise<number> {
     );
     if (parseInt(count, 10) > 0) return 0;
 
-    // ---- Path 1: the designated default-seed formula (D6) -----------------
-    //
     // At most one row can be designated and it can never be revoked — both are
     // schema guarantees (D11, migration 178), so this needs no ORDER BY and no
     // revoked filter to be deterministic.
@@ -258,45 +166,25 @@ export async function seedStarterFeeds(ownerId: string): Promise<number> {
     } = await client.query<{ id: string }>(
       `SELECT id FROM feed_formulas WHERE is_default_seed`,
     );
-    if (seed) {
-      const result = await redeemFormulaForOwner(seed.id, ownerId);
-      if (result.failed.length > 0) {
-        // Never silent. A seed that quietly drops half its sources reads to a
-        // new member as the composition we chose for them, and the only witness
-        // is this line — the same class of failure as the starter template
-        // being deleted, one level down.
-        logger.error(
-          {
-            ownerId,
-            formulaId: seed.id,
-            added: result.added,
-            failed: result.failed,
-          },
-          "Default-seed formula redeemed with failures",
-        );
-      }
-      return 1;
-    }
+    if (!seed) return 0;
 
-    // ---- Path 2: the legacy flagged template (retires with the flag) ------
-    const { rows: templates } = await client.query<{ id: string }>(
-      `SELECT id FROM feeds WHERE is_starter_template = true
-       ORDER BY created_at ASC, id ASC`,
-    );
-    let rank = 1;
-    for (const t of templates) {
-      // No self-reference check, and none is needed: seeding runs only for an
-      // owner with ZERO feeds (checked twice above, the second time under the
-      // lock), and a template's owner necessarily has at least the template.
-      // So `t.owner_id === ownerId` is unreachable here. (The comment this
-      // replaces claimed a defensive skip that was never in the code — worth
-      // correcting rather than deleting, because the reason it is safe is the
-      // zero-feeds precondition, which is also what licenses the two departures
-      // from addSource inside cloneFeedForOwner.)
-      await cloneFeedForOwner(client, t.id, ownerId, rank);
-      rank++;
+    const result = await redeemFormulaForOwner(seed.id, ownerId);
+    if (result.failed.length > 0) {
+      // Never silent. A seed that quietly drops half its sources reads to a
+      // new member as the composition we chose for them, and the only witness
+      // is this line — the same class of failure as the starter template being
+      // deleted, one level down.
+      logger.error(
+        {
+          ownerId,
+          formulaId: seed.id,
+          added: result.added,
+          failed: result.failed,
+        },
+        "Default-seed formula redeemed with failures",
+      );
     }
-    return templates.length;
+    return 1;
   });
 }
 
@@ -500,26 +388,14 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
           .status(409)
           .send({ error: "Cannot delete your only feed" });
 
-      // A starter template is not an ordinary feed: it is the row
-      // seedStarterFeeds clones for every new account, so destroying the last
-      // flagged one silently ends new-user seeding platform-wide and every
-      // subsequent signup falls through to the client's empty "Founder's feed"
-      // mint. The damage is global, delayed, and invisible from the gesture
-      // that caused it — it lands on the NEXT signup. Merge has refused this
-      // since the 2026-07-22 prod incident; DELETE was the same hole by another
-      // route (§0l.2). Refuse rather than quietly moving the flag elsewhere:
-      // which feed seeds every new account is an operator decision, not a side
-      // effect. Checked BEFORE the teardown below — a 409 raised after
-      // removeSource has run would leave the template alive but stripped of the
-      // subscriptions its cloned feeds depend on.
-      const {
-        rows: [flagged],
-      } = await pool.query<{ is_starter_template: boolean }>(
-        `SELECT is_starter_template FROM feeds WHERE id = $1 AND owner_id = $2`,
-        [id, ownerId],
-      );
-      if (flagged?.is_starter_template)
-        return reply.status(409).send(STARTER_TEMPLATE_DELETE_ERROR);
+      // No starter-template guard here any more, and its absence is the point:
+      // migration 179 dropped `is_starter_template`, so no feed on this floor
+      // is load-bearing for anyone but its owner. The guard, and the 2026-07-22
+      // and 08-10 incidents that forced it, existed because deleting one
+      // ordinary-looking feed silently ended new-account seeding platform-wide.
+      // The designated seed FORMULA that replaced it has no `feeds` row to
+      // delete (FEED-FORMULAS-ADR D6) — which is why this delete can go back to
+      // being an ordinary delete rather than needing a better guard.
 
       // Tear down external sources through removeSource FIRST (H6). A bare
       // DELETE cascades feed_sources away without passing through the
@@ -539,31 +415,12 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
         await removeSource(id, ownerId, s.id, { recordExclusion: false });
       }
 
-      // Fail closed on the flag as well as the owner. The guard above is the
-      // real one; this closes the window where an operator flags the feed by
-      // hand (the only way it is ever set) between that check and this write.
-      // In that window the teardown has already run, so the template survives
-      // stripped of its subscriptions — bad, and recoverable, where a deleted
-      // template is neither.
       const { rowCount } = await pool.query(
-        `DELETE FROM feeds
-          WHERE id = $1 AND owner_id = $2 AND is_starter_template = FALSE`,
+        `DELETE FROM feeds WHERE id = $1 AND owner_id = $2`,
         [id, ownerId],
       );
-      if (rowCount === 0) {
-        // Zero rows means the feed vanished OR it was flagged in that window.
-        // Say which — a 404 for a feed the operator can plainly still see is
-        // the kind of misleading error that sends someone hunting the wrong bug.
-        const {
-          rows: [survivor],
-        } = await pool.query<{ is_starter_template: boolean }>(
-          `SELECT is_starter_template FROM feeds WHERE id = $1 AND owner_id = $2`,
-          [id, ownerId],
-        );
-        if (survivor?.is_starter_template)
-          return reply.status(409).send(STARTER_TEMPLATE_DELETE_ERROR);
+      if (rowCount === 0)
         return reply.status(404).send({ error: "Feed not found" });
-      }
       return reply.status(204).send();
     },
   );
@@ -606,16 +463,13 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
           const { rows: feedRows } = await client.query<{
             id: string;
             owner_id: string;
-            is_starter_template: boolean;
           }>(
-            // FOR UPDATE: pins is_starter_template for the length of the
-            // transaction, so an operator flagging the source feed between
-            // this check and step 5's DELETE can't have the template merged
-            // away underneath them.
-            // ORDER BY id keeps the two-row lock order deterministic, so
-            // opposing concurrent merges (A→B and B→A) queue instead of
-            // deadlocking.
-            `SELECT id, owner_id, is_starter_template FROM feeds WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+            // FOR UPDATE holds both rows for the length of the transaction, so
+            // the ownership check above still speaks for the feeds step 5
+            // actually deletes. ORDER BY id keeps the two-row lock order
+            // deterministic, so opposing concurrent merges (A→B and B→A) queue
+            // instead of deadlocking.
+            `SELECT id, owner_id FROM feeds WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
             [[targetId, sourceFeedId]],
           );
           const targetFeed = feedRows.find((r) => r.id === targetId);
@@ -634,19 +488,12 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
             throw tagged("FORBIDDEN_SOURCE");
           }
 
-          // 1b. A starter template is not an ordinary feed. Step 5 below DELETEs
-          // the source feed, so merging a template away destroys the only row
-          // carrying is_starter_template — seedStarterFeeds then finds no
-          // template, and every subsequent signup silently falls through to the
-          // client's empty "Founder's feed" mint. The damage is global, delayed,
-          // and invisible from the merge itself (it lands on the NEXT new
-          // account), which is exactly why a drag gesture must not be able to do
-          // it. Refuse rather than carrying the flag to the target: which feed
-          // seeds every new account is an operator decision, not a side effect.
-          // Unflag it first if the merge is genuinely intended.
-          if (sourceFeed.is_starter_template) {
-            throw tagged("STARTER_TEMPLATE_SOURCE");
-          }
+          // (The starter-template refusal that stood here retired with
+          // `feeds.is_starter_template` in migration 179 — merge deletes its
+          // SOURCE feed, and the 2026-07-22 prod incident was a drag gesture
+          // destroying the one flagged row every signup was cloned from. The
+          // designated seed formula that replaced it has no `feeds` row for a
+          // merge to consume, so a merge is now just a merge.)
 
           // 2. Move non-duplicate sources from source → target.
           //    Exclude rows that would conflict with existing target sources
@@ -698,13 +545,6 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
         }
         if (code === "FORBIDDEN_TARGET" || code === "FORBIDDEN_SOURCE") {
           return reply.status(403).send({ error: "Feed not owned by you" });
-        }
-        if (code === "STARTER_TEMPLATE_SOURCE") {
-          return reply.status(409).send({
-            error: "starter_template_source",
-            message:
-              "This feed seeds every new account. Unflag it as the starter template before merging it away.",
-          });
         }
         logger.error({ err, targetId, sourceFeedId }, "Feed merge failed");
         return reply.status(500).send({ error: "Feed merge failed" });

@@ -161,31 +161,31 @@ describe.skipIf(!DB_URL)("the default seed", () => {
     return { id, followeeId: followee.id, sourceId: rss.id };
   }
 
-  /** A flagged legacy template feed carrying one account source. */
-  async function flaggedTemplate(ownerId: string): Promise<string> {
-    const followee = await account(`tmpl-followee-${uniq()}`);
-    const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO feeds (owner_id, name, sort_rank, is_starter_template)
-       VALUES ($1, 'Legacy Template', 1, TRUE) RETURNING id`,
+  /**
+   * A legacy clone: the shape `cloneFeedForOwner` used to mint, built by hand
+   * because the function retired with `feeds.is_starter_template` in migration
+   * 179. Nothing writes `cloned_from_feed_id` any more — but the rows already
+   * carrying it are the only provenance members seeded before the cutover have,
+   * so the arm of feedProvenanceSql that reads it is still live and still needs
+   * holding. Returns [templateId, cloneId].
+   */
+  async function legacyClone(ownerId: string, memberId: string) {
+    const { rows: tmpl } = await client.query<{ id: string }>(
+      `INSERT INTO feeds (owner_id, name, sort_rank)
+       VALUES ($1, 'Legacy Template', 1) RETURNING id`,
       [ownerId],
     );
-    await client.query(
-      `INSERT INTO feed_sources (feed_id, source_type, account_id)
-       VALUES ($1, 'account', $2)`,
-      [rows[0].id, followee.id],
+    const { rows: clone } = await client.query<{ id: string }>(
+      `INSERT INTO feeds (owner_id, name, sort_rank, cloned_from_feed_id)
+       VALUES ($1, 'Legacy Template', 1, $2) RETURNING id`,
+      [memberId, tmpl[0].id],
     );
-    return rows[0].id;
+    return { templateId: tmpl[0].id, cloneId: clone[0].id };
   }
 
   async function undesignateAll() {
     await client.query(
       `UPDATE feed_formulas SET is_default_seed = FALSE WHERE is_default_seed`,
-    );
-  }
-
-  async function unflagAll() {
-    await client.query(
-      `UPDATE feeds SET is_starter_template = FALSE WHERE is_starter_template`,
     );
   }
 
@@ -202,7 +202,6 @@ describe.skipIf(!DB_URL)("the default seed", () => {
     delete process.env.FEED_FORMULAS_ENABLED;
     try {
       await undesignateAll();
-      await unflagAll();
       const author = await account("seed-author");
       const seed = await formula(author.id, { designate: true });
       const member = await account("seed-member");
@@ -242,53 +241,26 @@ describe.skipIf(!DB_URL)("the default seed", () => {
     }
   });
 
-  it("prefers the formula over a still-flagged legacy template", async () => {
-    // The cutover itself. Both mechanisms are live on a database mid-move, and
-    // a member must receive ONE feed — the designated composition — not one of
-    // each.
+  it("seeds nothing at all when nothing is designated", async () => {
+    // With the flagged-template fallback dropped (migration 179) the designated
+    // formula is the ONLY seed path, so this is the whole of what an
+    // undesignated database does. It is a legal state, not a fault — a fresh
+    // database sits here until the operator designates one — and the member
+    // lands on the client's empty-default-feed mint. The assertion that matters
+    // is that it stays silent and writes nothing, rather than half-seeding.
     await undesignateAll();
-    await unflagAll();
-    const author = await account("both-author");
-    const seed = await formula(author.id, { designate: true });
-    await flaggedTemplate(author.id);
-    const member = await account("both-member");
+    const member = await account("undesignated-member");
 
-    expect(await seedStarterFeeds(member.id)).toBe(1);
-    const { rows } = await client.query<{
-      from_formula_id: string | null;
-      cloned_from_feed_id: string | null;
-    }>(
-      `SELECT from_formula_id, cloned_from_feed_id FROM feeds WHERE owner_id = $1`,
+    expect(await seedStarterFeeds(member.id)).toBe(0);
+    const { rows } = await client.query(
+      `SELECT id FROM feeds WHERE owner_id = $1`,
       [member.id],
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].from_formula_id).toBe(seed.id);
-    expect(rows[0].cloned_from_feed_id).toBeNull();
-  });
-
-  it("still clones the flagged template while nothing is designated", async () => {
-    // The fallback is what makes the ordering safe: this ships BEFORE anything
-    // is designated on a live database, so the day it deploys the flag must
-    // still be carrying seeding. Dropping it in the same step re-opens the
-    // outage the whole phase exists to close.
-    await undesignateAll();
-    await unflagAll();
-    const operator = await account("legacy-operator");
-    const templateId = await flaggedTemplate(operator.id);
-    const member = await account("legacy-member");
-
-    expect(await seedStarterFeeds(member.id)).toBe(1);
-    const { rows } = await client.query<{ cloned_from_feed_id: string | null }>(
-      `SELECT cloned_from_feed_id FROM feeds WHERE owner_id = $1`,
-      [member.id],
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].cloned_from_feed_id).toBe(templateId);
+    expect(rows).toHaveLength(0);
   });
 
   it("is a no-op for an owner who already has a feed", async () => {
     await undesignateAll();
-    await unflagAll();
     const author = await account("idem-author");
     await formula(author.id, { designate: true });
     const member = await account("idem-member");
@@ -308,7 +280,6 @@ describe.skipIf(!DB_URL)("the default seed", () => {
 
   it("reads a seeded feed as from_starter, with no origin attribution", async () => {
     await undesignateAll();
-    await unflagAll();
     const author = await account("prov-author");
     await formula(author.id, { designate: true });
     const member = await account("prov-member");
@@ -326,7 +297,6 @@ describe.skipIf(!DB_URL)("the default seed", () => {
 
   it("reads a redeemed ordinary formula as origin, and NOT as from_starter", async () => {
     await undesignateAll();
-    await unflagAll();
     const author = await account("share-author");
     const shared = await formula(author.id, { name: "Long Reads" });
     const member = await account("share-member");
@@ -339,28 +309,23 @@ describe.skipIf(!DB_URL)("the default seed", () => {
     expect(redeemed?.from_starter).toBe(false);
   });
 
-  it("keeps a legacy clone's provenance after the template is unflagged", async () => {
-    // The old spelling was EXISTS(… AND t.is_starter_template), so merely
-    // UNFLAGGING the template retroactively unmade the provenance of every
-    // member ever seeded from it. What a member's feed came from is a fact
-    // about their feed, not about what the operator still keeps flagged.
+  it("still reads a pre-cutover clone as from_starter, with the flag gone", async () => {
+    // The legacy arm outlives the flag ON PURPOSE. `from_starter` was
+    // re-derived off `cloned_from_feed_id` in Phase 2 step 1 precisely so that
+    // dropping `is_starter_template` needed no further edit — the old spelling
+    // was EXISTS(… AND t.is_starter_template), under which the drop would have
+    // silently unmade the provenance of every member seeded before the cutover.
+    // What a member's feed came from is a fact about their feed.
     await undesignateAll();
-    await unflagAll();
-    const operator = await account("gone-operator");
-    const templateId = await flaggedTemplate(operator.id);
-    const member = await account("gone-member");
-    await seedStarterFeeds(member.id);
+    const operator = await account("legacy-operator");
+    const member = await account("legacy-member");
+    const { templateId } = await legacyClone(operator.id, member.id);
+
     expect((await listFeedsForOwner(member.id))[0].from_starter).toBe(true);
 
-    await client.query(
-      `UPDATE feeds SET is_starter_template = FALSE WHERE id = $1`,
-      [templateId],
-    );
-    expect((await listFeedsForOwner(member.id))[0].from_starter).toBe(true);
-
-    // DELETING it is a different matter, and no SQL spelling can save it:
-    // feeds_cloned_from_feed_id_fkey is ON DELETE SET NULL, so the column that
-    // holds the provenance is cleared by the delete itself. Pinned as the
+    // DELETING the template is a different matter, and no SQL spelling can save
+    // it: feeds_cloned_from_feed_id_fkey is ON DELETE SET NULL, so the column
+    // that holds the provenance is cleared by the delete itself. Pinned as the
     // known limit of the legacy arm — and as the sharpest argument for D6,
     // since a formula has no `feeds` row for anyone to delete.
     await client.query(`DELETE FROM feeds WHERE id = $1`, [templateId]);
@@ -502,16 +467,13 @@ describe.skipIf(!DB_URL)("the default seed", () => {
     expect(await designatedId()).toBeNull();
   });
 
-  it("reports both mechanisms, so neither is invisible mid-move", async () => {
+  it("names the designated formula, so what is load-bearing is visible", async () => {
     await undesignateAll();
-    await unflagAll();
     const seed = await formula(adminId, { name: "Reported Seed" });
     await client.query(
       `UPDATE feed_formulas SET is_default_seed = TRUE WHERE id = $1`,
       [seed.id],
     );
-    const operator = await account("report-operator");
-    await flaggedTemplate(operator.id);
 
     const res = await app.inject({
       method: "GET",
@@ -521,9 +483,21 @@ describe.skipIf(!DB_URL)("the default seed", () => {
     const body = res.json();
     expect(body.designated.id).toBe(seed.id);
     expect(body.designated.authorIsSelf).toBe(true);
-    // The legacy flag is still out there and the panel says so — an operator
-    // who cannot see what is load-bearing is how it got deleted twice.
-    expect(body.legacyTemplates.length).toBeGreaterThanOrEqual(1);
     expect(body.candidates.some((c: any) => c.id === seed.id)).toBe(true);
+  });
+
+  it("reports the undesignated state as such, rather than as an empty panel", async () => {
+    // The state the panel exists for. Nothing designated means nothing seeds a
+    // new account, and the operator's only warning is this response — the flag
+    // it replaced was destroyed twice precisely because nothing ever said which
+    // object was load-bearing.
+    await undesignateAll();
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/dashboard/seed-formula",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().designated).toBeNull();
   });
 });

@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-08-12 (the row that could kill new-user seeding is gone from the schema)** —
+  **Feed formulas Phase 2 step 2, migration 179** (FEED-FORMULAS-ADR §15;
+  CONSOLIDATED-TODO §9.17, now struck). `feeds.is_starter_template` dropped, with
+  `cloneFeedForOwner`, `seedStarterFeeds`'s fallback arm, the merge 409, the delete
+  409 and its fail-closed backstop. The operator-designated formula is now the
+  whole of what seeds a new account.
+
+  **The gate was met, not waived.** Step 1 shipped that morning with both
+  mechanisms live *deliberately*, because on the day it deployed nothing was
+  designated anywhere and the flag was still carrying every real signup. This
+  step waited on the operator designating a formula on **prod** and a real signup
+  being seeded from it — a fact about the live database that no passing test
+  could stand in for. Confirmed by the operator the same day.
+
+  **Step 1 had already pre-paid for the drop**, which is why it is one statement.
+  `from_starter` was re-derived off `cloned_from_feed_id` rather than an `EXISTS`
+  over the flag a migration in advance; under the old spelling the `DROP COLUMN`
+  would have silently unmade the provenance of every member seeded before the
+  cutover, all at once. That legacy arm therefore OUTLIVES the flag on purpose —
+  nothing writes the column now, but it is the only provenance pre-cutover
+  members have.
+
+  **The guards went because the object did.** Merge and delete were each taught
+  to refuse a flagged feed after an incident (2026-07-22 merge, 2026-08-10
+  delete) — a deletable row that must never be deleted, narrowed twice and closed
+  neither time. The replacement is not a better guard but a different object: a
+  formula is frozen, undeletable and unrevocable while designated, in the schema.
+  Deploy ordering is the REVERSE of the usual and of migration 177's — old code
+  names the column in four places, so deploy first, then migrate.
+
+  Three test files retired with their subject, but **two were rewritten rather
+  than deleted**: they held behaviour with nothing to do with the flag that would
+  otherwise have gone unheld on two destructive routes — `feed-delete.test.ts`
+  (only-feed refusal · removeSource teardown BEFORE the row goes · 404) and
+  `feed-merge.test.ts` (the SOURCE feed is what gets deleted · deterministic lock
+  order · both ownership arms · self-merge). `feed-seed-formula.test.ts` gained
+  the state that now matters most: nothing designated seeds nothing at all,
+  silently and without half-writing.
+
+  Gateway 593 green; **eight mutations run, eight caught** (seeding claiming a
+  feed it never created · the legacy provenance arm dropped · the only-feed
+  refusal removed · merge deleting the target · the merge lock order dropped ·
+  the panel inventing a designation · the seed gated on `FEED_FORMULAS_ENABLED` ·
+  the teardown moved after the delete). `schema.sql` regenerated from a throwaway
+  migrated DB — the diff is the dropped column, the seed line and pg_dump's own
+  nonce, nothing else — drift guard 8/8. Driven live on dev with the brake off:
+  waitlist join → admit → first workspace load returned one feed from the
+  designated formula (3 sources, `fromStarter: true`, `origin: null`); DELETE on
+  that seeded feed returned **204** where it was a 409 the day before, merge
+  returned 200, and the only-feed refusal still returned 409.
+
 - **2026-08-12 (the platform stopped ingesting for 21 hours and nothing said so)** —
   Prod ran with **no `feed-ingest` container from 2026-08-11 14:07 UTC**: a stray
   SIGTERM during the deploy, and `restart: unless-stopped` does not restart what

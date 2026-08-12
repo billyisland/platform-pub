@@ -1218,10 +1218,12 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
   // GET /admin/dashboard/seed-formula — what every new account is seeded from
   //
   // This panel replaced a hand-run `UPDATE feeds SET is_starter_template = true`
-  // (FEED-FORMULAS-ADR D6, Phase 2). It reports BOTH mechanisms while the move
-  // is in flight, because the whole failure this feature exists to end is an
-  // operator who cannot see what is load-bearing: the designated formula, and
-  // the legacy flagged feeds that still seed when nothing is designated.
+  // (FEED-FORMULAS-ADR D6, Phase 2). The flag is gone as of migration 179, so
+  // the designated formula is now the whole of the answer — but the reason the
+  // panel exists is unchanged and is worth restating where the query lives: the
+  // failure this feature ends is an operator who cannot see which object is
+  // load-bearing. So it always says what seeds a new account, including when
+  // the answer is "nothing does".
   // ---------------------------------------------------------------------------
   app.get('/admin/dashboard/seed-formula', { preHandler: requireAdmin }, async (req, reply) => {
     const adminId = (req as any).session!.sub as string
@@ -1251,13 +1253,6 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           ORDER BY f.sort_rank ASC, f.created_at ASC`,
         [adminId]
       )
-      const { rows: legacy } = await pool.query(
-        `SELECT f.id, f.name, a.username AS owner_username,
-                (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
-           FROM feeds f JOIN accounts a ON a.id = f.owner_id
-          WHERE f.is_starter_template
-          ORDER BY f.created_at ASC`
-      )
       return reply.send({
         designated: designated[0]
           ? {
@@ -1284,15 +1279,6 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         feeds: feeds.map((r: any) => ({
           id: r.id,
           name: r.name,
-          sourceCount: num(r.source_count),
-        })),
-        // Still-flagged template feeds. They are what seeds a new account while
-        // nothing is designated, and they retire with the flag in the migration
-        // that follows this cutover — never before it.
-        legacyTemplates: legacy.map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          ownerUsername: r.owner_username,
           sourceCount: num(r.source_count),
         })),
       })

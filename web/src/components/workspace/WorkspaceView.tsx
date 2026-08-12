@@ -152,9 +152,9 @@ const CEREMONY_SEEN_PREFIX = "workspace:ceremony_seen:";
 // `mintedFounderFeed` — the bootstrap returning zero feeds — which stopped
 // meaning "brand-new account" once `/workspace/bootstrap` began seeding starter
 // feeds through `listFeedsForOwner`. A healthy new account now never has zero
-// feeds, so that branch is the FAILURE path (no feed carries
-// `is_starter_template`): the offer appears on prod today only because the §0l
-// incident destroyed the template, and would go silent the moment it is
+// feeds, so that branch is the FAILURE path (nothing is designated as the
+// default seed): the offer appeared on prod only because the §0l incident had
+// destroyed the starter template, and would have gone silent the moment it was
 // repaired. The welcome instead reads `accounts.onboarded_at` (migration 176),
 // which is about the member rather than about the state of their feeds — and,
 // being server-side, does not re-ask on every new browser the way the two

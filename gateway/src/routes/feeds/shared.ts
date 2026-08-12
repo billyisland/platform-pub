@@ -43,18 +43,20 @@ export interface FeedRow {
 //
 //   • the designated default-seed formula — what seedStarterFeeds redeems for
 //     every new account from Phase 2 onwards;
-//   • `cloned_from_feed_id IS NOT NULL` — the legacy arm. cloneFeedForOwner is
-//     the only writer of that column and seedStarterFeeds its only caller, so a
-//     non-null value means "starter clone" and nothing else. It is the only
-//     provenance already-seeded members have (§11), and it must not be spelled
-//     as an EXISTS over `is_starter_template`: the flag is dropped in the
-//     following migration, and the old spelling meant merely UNFLAGGING the
-//     template retroactively unmade the provenance of every member ever seeded
-//     from it. Provenance is a fact about the member's feed, not about what the
-//     operator still keeps flagged. (DELETING the template is beyond any
-//     spelling here — the FK is ON DELETE SET NULL, so the delete clears the
-//     column itself. That is the limit of the legacy arm, and the sharpest
-//     argument for D6: a formula has no `feeds` row for anyone to delete.)
+//   • `cloned_from_feed_id IS NOT NULL` — the legacy arm, and now a read-only
+//     one: its sole writer was cloneFeedForOwner, deleted with
+//     `feeds.is_starter_template` in migration 179. Nothing sets the column any
+//     more, but it is the only provenance members seeded BEFORE that cutover
+//     have (§11), so the arm stays. It must not be spelled as an EXISTS over
+//     the flag, which is why step 1 re-derived it here a migration ahead of the
+//     drop: under the old spelling, merely UNFLAGGING the template retroactively
+//     unmade the provenance of every member ever seeded from it, and dropping
+//     the column would have done the same to all of them at once. Provenance is
+//     a fact about the member's feed, not about what the operator still keeps
+//     flagged. (DELETING the template is beyond any spelling here — the FK is
+//     ON DELETE SET NULL, so the delete clears the column itself. That is the
+//     limit of the legacy arm, and the sharpest argument for D6: a formula has
+//     no `feeds` row for anyone to delete.)
 //
 // `origin_*` is the OTHER question — "you added someone's formula" — so it
 // excludes the default seed. Otherwise every new member's first feed would

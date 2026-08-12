@@ -1,0 +1,47 @@
+-- =============================================================================
+-- 179 — `feeds.is_starter_template` is retired: what seeds a new account is a
+--       formula, and formulas have no `feeds` row for anyone to tidy away
+--
+-- FEED-FORMULAS-ADR D6/D11, Phase 2 step 2 — the second half of the cutover
+-- migration 178 and the 2026-08-12 gateway ship began. Step 1 made
+-- `seedStarterFeeds` prefer the operator-designated default-seed formula and
+-- kept the flagged-template clone as its fallback; this drops the fallback, the
+-- flag, `cloneFeedForOwner`, and the two 409 guards that existed only to stop
+-- an operator destroying the flagged row.
+--
+-- THE PRECONDITION IS PROD STATE, NOT A PASSING TEST, and it has been met: a
+-- formula is designated on production and a real signup has been seeded from
+-- it (operator, 2026-08-12). Until that was true the flag was the only thing
+-- keeping new-account seeding alive, and dropping it would have re-opened the
+-- §0l outage this whole phase exists to close — which is why the ordering was
+-- written into the ADR as the work item rather than left to judgement.
+--
+-- WHAT THE FLAG WAS, AND WHY IT HAD TO GO. It marked one of the operator's own
+-- ordinary feeds as the row every new account was cloned from. Nothing in any
+-- UI said so, so it looked like any other feed — and it was destroyed twice by
+-- an operator tidying up, each time silently ending seeding for every
+-- subsequent signup, a global failure landing on the NEXT signup and invisible
+-- from the gesture that caused it. The guards that grew around it (merge 409,
+-- delete 409, the fail-closed backstop) narrowed the hole without closing it: a
+-- deletable row that must never be deleted is the wrong object. A formula is
+-- frozen, undeletable and unrevocable while designated — in the schema, not in
+-- a route (178's partial unique index, row CHECK and BEFORE DELETE trigger).
+--
+-- `cloned_from_feed_id` STAYS, and this migration is careful not to touch it.
+-- It is the only provenance already-seeded members have: `feedProvenanceSql`
+-- reads `cloned_from_feed_id IS NOT NULL` as the legacy arm of `from_starter`,
+-- which is why step 1 re-derived that projection off the column rather than off
+-- an EXISTS over the flag. Nothing writes the column from here on (its sole
+-- writer was `cloneFeedForOwner`); it is read-only history.
+--
+-- DEPLOY ORDERING: breaking for OLD code — the previous gateway image SELECTs
+-- `is_starter_template` in the merge lock read, both delete guards and the
+-- admin seed-formula panel — so deploy the new image, THEN migrate, in that
+-- order. That is the opposite of migration 177's note and the reverse of
+-- DEPLOYMENT.md's default sequence, so it is worth saying twice: NEW code
+-- against an UNMIGRATED database is completely fine (it never names the
+-- column), old code against a migrated one 500s the workspace feed list.
+-- No index and no constraint involve the column, so the drop is one statement.
+-- =============================================================================
+
+ALTER TABLE feeds DROP COLUMN is_starter_template;
