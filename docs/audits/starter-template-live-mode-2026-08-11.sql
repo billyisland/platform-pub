@@ -1,4 +1,18 @@
 -- =============================================================================
+-- SUPERSEDED 2026-08-12 — READ THIS FIRST.
+--
+-- What seeds a new account is no longer a flagged `feeds` row you set by hand.
+-- It is an operator-designated FORMULA (FEED-FORMULAS-ADR D6/D11, ADR §14),
+-- designated from the *Default seed* panel on /admin/config — which also cuts
+-- one of your own feeds into a formula in one click. `seedStarterFeeds` prefers
+-- it, and the flag below is only the fallback until you designate one.
+--
+-- So: designate through the panel. Everything under here still WORKS (that is
+-- the point of keeping the fallback) but running it re-establishes the object
+-- whose deletability caused both §0l incidents, and after step 2 drops the
+-- column it will simply error. Kept for the pre-cutover history and for the
+-- survey queries, which are still the fastest way to read the flag's state.
+-- =============================================================================
 -- Starter template — LIVE MODE.  Run on PROD against the platformpub DB.
 --
 -- WHAT THIS CHANGES, AND WHY IT IS NOT THE 2026-08-10 SHAPE.

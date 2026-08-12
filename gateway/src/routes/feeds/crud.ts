@@ -6,12 +6,14 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import {
   UUID_RE,
   type FeedRow,
+  createFeedForOwner,
   feedProvenanceSql,
   feedRowToResponse,
   loadFeed,
   tagged,
 } from "./shared.js";
 import { removeSource } from "./sources.js";
+import { redeemFormulaForOwner } from "./formulas.js";
 
 const createFeedSchema = z.object({
   name: z.string().trim().max(80).default(""),
@@ -94,17 +96,23 @@ const patchFeedSchema = z
 // ---------------------------------------------------------------------------
 // Starter-feed seeding (FEED-RETIREMENT Slice 3, workstream B).
 //
-// A brand-new account follows nobody, so a bare default vessel would be
-// empty. Instead new accounts get a CLONE of each operator-designated template
-// feed (feeds.is_starter_template = true): a real, fully-editable owned feed,
-// not a special-cased default object. The clone copies the template's name,
-// appearance and every feed_sources row, and records provenance in
-// cloned_from_feed_id.
+// A brand-new account follows nobody, so a bare default vessel would be empty.
+// Instead new accounts receive the platform's starter composition as a real,
+// fully-editable owned feed — not a special-cased default object.
 //
-// An operator flags a template by hand:
-//   UPDATE feeds SET is_starter_template = true WHERE id = '<feed-uuid>';
-// PREREQ: until ≥1 feed is flagged, seeding is a no-op and a new account falls
-// back to the client's empty-default-feed mint (unchanged legacy behaviour).
+// WHAT IT IS SEEDED FROM is mid-move (FEED-FORMULAS-ADR D6, Phase 2). The
+// destination is the operator-designated default-seed FORMULA, which has no
+// `feeds` row to delete, nothing on the workspace floor that reads as a stray
+// duplicate, and schema guards against the quiet deaths (D11). The origin is
+// the flagged template feed (`feeds.is_starter_template`), which has twice been
+// tidied away by an operator who could not tell it from an ordinary feed — the
+// §0l outage this whole move exists to end. Both live here until the following
+// migration drops the flag; seedStarterFeeds prefers the formula.
+//
+// Designation is an admin act (`POST /admin/dashboard/seed-formula`), which
+// replaced the hand-run `UPDATE feeds SET is_starter_template = true`.
+// PREREQ: with nothing designated AND no feed flagged, seeding is a no-op and a
+// new account falls back to the client's empty-default-feed mint.
 // ---------------------------------------------------------------------------
 
 // Clone one template feed for a new owner inside an open transaction. Returns
@@ -183,12 +191,30 @@ export async function cloneFeedForOwner(
   return feed.id;
 }
 
-// Idempotent: clone all flagged templates for an owner who has none of their
-// own feeds yet. Guarded by a per-owner advisory lock so two concurrent first
-// loads (e.g. signup racing the first workspace fetch) can't double-seed.
-// Returns the number of feeds seeded (0 if the owner already has feeds or no
-// template is flagged).
-async function seedStarterFeeds(ownerId: string): Promise<number> {
+// Idempotent: give an owner who has none of their own feeds the platform's
+// starter composition. Guarded by a per-owner advisory lock so two concurrent
+// first loads (e.g. signup racing the first workspace fetch) can't double-seed.
+// Returns the number of feeds seeded (0 if the owner already has feeds, or
+// there is nothing designated and no template flagged).
+//
+// TWO paths, and the ordering between them is the whole of FEED-FORMULAS Phase
+// 2 (ADR §8, D6). The designated default-seed formula wins; the flagged-template
+// clone is the fallback that keeps seeding alive on a database where nothing has
+// been designated yet, and it retires with `is_starter_template` in the
+// FOLLOWING migration — never in the same step, because until the formula is
+// designated the flag is the only thing keeping new-account seeding alive.
+//
+// NOT gated on FEED_FORMULAS_ENABLED, deliberately and permanently (§6): that
+// brake gates publish and redeem-by-token. Gating the seed on it would mean
+// turning the flag off silently ends new-account seeding — the §0l outage
+// again, from the opposite direction. The seed path and the share path share a
+// mechanism; they must not share a brake.
+//
+// Exported for the DB-backed test (feed-seed-formula.test.ts): what must hold
+// spans feed_formulas → feeds → feed_sources → external_subscriptions, and a
+// mocked pool.query would answer "did the redeemer get a subscription?" from
+// the mock rather than from the path addSource actually takes.
+export async function seedStarterFeeds(ownerId: string): Promise<number> {
   // Fast path: the overwhelming-common case is an owner who already has feeds.
   // A cheap unlocked COUNT keeps the per-request cost off the hot path — we
   // only open a transaction + take the advisory lock when there's nothing yet.
@@ -213,6 +239,46 @@ async function seedStarterFeeds(ownerId: string): Promise<number> {
     );
     if (parseInt(count, 10) > 0) return 0;
 
+    // ---- Path 1: the designated default-seed formula (D6) -----------------
+    //
+    // At most one row can be designated and it can never be revoked — both are
+    // schema guarantees (D11, migration 178), so this needs no ORDER BY and no
+    // revoked filter to be deterministic.
+    //
+    // The redeem core runs on the POOL, not on `client`: redemption is
+    // deliberately not one transaction (§6), so addSource opens its own and
+    // cannot see anything uncommitted here. Nothing in this transaction needs
+    // it to — the transaction exists only to hold the per-owner seed lock while
+    // the redeem commits its feed, which is what keeps two concurrent first
+    // loads from both seeding. The two advisory keys are distinct
+    // (`feed-seed:` here, `feed_sub:` inside addSource) and only ever taken in
+    // this order, so there is no cycle to deadlock on.
+    const {
+      rows: [seed],
+    } = await client.query<{ id: string }>(
+      `SELECT id FROM feed_formulas WHERE is_default_seed`,
+    );
+    if (seed) {
+      const result = await redeemFormulaForOwner(seed.id, ownerId);
+      if (result.failed.length > 0) {
+        // Never silent. A seed that quietly drops half its sources reads to a
+        // new member as the composition we chose for them, and the only witness
+        // is this line — the same class of failure as the starter template
+        // being deleted, one level down.
+        logger.error(
+          {
+            ownerId,
+            formulaId: seed.id,
+            added: result.added,
+            failed: result.failed,
+          },
+          "Default-seed formula redeemed with failures",
+        );
+      }
+      return 1;
+    }
+
+    // ---- Path 2: the legacy flagged template (retires with the flag) ------
     const { rows: templates } = await client.query<{ id: string }>(
       `SELECT id FROM feeds WHERE is_starter_template = true
        ORDER BY created_at ASC, id ASC`,
@@ -242,11 +308,12 @@ async function seedStarterFeeds(ownerId: string): Promise<number> {
 // source_count without a second round trip. Shared by GET /feeds and the
 // /bootstrap aggregate (performance audit #3).
 export async function listFeedsForOwner(ownerId: string): Promise<FeedRow[]> {
-  // Zero-feeds guard (Slice 3, workstream B): seed starter-template clones on
+  // Zero-feeds guard (Slice 3, workstream B): seed the starter composition on
   // first load for any owner with no feeds — covers fresh signups (both OAuth
   // and email paths) and pre-existing empty accounts uniformly, since every
   // workspace session reads this list. Idempotent + advisory-locked. No-op when
-  // no template is flagged (the client then mints an empty feed).
+  // nothing is designated and no template is flagged (the client then mints an
+  // empty feed).
   try {
     await seedStarterFeeds(ownerId);
   } catch (err) {
@@ -264,46 +331,6 @@ export async function listFeedsForOwner(ownerId: string): Promise<FeedRow[]> {
     [ownerId],
   );
   return rows;
-}
-
-// Create a feed for an owner, ranked last (max+1 within the owner's set). A
-// concurrent create can tie; ties are fine (read order falls back to
-// created_at). Extracted from POST /feeds (FOLLOW-GRAPH-IMPORT-ADR §11.1) so
-// the follow-import engine can mint the import's target feed through the same
-// path. Returns the full FeedRow (source_count 0 by construction).
-//
-// `opts` serves formula redemption (FEED-FORMULAS-ADR §5): a redeemed feed
-// arrives in the author's colour scheme, and carries the formula it came from
-// for the D7 attribution line. Both default to today's behaviour — an omitted
-// option cannot change what POST /feeds or the import engine mint. `origin_*`
-// come back NULL on this path by construction: the JOIN would be against a row
-// this INSERT has only just referenced, and the caller (redeem) already holds
-// the formula's name and author.
-export interface CreateFeedOptions {
-  appearance?: Record<string, unknown>;
-  fromFormulaId?: string;
-}
-export async function createFeedForOwner(
-  ownerId: string,
-  name: string,
-  db: { query: typeof pool.query } = pool,
-  opts: CreateFeedOptions = {},
-): Promise<FeedRow> {
-  const { rows } = await db.query<FeedRow>(
-    `INSERT INTO feeds (owner_id, name, sort_rank, appearance, from_formula_id)
-     VALUES ($1, $2,
-       (SELECT COALESCE(MAX(sort_rank), 0) + 1 FROM feeds WHERE owner_id = $1),
-       COALESCE($3::jsonb, '{}'::jsonb), $4)
-     RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count,
-       false AS from_starter, NULL::text AS origin_formula_name, NULL::text AS origin_author_name`,
-    [
-      ownerId,
-      name,
-      opts.appearance ? JSON.stringify(opts.appearance) : null,
-      opts.fromFormulaId ?? null,
-    ],
-  );
-  return rows[0];
 }
 
 export function registerFeedCrudRoutes(app: FastifyInstance) {

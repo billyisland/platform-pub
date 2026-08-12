@@ -5,6 +5,7 @@ import { adminDashboard, type AdminConfigRow } from '../../../lib/api'
 import { apiErrorMessage } from '../../../lib/api/client'
 import { timeAgo } from '../../../lib/format'
 import { AdminShell } from '../../../components/admin/AdminShell'
+import { SeedFormulaPanel } from '../../../components/admin/SeedFormulaPanel'
 
 // Ordered grouping — first matching rule wins.
 const GROUPS: Array<{ label: string; match: (key: string) => boolean }> = [
@@ -93,6 +94,11 @@ export default function AdminConfigPage() {
 
   return (
     <AdminShell title="Site owner">
+      {/* Not a platform_config dial — it is the other thing this tab is for,
+          an operator setting that used to be a hand-run UPDATE. It loads and
+          saves on its own, so a config save never touches it and a failure in
+          one panel cannot take the other down. */}
+      <SeedFormulaPanel />
       {error && <div className="bg-glasshouse-well px-4 py-3 text-ui-xs text-black mb-8">{error}</div>}
       {!rows && !error && (
         <div className="space-y-3">

@@ -7,6 +7,7 @@ import { requireEnv } from '@platform-pub/shared/lib/env.js'
 import { requireAdmin } from '../middleware/admin.js'
 import { getParityReport } from '../lib/internal-parity.js'
 import { provisionAccount } from '../lib/account-provision.js'
+import { freezeFeedIntoFormula, formulaMaxSources } from './feeds/formulas.js'
 import { sendWaitlistInviteEmail } from '@platform-pub/shared/lib/email.js'
 
 // =============================================================================
@@ -24,6 +25,8 @@ import { sendWaitlistInviteEmail } from '@platform-pub/shared/lib/email.js'
 // GET  /admin/dashboard/regulatory  — revenue vs UK tax thresholds, custody
 // GET  /admin/dashboard/waitlist    — the closed-beta waiting list
 // GET  /admin/dashboard/allocation-coverage — funds segregation, measured (W2)
+// GET  /admin/dashboard/seed-formula   — what every new account is seeded from
+// POST /admin/dashboard/seed-formula   — designate that (FEED-FORMULAS D6/D11)
 // POST /admin/dashboard/waitlist/admit — admit one waitlister (creates their
 //                                        account, sends the invitation)
 // POST /admin/dashboard/trigger-settlements — proxy to payment-service
@@ -57,6 +60,21 @@ export const REGULATORY_DIAL_DEFAULTS = {
 type RegulatoryDial = keyof typeof REGULATORY_DIAL_DEFAULTS
 
 const NUMERIC_RE = /^-?\d+(\.\d+)?$/
+
+// Designate the default-seed formula (FEED-FORMULAS-ADR D6/D11): either name a
+// formula that already exists, or cut one of the admin's own feeds into a new
+// one. A union rather than two optional fields, so "neither" and "both" are
+// rejected by the parse instead of by a hand-written check further down.
+const SeedFormulaSchema = z.union([
+  z.object({ formulaId: z.string().uuid() }).strict(),
+  z
+    .object({
+      feedId: z.string().uuid(),
+      name: z.string().trim().min(1).max(80).optional(),
+      description: z.string().trim().max(500).optional(),
+    })
+    .strict(),
+])
 
 const PatchConfigSchema = z.object({
   updates: z
@@ -1114,6 +1132,250 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
       }
     }
   )
+
+  // ---------------------------------------------------------------------------
+  // GET /admin/dashboard/seed-formula — what every new account is seeded from
+  //
+  // This panel replaced a hand-run `UPDATE feeds SET is_starter_template = true`
+  // (FEED-FORMULAS-ADR D6, Phase 2). It reports BOTH mechanisms while the move
+  // is in flight, because the whole failure this feature exists to end is an
+  // operator who cannot see what is load-bearing: the designated formula, and
+  // the legacy flagged feeds that still seed when nothing is designated.
+  // ---------------------------------------------------------------------------
+  app.get('/admin/dashboard/seed-formula', { preHandler: requireAdmin }, async (req, reply) => {
+    const adminId = (req as any).session!.sub as string
+    try {
+      const { rows: designated } = await pool.query(
+        `SELECT ff.id, ff.name, ff.description, ff.token, ff.created_at,
+                ff.source_count, ff.excluded_count, ff.source_feed_id,
+                ff.author_id, COALESCE(a.display_name, a.username) AS author_name
+           FROM feed_formulas ff JOIN accounts a ON a.id = ff.author_id
+          WHERE ff.is_default_seed`
+      )
+      // Candidates and feeds are the ADMIN's own, because those are the two
+      // things this panel can act on: designate a formula they have published,
+      // or cut one of their feeds into a new one. A revoked formula is not
+      // offered — the schema forbids designating one (D11).
+      const { rows: candidates } = await pool.query(
+        `SELECT id, name, source_count, excluded_count, created_at, is_default_seed
+           FROM feed_formulas
+          WHERE author_id = $1 AND revoked_at IS NULL
+          ORDER BY created_at DESC`,
+        [adminId]
+      )
+      const { rows: feeds } = await pool.query(
+        `SELECT f.id, f.name,
+                (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
+           FROM feeds f WHERE f.owner_id = $1
+          ORDER BY f.sort_rank ASC, f.created_at ASC`,
+        [adminId]
+      )
+      const { rows: legacy } = await pool.query(
+        `SELECT f.id, f.name, a.username AS owner_username,
+                (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
+           FROM feeds f JOIN accounts a ON a.id = f.owner_id
+          WHERE f.is_starter_template
+          ORDER BY f.created_at ASC`
+      )
+      return reply.send({
+        designated: designated[0]
+          ? {
+              id: designated[0].id,
+              name: designated[0].name,
+              description: designated[0].description ?? null,
+              url: `/f/${designated[0].token}`,
+              sourceCount: num(designated[0].source_count),
+              excludedCount: num(designated[0].excluded_count),
+              createdAt: designated[0].created_at,
+              authorName: designated[0].author_name,
+              authorIsSelf: designated[0].author_id === adminId,
+              sourceFeedId: designated[0].source_feed_id,
+            }
+          : null,
+        candidates: candidates.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          sourceCount: num(r.source_count),
+          excludedCount: num(r.excluded_count),
+          createdAt: r.created_at,
+          isDefaultSeed: r.is_default_seed,
+        })),
+        feeds: feeds.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          sourceCount: num(r.source_count),
+        })),
+        // Still-flagged template feeds. They are what seeds a new account while
+        // nothing is designated, and they retire with the flag in the migration
+        // that follows this cutover — never before it.
+        legacyTemplates: legacy.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          ownerUsername: r.owner_username,
+          sourceCount: num(r.source_count),
+        })),
+      })
+    } catch (err) {
+      req.log.error({ err }, 'admin dashboard seed-formula read failed')
+      return reply.status(500).send({ error: 'Failed to load the seed formula' })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // POST /admin/dashboard/seed-formula — designate the default seed
+  //
+  // Two bodies, one act: `{ formulaId }` designates a formula that already
+  // exists, `{ feedId }` cuts one of the admin's own feeds into a NEW formula
+  // and designates that in the same transaction.
+  //
+  // Three things about this endpoint are load-bearing:
+  //
+  //  1. It is NOT gated on FEED_FORMULAS_ENABLED. That brake gates publish and
+  //     redeem-by-token; the seed path must not share it (ADR §6), or an
+  //     operator who turns the flag off can no longer mint the thing every new
+  //     account depends on. The `{ feedId }` branch exists for exactly that
+  //     reason — the composer's publish action IS behind the brake.
+  //  2. There is no way to CLEAR the designation, deliberately (D11).
+  //     Undesignating happens only by designating a replacement, so this route
+  //     swaps both rows in one transaction and never merely clears one. The
+  //     schema refuses to delete or revoke a designated row; a route that could
+  //     empty the slot would be the same outage through a door the schema
+  //     cannot close.
+  //  3. A formula with no sources is refused. A sourceless seed feed
+  //     auto-serves the explore placeholder, so every new member would open
+  //     what they believe the platform composed for them and be shown the
+  //     platform stream (the §12 departure, one level up).
+  // ---------------------------------------------------------------------------
+  app.post('/admin/dashboard/seed-formula', { preHandler: requireAdmin }, async (req, reply) => {
+    const parsed = SeedFormulaSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send(zodValidationError(parsed.error))
+    }
+    const adminId = (req as any).session!.sub as string
+
+    try {
+      const outcome = await withTransaction(async (client) => {
+        let formulaId: string
+        let minted = false
+
+        if ('feedId' in parsed.data) {
+          // Owner-scoped: the admin cuts one of THEIR feeds. freezeFeedIntoFormula
+          // writes author_id from this, and a designated formula's author cannot
+          // delete their account (the D11 trigger through the CASCADE) — so
+          // silently making some other member's account undeletable is not a
+          // thing an admin should be able to do by typing a uuid.
+          const { rows: owned } = await client.query<{ name: string; appearance: any }>(
+            `SELECT name, appearance FROM feeds WHERE id = $1 AND owner_id = $2`,
+            [parsed.data.feedId, adminId]
+          )
+          if (owned.length === 0) return { error: 'feed_not_found' as const }
+
+          const frozen = await freezeFeedIntoFormula(client, {
+            feedId: parsed.data.feedId,
+            ownerId: adminId,
+            name: parsed.data.name ?? owned[0].name,
+            description: parsed.data.description ?? null,
+            appearance: owned[0].appearance ?? {},
+            maxSources: await formulaMaxSources(),
+          })
+          if (!frozen.ok) return { error: frozen.reason }
+          formulaId = frozen.formulaId
+          minted = true
+        } else {
+          formulaId = parsed.data.formulaId
+          const { rows } = await client.query<{
+            revoked_at: Date | null
+            live_sources: number
+          }>(
+            `SELECT ff.revoked_at,
+                    (SELECT COUNT(*)::int FROM feed_formula_sources s WHERE s.formula_id = ff.id)
+                      AS live_sources
+               FROM feed_formulas ff WHERE ff.id = $1`,
+            [formulaId]
+          )
+          if (rows.length === 0) return { error: 'formula_not_found' as const }
+          // The schema CHECK would reject this too; the 409 exists to say WHY
+          // rather than let a constraint violation surface as a 500.
+          if (rows[0].revoked_at) return { error: 'formula_revoked' as const }
+          if (rows[0].live_sources < 1) return { error: 'empty' as const }
+        }
+
+        // The swap, in this order because the partial unique index permits
+        // exactly one TRUE at a time and is not deferrable.
+        const { rows: previous } = await client.query<{ id: string; name: string }>(
+          `UPDATE feed_formulas SET is_default_seed = FALSE
+            WHERE is_default_seed AND id <> $1
+            RETURNING id, name`,
+          [formulaId]
+        )
+        await client.query(`UPDATE feed_formulas SET is_default_seed = TRUE WHERE id = $1`, [
+          formulaId,
+        ])
+        return { formulaId, minted, previous: previous[0] ?? null }
+      })
+
+      if ('error' in outcome) {
+        if (outcome.error === 'feed_not_found')
+          return reply.status(404).send({ error: 'feed_not_found' })
+        if (outcome.error === 'formula_not_found')
+          return reply.status(404).send({ error: 'formula_not_found' })
+        if (outcome.error === 'formula_revoked')
+          return reply.status(409).send({
+            error: 'formula_revoked',
+            message: 'A revoked formula cannot seed new accounts. Publish a new one.',
+          })
+        if (outcome.error === 'empty')
+          return reply.status(400).send({
+            error: 'formula_empty',
+            message:
+              'A seed formula must carry at least one shareable source — a sourceless feed shows every new member the platform stream instead.',
+          })
+        return reply.status(409).send({
+          error: 'formula_too_large',
+          message: 'This feed has more sources than a formula may carry.',
+        })
+      }
+
+      const { rows: now } = await pool.query<{
+        name: string
+        token: string
+        source_count: number
+        author_id: string
+        author_name: string | null
+      }>(
+        `SELECT ff.name, ff.token, ff.source_count, ff.author_id,
+                COALESCE(a.display_name, a.username) AS author_name
+           FROM feed_formulas ff JOIN accounts a ON a.id = ff.author_id
+          WHERE ff.id = $1`,
+        [outcome.formulaId]
+      )
+      logger.info(
+        {
+          adminId,
+          formulaId: outcome.formulaId,
+          minted: outcome.minted,
+          replaced: outcome.previous?.id ?? null,
+          authorId: now[0]?.author_id,
+        },
+        'owner dashboard: default-seed formula designated'
+      )
+      return reply.send({
+        designated: {
+          id: outcome.formulaId,
+          name: now[0]?.name ?? null,
+          url: now[0] ? `/f/${now[0].token}` : null,
+          sourceCount: num(now[0]?.source_count),
+          authorName: now[0]?.author_name ?? null,
+          authorIsSelf: now[0]?.author_id === adminId,
+        },
+        minted: outcome.minted,
+        replaced: outcome.previous,
+      })
+    } catch (err) {
+      req.log.error({ err }, 'admin dashboard seed-formula designation failed')
+      return reply.status(500).send({ error: 'Failed to designate the seed formula' })
+    }
+  })
 
   // ---------------------------------------------------------------------------
   // Trigger proxies — payment-service internal endpoints (x-internal-token)

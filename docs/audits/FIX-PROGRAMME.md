@@ -23,6 +23,12 @@ starts.
 
 ## Progress
 
+- **2026-08-12 (the thing that seeds every new account stops being a feed)** —
+  **FEED-FORMULAS-ADR Phase 2 step 1**: `seedStarterFeeds` redeems the designated
+  default-seed formula (ungated by `FEED_FORMULAS_ENABLED`, per §6), the flagged
+  template stays as the fallback until one is designated on prod, `from_starter`
+  re-derived, and the hand-run `UPDATE` replaced by the *Default seed* admin
+  panel. No migration. CONSOLIDATED-TODO §9.17. As-built: ADR §14.
 - **2026-08-11 (the formula gets a surface, and the author gets to see what they are handing over)** —
   **FEED-FORMULAS-ADR Phase 1's web half**, plus the one route the morning's server
   half turned out not to have; CONSOLIDATED-TODO §9.17. Still dark behind

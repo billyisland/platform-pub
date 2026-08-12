@@ -270,6 +270,61 @@ export interface AdminWaitlistAdmitResult {
   invited: boolean
 }
 
+/**
+ * What every new account is seeded from (FEED-FORMULAS-ADR D6, Phase 2).
+ *
+ * Two mechanisms are reported because the move is in flight: the designated
+ * formula, and the legacy `is_starter_template` feeds that still seed while
+ * nothing is designated. The panel shows both — an operator who cannot see
+ * which object is load-bearing is exactly how that object got deleted twice.
+ */
+export interface AdminSeedFormula {
+  designated: {
+    id: string
+    name: string
+    description: string | null
+    url: string
+    sourceCount: number
+    excludedCount: number
+    createdAt: string
+    authorName: string | null
+    /** False = a member's formula seeds every signup, and their account can no longer be deleted. */
+    authorIsSelf: boolean
+    sourceFeedId: string | null
+  } | null
+  /** The admin's own live formulas — what this panel can designate. */
+  candidates: Array<{
+    id: string
+    name: string
+    sourceCount: number
+    excludedCount: number
+    createdAt: string
+    isDefaultSeed: boolean
+  }>
+  /** The admin's own feeds — what this panel can cut into a new seed formula. */
+  feeds: Array<{ id: string; name: string; sourceCount: number }>
+  legacyTemplates: Array<{
+    id: string
+    name: string
+    ownerUsername: string | null
+    sourceCount: number
+  }>
+}
+
+export interface AdminSeedFormulaResult {
+  designated: {
+    id: string
+    name: string | null
+    url: string | null
+    sourceCount: number
+    authorName: string | null
+    authorIsSelf: boolean
+  }
+  /** True when a feed was cut into a new formula rather than an existing one named. */
+  minted: boolean
+  replaced: { id: string; name: string } | null
+}
+
 export const adminDashboard = {
   overview: () => request<AdminOverview>('/admin/dashboard/overview'),
   users: () => request<AdminUsers>('/admin/dashboard/users'),
@@ -283,6 +338,14 @@ export const adminDashboard = {
   regulatory: () => request<AdminRegulatory>('/admin/dashboard/regulatory'),
   allocationCoverage: () =>
     request<AdminAllocationCoverage>('/admin/dashboard/allocation-coverage'),
+  seedFormula: () => request<AdminSeedFormula>('/admin/dashboard/seed-formula'),
+  // No "clear" call, deliberately: undesignating happens only by designating a
+  // replacement (D11), and the schema refuses to revoke or delete the row.
+  designateSeedFormula: (body: { formulaId: string } | { feedId: string; name?: string }) =>
+    request<AdminSeedFormulaResult>('/admin/dashboard/seed-formula', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   waitlist: () => request<AdminWaitlist>('/admin/dashboard/waitlist'),
   admitWaitlister: (email: string) =>
     request<AdminWaitlistAdmitResult>('/admin/dashboard/waitlist/admit', {

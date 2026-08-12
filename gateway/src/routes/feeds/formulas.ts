@@ -6,9 +6,14 @@ import { requireAuth, optionalAuth } from "../../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { zodValidationError } from "@platform-pub/shared/lib/validation.js";
 import { getPlatformConfig } from "../../lib/platform-config.js";
-import { UUID_RE, loadFeed, tagged, ENQUEUE_SPACING_MS } from "./shared.js";
+import {
+  UUID_RE,
+  createFeedForOwner,
+  loadFeed,
+  tagged,
+  ENQUEUE_SPACING_MS,
+} from "./shared.js";
 import { addSource, type AddSourceInput } from "./sources.js";
-import { createFeedForOwner } from "./crud.js";
 
 // =============================================================================
 // Feed formulas — a feed's composition as a transmissible object
