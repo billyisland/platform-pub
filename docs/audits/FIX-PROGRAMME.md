@@ -51,7 +51,10 @@ starts.
   neither time. The replacement is not a better guard but a different object: a
   formula is frozen, undeletable and unrevocable while designated, in the schema.
   Deploy ordering is the REVERSE of the usual and of migration 177's — old code
-  names the column in four places, so deploy first, then migrate.
+  names the column, so deploy first, then migrate. The break window was measured
+  rather than asserted and is two destructive routes plus the admin seed panel;
+  seeding and the feed list are untouched (the old fallback arm is unreachable
+  while a formula is designated, and `listFeedsForOwner` catches it regardless).
 
   Three test files retired with their subject, but **two were rewritten rather
   than deleted**: they held behaviour with nothing to do with the flag that would

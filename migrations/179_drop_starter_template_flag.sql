@@ -34,13 +34,23 @@
 -- an EXISTS over the flag. Nothing writes the column from here on (its sole
 -- writer was `cloneFeedForOwner`); it is read-only history.
 --
--- DEPLOY ORDERING: breaking for OLD code — the previous gateway image SELECTs
--- `is_starter_template` in the merge lock read, both delete guards and the
--- admin seed-formula panel — so deploy the new image, THEN migrate, in that
--- order. That is the opposite of migration 177's note and the reverse of
--- DEPLOYMENT.md's default sequence, so it is worth saying twice: NEW code
--- against an UNMIGRATED database is completely fine (it never names the
--- column), old code against a migrated one 500s the workspace feed list.
+-- DEPLOY ORDERING: breaking for OLD code — so deploy the new image, THEN
+-- migrate, in that order. That is the opposite of migration 177's note and the
+-- reverse of DEPLOYMENT.md's default sequence, so it is worth saying twice: NEW
+-- code against an UNMIGRATED database is completely fine (it never names the
+-- column); old code against a MIGRATED one 500s on `POST /feeds/:id/merge`,
+-- `DELETE /feeds/:id` and the admin seed-formula panel.
+--
+-- What it does NOT break, checked rather than assumed, because the reassuring
+-- version of this is exactly the sort of thing that gets asserted: reading and
+-- writing feeds is untouched, and so is seeding. Old `seedStarterFeeds` names
+-- the column only in its FALLBACK arm, which is unreachable while a formula is
+-- designated (the precondition of this migration existing at all) — and
+-- `listFeedsForOwner` wraps the whole call in try/catch, so even the
+-- undesignated case degrades to a logged line and an empty-feed mint rather
+-- than a failed workspace load. The window is genuinely two destructive routes
+-- and one admin panel, not the site.
+--
 -- No index and no constraint involve the column, so the drop is one statement.
 -- =============================================================================
 
