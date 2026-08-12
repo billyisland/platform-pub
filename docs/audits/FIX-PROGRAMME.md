@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-08-12 (the platform stopped ingesting for 21 hours and nothing said so)** —
+  Prod ran with **no `feed-ingest` container from 2026-08-11 14:07 UTC**: a stray
+  SIGTERM during the deploy, and `restart: unless-stopped` does not restart what
+  was deliberately stopped. Every container green, `/health` green, no content
+  from any source for 21 hours, found because the operator noticed their own
+  feeds were stale. No data lost (the relay outbox was empty; pollers resume
+  from cursors). Three fixes, one deploy: **(1)** the shutdown handler is
+  idempotent — graphile re-raises SIGTERM on itself, re-entering ours, and the
+  second `runner.stop()` threw `Runner is already stopped`, killing the process
+  before its cursor flush and lock release on **every** restart the platform has
+  ever done; **(2)** an ingest **heartbeat** stamped by the 60s poll, whose AGE
+  is the alarm on `/admin/overview` — an absence a stopped worker cannot fake,
+  unlike `jetstream_healthy`, which sat at `true` throughout; **(3)** a
+  **silence watchdog** on the Jetstream socket (ping every 30s, terminate after
+  90s of no inbound frames — Jetstream was measured pinging every 30s and
+  ponging in ~100ms, so silence is unambiguous), closing the half-open socket
+  that emits neither `close` nor `error`. Then a **fourth, found while proving
+  the third and bigger than it**: the listener resumed from the oldest
+  per-source cursor, which ages without bound because a cursor only moves when
+  that account posts — dev was replaying **30.7 days** of the entire firehose on
+  every reconnect, every event a duplicate, so nothing inserted and Bluesky
+  ingest looked dead while pulling 3.8 MB/s. Capped by
+  `feed_ingest_atproto_max_replay_hours`. Residual (wildcard-mode pace, the
+  never-rising resume floor, an `external_items`/`feed_items` divergence):
+  CONSOLIDATED-TODO §8.13. Runbook: DEPLOYMENT.md › *nothing is arriving in any
+  feed*. **A diagnosis this log should keep: the dev symptom was read as a
+  half-open socket for an hour, on the strength of "connected" being the last
+  log line. Bytes on the interface said otherwise. Absence of logs is not
+  absence of work.**
 - **2026-08-12 (the thing that seeds every new account stops being a feed)** —
   **FEED-FORMULAS-ADR Phase 2 step 1**: `seedStarterFeeds` redeems the designated
   default-seed formula (ungated by `FEED_FORMULAS_ENABLED`, per §6), the flagged

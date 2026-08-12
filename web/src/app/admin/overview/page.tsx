@@ -104,6 +104,35 @@ export default function AdminOverviewPage() {
             </div>
           )}
 
+          {/* Ingest down. Beside the parity banner and for the same reason:
+              this is the platform silently not working, not a control working
+              as designed. On 2026-08-11 feed-ingest was stopped by a stray
+              SIGTERM and nothing restarted it — every container green, every
+              number on this page healthy, and no content ingested for 21 hours
+              until the operator noticed their own feeds were stale. The signal
+              is the AGE of a heartbeat the worker stamps every 60s, so a
+              stopped worker cannot report itself alive. */}
+          {data.ingest.worker.down && (
+            <div className="bg-glasshouse-well px-4 py-3 mb-8">
+              <p className="label-ui text-crimson mb-1">
+                Feed ingest is not running
+                {data.ingest.worker.ageSeconds !== null &&
+                  ` — last tick ${timeAgo(data.ingest.worker.heartbeatAt!)}`}
+              </p>
+              <p className="text-ui-xs text-black">
+                {data.ingest.worker.heartbeatAt === null
+                  ? 'The feed-ingest worker has never stamped its heartbeat. '
+                  : `The worker stamps a heartbeat every 60 seconds and has not for over ${Math.round(
+                      data.ingest.worker.alertSeconds / 60,
+                    )} minutes. `}
+                While it is down nothing is ingested from any source, no Nostr events are
+                published from the relay outbox, and no scheduled cron runs. Check{' '}
+                <span className="font-mono">docker compose ps feed-ingest</span> and start it with{' '}
+                <span className="font-mono">docker compose up -d feed-ingest</span>.
+              </p>
+            </div>
+          )}
+
           {data.payout.halted && (
             <div className="bg-glasshouse-well px-4 py-3 mb-8">
               <p className="label-ui text-crimson mb-1">Payouts halted</p>
@@ -363,6 +392,37 @@ export default function AdminOverviewPage() {
                 value={data.counts.openReportCount}
                 warn={data.counts.openReportCount > 0}
               />
+            </StatGrid>
+          </StatSection>
+
+          <div className="slab-rule-4 mb-8" />
+          <StatSection
+            label="Ingest"
+            helper="Whether content is arriving. The worker figure is the alarm; the per-protocol times are context, not thresholds — two of these protocols are push-driven, so a quiet night is not a fault."
+          >
+            <StatGrid>
+              <StatCard
+                label="Worker"
+                value={data.ingest.worker.down ? 'Down' : 'Running'}
+                detail={
+                  data.ingest.worker.heartbeatAt
+                    ? `heartbeat ${timeAgo(data.ingest.worker.heartbeatAt)}`
+                    : 'no heartbeat ever recorded'
+                }
+                warn={data.ingest.worker.down}
+              />
+              {data.ingest.protocols.map((p) => (
+                <StatCard
+                  key={p.protocol}
+                  label={p.protocol}
+                  // "never" rather than 0 or a dash: a source that has never
+                  // been fetched and one fetched a second ago are opposite
+                  // facts, and email is push-delivered so it never fetches at
+                  // all. No measurement is not a good measurement.
+                  value={p.lastFetchedAt ? timeAgo(p.lastFetchedAt) : 'never'}
+                  detail={`${p.activeSources} active source${p.activeSources === 1 ? '' : 's'}`}
+                />
+              ))}
             </StatGrid>
           </StatSection>
 

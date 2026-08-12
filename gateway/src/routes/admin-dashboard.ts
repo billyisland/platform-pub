@@ -44,7 +44,15 @@ const num = (v: unknown): number => Number(v ?? 0)
 // shown read-only in the config editor, never editable through it.
 // (payouts_halted is presence-means-halted and is DELETEd to resume;
 // jetstream_healthy is written by the ingest listener.)
-const STATE_KEYS = new Set(['payouts_halted', 'jetstream_healthy'])
+// (feed_ingest_heartbeat is stamped every 60s by the feed-ingest poll; editing
+// it by hand would forge the liveness signal the overview alarms on.)
+const STATE_KEYS = new Set(['payouts_halted', 'jetstream_healthy', 'feed_ingest_heartbeat'])
+
+// The in-code twin of config-defaults.sql's ingest_heartbeat_alert_seconds.
+// Exported so the fallback-parity suite can hold the two copies together — a
+// drifted fallback never errors, it just substitutes silently, in exactly the
+// case it exists for (the row missing).
+export const INGEST_HEARTBEAT_ALERT_SECONDS_FALLBACK = 600
 
 // The regulatory tax thresholds. Canonical values live in
 // shared/src/db/config-defaults.sql; these fallbacks are tripwired against it
@@ -162,7 +170,7 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
       const config = await loadConfig()
       const nearThresholdPence = Math.floor(config.tabSettlementThresholdPence * 0.8)
 
-      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts, holdingDial, haltedAccounts] =
+      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts, holdingDial, haltedAccounts, ingestBeat, ingestProtocols] =
         await Promise.all([
           pool.query(
             `SELECT
@@ -253,6 +261,24 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
                FROM payouts_halted_accounts h
                JOIN accounts a ON a.id = h.account_id
               ORDER BY h.created_at ASC`
+          ),
+          // Ingest liveness (prod incident 2026-08-11). Both halves in one
+          // round trip: the heartbeat + its dial, and the per-protocol last
+          // fetch. See the `ingest` block below for what each is FOR — they
+          // answer different questions and must not be merged.
+          pool.query(
+            `SELECT
+               (SELECT value FROM platform_config WHERE key = 'feed_ingest_heartbeat') AS heartbeat,
+               (SELECT value FROM platform_config WHERE key = 'ingest_heartbeat_alert_seconds') AS alert_seconds`
+          ),
+          pool.query(
+            `SELECT protocol::text AS protocol,
+                    COUNT(*)::int AS active_sources,
+                    MAX(last_fetched_at) AS last_fetched_at
+               FROM external_sources
+              WHERE is_active = TRUE
+              GROUP BY protocol
+              ORDER BY protocol`
           ),
         ])
 
@@ -365,6 +391,61 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         // ABOUT. This page is where money state is checked, so it is where a
         // silently broken paywall belongs. Read from process memory, no query.
         parity: getParityReport(),
+        // Ingest liveness. Here for the same reason `parity` is: the fault this
+        // reports is precisely the one that gives an operator nothing to be
+        // suspicious about. On 2026-08-11 feed-ingest took a stray SIGTERM and
+        // nothing restarted it; every container was green, /health was green,
+        // and the whole content pipeline was dead for 21 hours until a human
+        // noticed their own feeds were stale.
+        //
+        // TWO SEPARATE QUESTIONS, deliberately not merged into one "ingest OK".
+        //
+        //   `worker` — is the ingest worker running AT ALL. Derived from the
+        //   ABSENCE of a write: the poll stamps feed_ingest_heartbeat every 60s
+        //   and this reads its age, so a stopped worker cannot report itself
+        //   healthy. `null` heartbeat means it has never written one — which is
+        //   `down`, not `unknown`: on a live database the only ways to get here
+        //   are a worker that has never run and one whose writes stopped before
+        //   this feature shipped, and both want the operator looking. (Contrast
+        //   jetstream_healthy, a self-declared boolean that was stuck at `true`
+        //   throughout the outage because the process that owns it was gone.)
+        //
+        //   `protocols` — per-protocol freshness, INFORMATIONAL only, never an
+        //   alarm. Each protocol's cadence differs by an order of magnitude and
+        //   two are push-driven (atproto's last_fetched_at only moves when a
+        //   subscribed account posts; email never sets it at all), so a
+        //   threshold here would either cry wolf every quiet night or be so
+        //   loose it reports nothing. `lastFetchedAt: null` is rendered as
+        //   "never", never as zero or as stale — no measurement is not a bad
+        //   measurement.
+        ingest: (() => {
+          const beat = ingestBeat.rows[0] ?? {}
+          const alertSeconds = (() => {
+            const v = Number(beat.alert_seconds)
+            // Fallback matches config-defaults.sql; parity-tested.
+            return Number.isFinite(v) && v > 0 ? v : INGEST_HEARTBEAT_ALERT_SECONDS_FALLBACK
+          })()
+          const beatAt = beat.heartbeat ? new Date(beat.heartbeat) : null
+          const ageSeconds =
+            beatAt && !isNaN(beatAt.getTime())
+              ? Math.floor((Date.now() - beatAt.getTime()) / 1000)
+              : null
+          return {
+            worker: {
+              heartbeatAt: beatAt && !isNaN(beatAt.getTime()) ? beatAt.toISOString() : null,
+              ageSeconds,
+              alertSeconds,
+              // No heartbeat and a stale heartbeat are the same verdict, and it
+              // is the loud one.
+              down: ageSeconds === null || ageSeconds > alertSeconds,
+            },
+            protocols: ingestProtocols.rows.map((p: any) => ({
+              protocol: p.protocol,
+              activeSources: num(p.active_sources),
+              lastFetchedAt: p.last_fetched_at ?? null,
+            })),
+          }
+        })(),
         counts: {
           totalAccounts: num(c.total_accounts),
           activeAccounts: num(c.active_accounts),

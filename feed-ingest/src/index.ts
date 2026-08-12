@@ -176,15 +176,51 @@ async function start() {
   const jetstream = new JetstreamListener();
   await jetstream.start();
 
+  // Shutdown runs TWICE on every SIGTERM, and must be idempotent.
+  //
+  // graphile-worker installs its own signal handlers: on SIGTERM it stops the
+  // runner itself and then re-raises SIGTERM on this process ("killing self via
+  // SIGTERM"), which re-enters this handler 12ms later. The second pass then
+  // called runner.stop() on an already-stopped runner, graphile threw `Runner is
+  // already stopped`, and the process died on an UNCAUGHT EXCEPTION rather than
+  // exiting — taking the rest of this handler with it. That is not cosmetic:
+  // everything after runner.stop() is the orderly part (pool.end, and inside
+  // jetstream.stop the final cursor flush and the advisory-lock release), so a
+  // routine `docker compose stop` lost cursor progress and left the leader lock
+  // to be reclaimed by session death instead of released.
+  //
+  // Observed on prod 2026-08-11 14:07 UTC. The SIGTERM itself is what stopped
+  // ingest for 21 hours — this handler is not why it stayed down — but a
+  // shutdown path that crashes on its own second invocation is a fault of its
+  // own, and it fired on every restart the platform has ever done.
+  //
+  // A single guard, not a try/catch per call: re-entering at all is the bug, and
+  // the second pass has nothing left to do that the first did not already do.
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) {
+      logger.debug({ signal }, "Shutdown already in progress — ignoring signal");
+      return;
+    }
+    shuttingDown = true;
     logger.info({ signal }, "Shutting down feed-ingest worker");
-    await jetstream.stop();
-    await runner.stop();
-    await pool.end();
+    try {
+      await jetstream.stop();
+      await runner.stop();
+      await pool.end();
+    } catch (err) {
+      // Exit anyway. A shutdown that throws must still be a shutdown, or the
+      // container ends on an uncaught exception whose stack buries the signal
+      // that caused it — which is exactly how the prod crash above read.
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err), signal },
+        "Error during feed-ingest shutdown — exiting regardless",
+      );
+    }
     process.exit(0);
   };
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
 
   await runner.promise;
 }

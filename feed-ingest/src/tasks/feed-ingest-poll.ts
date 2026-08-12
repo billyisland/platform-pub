@@ -198,4 +198,52 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
       "Enqueued feed ingest jobs",
     );
   }
+
+  await writeIngestHeartbeat();
 };
+
+// ---------------------------------------------------------------------------
+// The ingest heartbeat (prod incident 2026-08-11).
+//
+// feed-ingest was stopped by a stray SIGTERM at 14:07 UTC and nothing brought
+// it back. Every other container stayed green, /health stayed green, and the
+// platform's entire content pipeline was dead for 21 hours — found only because
+// the operator noticed their own feeds were stale. Nothing anywhere said "the
+// ingest worker is not running", because nothing was watching for an ABSENCE.
+//
+// So: this task, which runs every 60 seconds, stamps the clock. The gateway's
+// admin overview reads its AGE, and staleness is the alarm.
+//
+// WHY THE ABSENCE AND NOT A CLAIM. jetstream_healthy is the counter-example
+// living in this same table: a boolean the listener sets false when it knows it
+// is unwell, which is worthless for the failures where it cannot know or is not
+// running at all. A timestamp inverts that — a stopped worker writes nothing,
+// and nothing is exactly what raises the alarm. There is no state in which a
+// dead process reports itself alive.
+//
+// It sits at the END of the task deliberately: it then means "a scheduled task
+// ran to completion", not merely "a process exists". A poll that throws every
+// tick leaves the heartbeat stale, which is the truth an operator needs.
+//
+// Runtime STATE, not a dial — so, like payouts_halted, it is deliberately NOT
+// in config-defaults.sql and is refused by the admin config editor. UPSERT, not
+// UPDATE: a bare UPDATE matches zero rows when the key is absent and reports no
+// error, which is exactly how jetstream_healthy silently never persisted.
+async function writeIngestHeartbeat(): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO platform_config (key, value, description, updated_at)
+       VALUES ('feed_ingest_heartbeat', now()::text,
+               'Runtime state: when the feed-ingest poll last completed. Written every 60s; its AGE is the ingest liveness alarm on /admin/overview. Not a dial.',
+               now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    );
+  } catch (err) {
+    // Never fail the tick over the heartbeat. A throw here would make graphile
+    // retry a poll that already did its work, and re-enqueue every due source.
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "Failed to write feed-ingest heartbeat",
+    );
+  }
+}

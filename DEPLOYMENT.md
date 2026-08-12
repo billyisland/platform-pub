@@ -424,6 +424,56 @@ The state is **sticky in both directions**: only a proven match clears a proven
 mismatch, so a broken peer that then goes down does not read as repaired, and a
 peer that merely restarts does not erase a proven match.
 
+## Troubleshooting: nothing is arriving in any feed
+
+Symptom: feeds stop moving. Every container is green, `/health` is green, and
+nothing on the site says anything is wrong. This has happened twice, from two
+unrelated causes, and they are told apart in one query.
+
+**First, the banner.** Since 2026-08-12 `/admin/overview` carries a crimson
+**Feed ingest is not running** banner, driven by the age of a heartbeat the
+poll stamps every 60 seconds (`platform_config.feed_ingest_heartbeat`,
+threshold `ingest_heartbeat_alert_seconds`). It reports an ABSENCE, so a
+stopped worker cannot suppress it. If the banner is up, the worker is not
+running — skip to cause 1.
+
+```bash
+docker compose exec postgres psql -U platformpub -d platformpub \
+  -c "SELECT protocol, max(last_fetched_at) FROM external_sources WHERE is_active GROUP BY 1"
+```
+
+**Cause 1 — the worker is not running (prod, 2026-08-11, 21 hours).** ALL
+protocols freeze at the same instant. `feed-ingest` had taken a stray SIGTERM
+during a deploy and nothing restarted it; `docker compose ps` did not list it
+at all, and `restart: unless-stopped` does not restart a container that was
+deliberately stopped. Everything else — publishing to the relay via the outbox,
+every cron, email digests — is down with it.
+
+```bash
+docker compose ps -a feed-ingest
+docker compose up -d feed-ingest
+```
+
+**Cause 2 — Bluesky only, and the socket is fine (dev, 2026-08-12, 38 hours).**
+`atproto` freezes while the other protocols stay current. The listener resumes
+from the oldest per-source cursor, and a cursor only advances when that account
+posts — so the oldest ages without bound, and past 150 DIDs (wildcard mode) it
+asks Bluesky to replay *weeks of the entire firehose*. Every replayed event is
+one we already hold, so nothing inserts, no cursor moves, and it looks dead
+while pulling ~4 MB/s. Capped since 2026-08-12 by
+`feed_ingest_atproto_max_replay_hours` (24). Confirm which state you are in by
+looking at bytes, not rows:
+
+```bash
+docker compose exec feed-ingest sh -c "awk '/eth0/ {print \$2}' /proc/net/dev"
+```
+
+Run it twice a few seconds apart. Megabytes per second means it is replaying
+(check the `Opening Jetstream WebSocket` log line — it prints `storedAgeHours`
+and whether the resume was `clamped`). Near zero means a genuinely half-open
+socket, which the silence watchdog now terminates after 90 seconds of no
+frames.
+
 ## Troubleshooting: feature not appearing after a rebuild
 
 Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviour doesn't show.

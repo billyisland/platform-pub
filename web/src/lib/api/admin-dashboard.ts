@@ -79,6 +79,32 @@ export interface AdminOverview {
     mismatched: string[]
     unverified: string[]
   }
+  /**
+   * Is content actually arriving (prod incident 2026-08-11 — 21 hours of no
+   * ingest with every container green).
+   *
+   * `worker` is the alarm and is derived from an ABSENCE: the feed-ingest poll
+   * stamps a heartbeat every 60s, so a stopped worker cannot report itself
+   * healthy. A null `heartbeatAt` is `down`, not "unknown".
+   *
+   * `protocols` is context, never a threshold: cadences differ by orders of
+   * magnitude and two protocols are push-driven (atproto only fetches when a
+   * subscribed account posts; email never does), so `lastFetchedAt: null` must
+   * render as "never" rather than as stale or as zero.
+   */
+  ingest: {
+    worker: {
+      heartbeatAt: string | null
+      ageSeconds: number | null
+      alertSeconds: number
+      down: boolean
+    }
+    protocols: Array<{
+      protocol: string
+      activeSources: number
+      lastFetchedAt: string | null
+    }>
+  }
   counts: {
     totalAccounts: number
     activeAccounts: number

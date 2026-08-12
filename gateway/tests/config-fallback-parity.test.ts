@@ -13,6 +13,11 @@ import { diffAgainstDefaults } from "@platform-pub/shared/db/config-defaults-par
 // operator's tuning surface would be a number that is never read.
 // =============================================================================
 
+// admin-dashboard.ts requireEnv()s these at module scope (the ingest-heartbeat
+// fallback below imports it). Values are irrelevant — nothing here calls out.
+process.env.PAYMENT_SERVICE_URL ??= "http://payment-service.test";
+process.env.INTERNAL_SERVICE_TOKEN ??= "test-token";
+
 const configMock = { current: new Map<string, string>() };
 vi.mock("../src/lib/platform-config.js", () => ({
   getPlatformConfig: async () => configMock.current,
@@ -73,5 +78,23 @@ describe("feed-formula source cap fallback vs config-defaults.sql", () => {
         diffAgainstDefaults({ feed_formula_max_sources: await formulaMaxSources() }),
       ).toEqual([]);
     }
+  });
+});
+
+describe("ingest-heartbeat alert threshold fallback vs config-defaults.sql", () => {
+  it("the in-code fallback matches the seeded default", async () => {
+    // Same rule, and here the drift would be quiet in the worst direction: the
+    // fallback is only reached when the row is missing, which is precisely the
+    // freshly-bootstrapped database where nobody has yet learned what a normal
+    // tick gap looks like. Too low and the ingest banner cries wolf until it is
+    // ignored; too high and it reproduces the 21-hour outage it exists to end.
+    const { INGEST_HEARTBEAT_ALERT_SECONDS_FALLBACK } = await import(
+      "../src/routes/admin-dashboard.js"
+    );
+    expect(
+      diffAgainstDefaults({
+        ingest_heartbeat_alert_seconds: INGEST_HEARTBEAT_ALERT_SECONDS_FALLBACK,
+      }),
+    ).toEqual([]);
   });
 });

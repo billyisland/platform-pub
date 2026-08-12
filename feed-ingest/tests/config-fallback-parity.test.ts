@@ -75,3 +75,30 @@ describe("resonance fallbacks vs config-defaults.sql", () => {
     expect(src).not.toMatch(/num\(\s*"resonance_weight_/);
   });
 });
+
+describe("jetstream replay cap fallback vs config-defaults.sql", () => {
+  beforeEach(() => {
+    configMock.current = new Map();
+  });
+
+  it("the in-code fallback matches the seeded default", async () => {
+    const { loadMaxReplayHours } = await import("../src/jetstream/listener.js");
+    expect(
+      diffAgainstDefaults({
+        feed_ingest_atproto_max_replay_hours: await loadMaxReplayHours(),
+      }),
+    ).toEqual([]);
+  });
+
+  it("a retuned value wins, and junk does not", async () => {
+    const { loadMaxReplayHours } = await import("../src/jetstream/listener.js");
+    configMock.current = new Map([["feed_ingest_atproto_max_replay_hours", "6"]]);
+    expect(await loadMaxReplayHours()).toBe(6);
+    // 0 or negative would resume from now or the future — the silent-stream
+    // state — so they must fall back rather than be honoured.
+    for (const junk of ["", "nope", "0", "-3"]) {
+      configMock.current = new Map([["feed_ingest_atproto_max_replay_hours", junk]]);
+      expect(await loadMaxReplayHours()).toBe(24);
+    }
+  });
+});

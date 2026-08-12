@@ -337,3 +337,47 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO platform_config (key, value, description) VALUES
   ('feed_formula_max_sources',        '200',  'Maximum portable sources a feed formula may carry. Bounds worst-case redeem latency (N serial addSource calls, each probing a genuinely new identity), not storage. Read by gateway formulas.ts::formulaMaxSources.')
 ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Ingest liveness — how stale the feed-ingest heartbeat may get before the
+-- owner dashboard calls it down (prod incident 2026-08-11: the worker was
+-- stopped by a stray SIGTERM and nothing noticed for 21 hours).
+--
+-- `feed_ingest_heartbeat` itself is runtime STATE and is deliberately absent
+-- from this file (like payouts_halted): the worker upserts it every 60s, and
+-- the alarm is its ABSENCE, which no seed should ever pre-satisfy.
+--
+-- This is the threshold, and it is a dial because the right number is only
+-- knowable by watching the real tick: the poll is scheduled every 60s but a
+-- long-running tick, a busy worker or a slow database all stretch the gap, and
+-- an alert that fires on ordinary jitter is one an operator learns to ignore —
+-- which is the failure mode this whole check exists to end. 600s = ten missed
+-- ticks: comfortably past jitter, far short of the 21 hours it took a human to
+-- spot the last outage.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('ingest_heartbeat_alert_seconds',  '600',  'Age (seconds) at which the feed_ingest_heartbeat is reported DOWN on /admin/overview. The worker stamps the heartbeat every 60s; ten missed ticks is past jitter. Read by gateway admin-dashboard.ts.')
+ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Jetstream replay cap (dev diagnosis 2026-08-12).
+--
+-- A reconnect resumes from the OLDEST cursor across active atproto sources so
+-- that no source misses events — but a cursor only advances when that account
+-- posts, so the minimum is the least active account's last post and it ages
+-- without bound. Past 150 DIDs the listener takes the unfiltered firehose, so
+-- an old cursor asks Bluesky to replay a month of every post on the network:
+-- measured at 113 MB per 30s on dev, roughly fifteen hours to reach live, and
+-- restarting begins it again. Worse, the replayed events are already held, so
+-- they insert nothing and raise no cursor — Bluesky ingest looks dead while the
+-- socket works perfectly hard.
+--
+-- A dial because it trades two real costs against each other and the exchange
+-- rate is only knowable live: raise it to replay a longer outage through the
+-- firehose, lower it to reach live sooner after one. Past the cap the
+-- per-source poll fallback is the better backfill anyway — it fetches one
+-- account's history rather than filtering the planet's.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('feed_ingest_atproto_max_replay_hours', '24', 'How far back a Jetstream reconnect may resume. Caps the oldest per-source cursor, which otherwise ages without bound and makes every reconnect replay weeks of the whole firehose. Read by feed-ingest listener.ts::resumePoint.')
+ON CONFLICT (key) DO NOTHING;

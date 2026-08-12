@@ -14,6 +14,8 @@ import { insertAtprotoItem } from "../lib/atproto-ingest.js";
 import { ATPROTO_ENRICH_FAILED_ERROR } from "../tasks/feed-ingest-atproto-backfill.js";
 import { recordRepostEdge } from "../lib/repost-edge.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
+import { SilenceWatchdog, attachLiveness } from "./silence-watchdog.js";
+import { resumeCursor, type ResumePoint } from "./resume-cursor.js";
 
 // =============================================================================
 // Jetstream listener
@@ -38,6 +40,22 @@ import { getPlatformConfig } from "../lib/platform-config.js";
 //   - New DID appears → connect.
 //   - DID set changes while connected → reconnect with new filter.
 //   - WebSocket error/close → exponential backoff, reconnect.
+//   - WebSocket alive but SILENT past the keepalive window → terminate and
+//     reconnect (silence-watchdog.ts). A half-open socket emits neither error
+//     nor close, so without this the listener would wait on one forever — and
+//     it is also why jetstream_healthy could never reach `false`, since only
+//     the close path writes it.
+//
+// TWO FAILURES THAT LOOK IDENTICAL FROM THE DATABASE, and only one of them is
+// the socket's fault. Both present as "connected, ingesting nothing":
+//   · a half-open socket — no frames at all. The watchdog above.
+//   · an over-deep resume — frames pouring in, every one a duplicate we already
+//     hold, so nothing inserts and no cursor moves. resume-cursor.ts. The
+//     watchdog cannot see this one and must not try to: the socket is genuinely
+//     healthy and working hard.
+// The way to tell them apart from outside is bytes on the wire, not rows in the
+// table (`/proc/net/dev` inside the container: ~4 MB/s means replay, ~0 means
+// wedge).
 // =============================================================================
 
 const DEFAULT_JETSTREAM_URL = "wss://jetstream1.us-east.bsky.network/subscribe";
@@ -82,6 +100,38 @@ const JETSTREAM_MAX_URL_LENGTH = 16384;
 const CURSOR_FLUSH_MS = 5_000;
 const CURSOR_FLUSH_EVENT_THRESHOLD = 500;
 
+// Half-open-socket detection (see silence-watchdog.ts for the incident and the
+// measurement behind these numbers). Jetstream sends its own ping every 30s and
+// pongs ours in ~100ms, so 90s of TOTAL inbound silence — three missed
+// keepalives plus two unanswered probes of our own — is a wedged socket and not
+// a quiet subscription. Not dials: they describe the protocol's measured
+// keepalive behaviour, not a preference to be tuned per deployment.
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const SILENCE_TIMEOUT_MS = 90_000;
+
+// Replay cap fallback; canonical value in config-defaults.sql, held in step by
+// feed-ingest/tests/config-fallback-parity.test.ts. A day covers any outage
+// worth replaying through the firehose — longer belongs to the per-source
+// backfill, which fetches one account's history instead of the network's.
+const MAX_REPLAY_HOURS_FALLBACK = 24;
+
+/**
+ * The replay cap, from the dial. Exported so the fallback-parity suite can
+ * drive the REAL read path against an empty config rather than a copy of the
+ * number — a drifted fallback never errors, it substitutes silently, in exactly
+ * the case it exists for.
+ */
+export async function loadMaxReplayHours(): Promise<number> {
+  const config = await getPlatformConfig();
+  const parsed = parseInt(
+    config.get("feed_ingest_atproto_max_replay_hours") ?? "",
+    10,
+  );
+  // `> 0` and not merely finite: a 0 or negative cap would resume from now or
+  // the future, which is the silent-stream state resume-cursor.ts guards.
+  return parsed > 0 ? parsed : MAX_REPLAY_HOURS_FALLBACK;
+}
+
 type SourceRow = {
   id: string;
   source_uri: string;
@@ -109,6 +159,7 @@ export class JetstreamListener {
   private pendingCursors: Map<string, bigint> = new Map();
   private cursorFlushTimer: NodeJS.Timeout | null = null;
   private eventsSinceFlush = 0;
+  private watchdog: SilenceWatchdog | null = null;
 
   constructor(url?: string) {
     this.url = url ?? process.env.JETSTREAM_URL ?? DEFAULT_JETSTREAM_URL;
@@ -124,6 +175,7 @@ export class JetstreamListener {
 
   async stop(): Promise<void> {
     this.stopping = true;
+    this.watchdog?.stop();
     if (this.didRefreshTimer) clearTimeout(this.didRefreshTimer);
     if (this.leaderPollTimer) clearTimeout(this.leaderPollTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -250,7 +302,7 @@ export class JetstreamListener {
 
   private async refreshDids(): Promise<void> {
     // Flush pending cursor progress before reloading rows, otherwise the fresh
-    // sourceByDid would carry stale (older) cursors and oldestCursor() could
+    // sourceByDid would carry stale (older) cursors and resumePoint() could
     // rewind on the next reconnect.
     await this.flushCursors();
 
@@ -387,28 +439,28 @@ export class JetstreamListener {
   // --- Cursor handling --------------------------------------------------------
 
   // Jetstream's ?cursor= param is time_us (microseconds since epoch). On
-  // reconnect, resume from the oldest cursor across active sources so we do
-  // not lose events from any source, relying on the unique constraint to
-  // dedupe overlap with more recently updated sources.
-  private oldestCursor(): string | null {
-    let oldest: bigint | null = null;
-    for (const row of this.sourceByDid.values()) {
-      if (!row.cursor) continue;
-      try {
-        const v = BigInt(row.cursor);
-        if (oldest === null || v < oldest) oldest = v;
-      } catch {
-        // skip malformed cursors
-      }
-    }
-    return oldest === null ? null : oldest.toString();
+  // reconnect we resume from the oldest cursor across active sources so no
+  // source loses events — CAPPED at feed_ingest_atproto_max_replay_hours.
+  //
+  // The cap is not a refinement, it is the fix: the minimum across N sources is
+  // the least active account's last post, so it ages without bound, and past
+  // the wildcard threshold an old cursor asks Bluesky to replay a month of the
+  // entire network. resume-cursor.ts has the measurements and the failure it
+  // presents as. Uncapped, this listener can never reach live.
+  private async resumePoint(): Promise<ResumePoint> {
+    const hours = await loadMaxReplayHours();
+    return resumeCursor(
+      [...this.sourceByDid.values()].map((r) => r.cursor),
+      BigInt(Date.now()) * 1000n,
+      BigInt(Math.round(hours * 3600)) * 1_000_000n,
+    );
   }
 
   // --- Batched cursor flush (#5 / B2) -----------------------------------------
 
   // Record a source's latest time_us for a later batched durable flush. The
   // in-memory mirror (sourceByDid[*].cursor) is updated eagerly by the caller
-  // so oldestCursor() on reconnect is always current; this only debounces the
+  // so resumePoint() on reconnect is always current; this only debounces the
   // DB write.
   private recordCursor(sourceId: string, timeUs: number): void {
     const t = BigInt(timeUs);
@@ -502,17 +554,26 @@ export class JetstreamListener {
     // app.bsky.feed.post. handleMessage() drops events whose DID isn't in
     // sourceByDid, so correctness is unaffected — only bandwidth goes up.
 
-    const cursor = this.oldestCursor();
-    if (cursor) params.set("cursor", cursor);
+    const resume = await this.resumePoint();
+    if (resume.cursor) params.set("cursor", resume.cursor);
 
     const fullUrl = `${this.url}?${params.toString()}`;
-    logger.debug(
+    // INFO, not debug, and it names the replay depth: an over-deep resume is
+    // invisible from the outside — the socket looks healthy and busy while
+    // delivering nothing new — so the one moment it is knowable is here.
+    logger.info(
       {
         didCount: this.currentDids.size,
         mode: wildcard ? "wildcard" : "filtered",
-        cursor,
+        storedAgeHours:
+          resume.storedAgeHours === null
+            ? null
+            : Math.round(resume.storedAgeHours * 10) / 10,
+        clamped: resume.clamped,
       },
-      "Opening Jetstream WebSocket",
+      resume.clamped
+        ? "Opening Jetstream WebSocket — stored cursor older than the replay cap, resuming from the cap"
+        : "Opening Jetstream WebSocket",
     );
 
     // Pin the resolved IP so the WS library can't be tricked by a second
@@ -560,9 +621,47 @@ export class JetstreamListener {
     const ws = new WebSocket(fullUrl, wsOpts);
     this.ws = ws;
 
+    // Liveness. Attached BEFORE 'open' so a frame arriving in the same tick as
+    // the handshake still counts; the watchdog itself only starts on open.
+    this.watchdog?.stop();
+    const watchdog = new SilenceWatchdog({
+      intervalMs: HEARTBEAT_INTERVAL_MS,
+      timeoutMs: SILENCE_TIMEOUT_MS,
+      onProbe: () => {
+        try {
+          ws.ping();
+        } catch {
+          // A ping on a dying socket throws; the close/error handlers own that.
+        }
+      },
+      onSilent: (idleMs) => {
+        // Mark UNHEALTHY before terminating, so the atproto polling fallback
+        // engages while we reconnect — this is the state that flag was written
+        // for and could never previously reach.
+        this.setHealthy(false).catch(() => {});
+        logger.warn(
+          { idleMs, didCount: this.currentDids.size },
+          "Jetstream silent past the keepalive window — terminating wedged socket",
+        );
+        // terminate(), never close(): a half-open peer will never answer the
+        // closing handshake, so close() waits forever and we would sit in
+        // exactly the state we are trying to escape. terminate() destroys the
+        // socket, which fires 'close' locally, and that handler schedules the
+        // reconnect — so there is deliberately no reconnect call here.
+        try {
+          ws.terminate();
+        } catch {
+          /* already gone */
+        }
+      },
+    });
+    this.watchdog = watchdog;
+    attachLiveness(ws, watchdog);
+
     ws.on("open", () => {
       this.backoffMs = INITIAL_BACKOFF_MS;
       this.setHealthy(true).catch(() => {});
+      watchdog.start();
       logger.info({ didCount: this.currentDids.size }, "Jetstream connected");
     });
 
@@ -583,6 +682,10 @@ export class JetstreamListener {
       // orphaning a live, still-ingesting socket that even stop() can't reach)
       // and schedule a redundant reconnect (socket C), so connections multiply
       // across every DID-set refresh / network blip (H13).
+      // Whether or not this socket is the current one, its watchdog must go —
+      // a timer left running against a replaced socket would ping a corpse and
+      // then terminate whatever is in the slot at the next tick.
+      watchdog.stop();
       if (this.ws !== ws) return;
       this.ws = null;
       this.setHealthy(false).catch(() => {});
@@ -706,7 +809,7 @@ export class JetstreamListener {
       // idempotent under out-of-order delivery.
       this.recordCursor(source.id, timeUs);
 
-      // Keep in-memory source cursor in sync for oldestCursor() on reconnect.
+      // Keep in-memory source cursor in sync for resumePoint() on reconnect.
       // Mirror the DB's GREATEST guard: Jetstream can deliver out-of-order
       // (e.g. after a reconnect that resumed from an older cursor), and we
       // must not regress and re-admit already-ingested events.
