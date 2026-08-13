@@ -9,9 +9,9 @@ import { create } from "zustand";
 //   - tag         → /tag/<name>      (tag browser; TagBrowser)
 //   - publication → /pub/<slug>      (publication homepage; PublicationPanel)
 //
-// The publication kind carries a `view` (home/about/masthead/archive) so the
-// publication's sub-routes (/pub/<slug>/{about,masthead,archive}) all render
-// inside the same overlay instead of escaping the workspace full-page; the
+// The publication kind carries a `view` (home/about/masthead/archive/subscribe)
+// so the publication's sub-routes (/pub/<slug>/{about,masthead,archive,subscribe})
+// all render inside the same overlay instead of escaping the workspace full-page; the
 // store pushes the matching real URL for each, and PublicationPanel renders the
 // sub-view + an in-overlay nav to switch between them. Articles never get a
 // surface view — a pub article row opens the reader overlay (useReader).
@@ -24,8 +24,20 @@ import { create } from "zustand";
 // black topbar.
 // =============================================================================
 
-/** Publication sub-views; each maps to a /pub/<slug>[/<view>] URL. */
-export type PubView = "home" | "about" | "masthead" | "archive";
+/** Publication sub-views; each maps to a /pub/<slug>[/<view>] URL.
+ *
+ *  `subscribe` is not one of the four nav sections — it is the leaf off the
+ *  masthead's action row, and it is here because without it a workspace member
+ *  had no path to a publication's subscription terms at all. */
+export type PubView =
+  | "home"
+  | "about"
+  | "masthead"
+  | "archive"
+  | "subscribe";
+
+/** The nav's four sections; `subscribe` is reached from the action row. */
+const PUB_SUB_VIEWS: PubView[] = ["about", "masthead", "archive", "subscribe"];
 
 export type SurfaceTarget =
   | { kind: "source"; id: string }
@@ -157,19 +169,19 @@ export function openSurfaceHref(href: string): boolean {
     useSurfaceOverlay.getState().openTag(decodeURIComponent(tag[1]));
     return true;
   }
-  // /pub/:slug and its named sub-routes (about · masthead · archive) open the
-  // publication overlay on the matching view. A deeper /pub/:slug/:article
-  // (anything else) is an article d-tag, not a surface — left to the caller's
-  // reader-overlay path, so we don't claim it here.
+  // /pub/:slug and its named sub-routes (about · masthead · archive ·
+  // subscribe) open the publication overlay on the matching view. A deeper
+  // /pub/:slug/:article (anything else) is an article d-tag, not a surface —
+  // left to the caller's reader-overlay path, so we don't claim it here.
   const pub = href.match(/^\/pub\/([^/?#]+)(?:\/([^/?#]+))?\/?(?:[?#]|$)/);
   if (pub) {
     const slug = decodeURIComponent(pub[1]);
-    const sub = pub[2];
+    const sub = pub[2] as PubView | undefined;
     if (!sub) {
       useSurfaceOverlay.getState().openPublication(slug, "home");
       return true;
     }
-    if (sub === "about" || sub === "masthead" || sub === "archive") {
+    if (PUB_SUB_VIEWS.includes(sub)) {
       useSurfaceOverlay.getState().openPublication(slug, sub);
       return true;
     }

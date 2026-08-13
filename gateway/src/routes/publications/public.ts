@@ -24,7 +24,7 @@ export async function publicationPublicRoutes(app: FastifyInstance) {
       const { rows } = await pool.query(
         `SELECT p.id, p.slug, p.name, p.tagline, p.about, p.logo_blossom_url, p.cover_blossom_url,
                 p.nostr_pubkey, p.subscription_price_pence, p.annual_discount_pct,
-                p.default_article_price_pence, p.homepage_layout, p.theme_config, p.status, p.founded_at,
+                p.default_article_price_pence, p.homepage_layout, p.status, p.founded_at,
                 (SELECT COUNT(*) FROM publication_follows WHERE publication_id = p.id) AS follower_count,
                 (SELECT COUNT(*) FROM publication_members WHERE publication_id = p.id AND removed_at IS NULL) AS member_count,
                 (SELECT COUNT(*) FROM articles WHERE publication_id = p.id AND published_at IS NOT NULL AND deleted_at IS NULL) AS article_count

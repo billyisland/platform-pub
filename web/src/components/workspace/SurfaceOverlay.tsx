@@ -75,6 +75,13 @@ export function SurfaceOverlay() {
       maxWidth={780}
       ariaLabel={ariaLabel}
       persistKey="surface"
+      // A publication's cover is flush to the pane's edges (its masthead is the
+      // same block the public page carries), so scrolled content would run
+      // straight under the drag grip. The seam is the pane's own background and
+      // is invisible at rest — every body here keeps its own top padding clear
+      // of it — so it costs the source and tag surfaces nothing and covers the
+      // same collision when they scroll.
+      topSeam
     >
       {/* Each surface body supplies its own inner padding (PageShell / mx-auto
           wrapper); we only own the scroll container. C4: it also carries the

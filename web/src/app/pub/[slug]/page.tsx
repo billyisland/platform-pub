@@ -1,10 +1,8 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { HomepageBlog } from '../../../components/publication/HomepageBlog'
-import { HomepageMagazine } from '../../../components/publication/HomepageMagazine'
-import { HomepageMinimal } from '../../../components/publication/HomepageMinimal'
 import { PublicationMasthead } from '../../../components/publication/PublicationMasthead'
 import { LoadFailed } from '../../../components/publication/article-shared'
+import { PubHomepage } from '../../../components/publication/pub-sections'
 import { PublicPage } from '../../../components/public/PublicPage'
 import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
 
@@ -83,7 +81,6 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
   ])
   if (!pub) return notFound()
 
-  const layout = pub.homepage_layout ?? 'blog'
   const failed = data === null
   const articles = data?.articles ?? []
 
@@ -99,11 +96,11 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
         {failed ? (
           <LoadFailed what="these articles" />
         ) : (
-          <>
-            {layout === 'magazine' && <HomepageMagazine slug={pub.slug} articles={articles} />}
-            {layout === 'minimal' && <HomepageMinimal slug={pub.slug} articles={articles} />}
-            {layout === 'blog' && <HomepageBlog slug={pub.slug} articles={articles} />}
-          </>
+          <PubHomepage
+            slug={pub.slug}
+            layout={pub.homepage_layout}
+            articles={articles}
+          />
         )}
       </div>
     </PublicPage>

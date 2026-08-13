@@ -38,7 +38,7 @@
 // owns the gate and the stamp; this component just reports that it is finished.
 // =============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Glasshouse } from "./Glasshouse";
 import { FollowImportSection } from "../network/FollowImportSection";
 import { useFollowImportRun } from "../../hooks/useFollowImportRun";
@@ -95,31 +95,47 @@ export function Welcome({
   // import capabilities (dark `FOLLOW_IMPORT_ENABLED` ⇒ no step, which is the
   // current beta state); `tour` is desktop-only because floor-mode Explain
   // annotates the canvas, which mobile does not have.
-  const steps = useMemo<StepId[]>(() => {
+  //
+  // BUT IT IS LOCKED AT OPEN, and the sheet waits for the answer rather than
+  // opening on a provisional one. Capabilities resolve after the first paint,
+  // so a member who had already pressed Next was moved BACKWARDS when `world`
+  // spliced in at index 1 — the step they were reading became a step they had
+  // not seen, and the count grew under them. Clamping the index (what this did
+  // before) fixes the overflow and not the jump. `isMobile` is frozen by the
+  // same ref for the same reason: a resize mid-flow must not add or drop `tour`
+  // beneath the member.
+  const stepsRef = useRef<StepId[] | null>(null);
+  if (!stepsRef.current && caps) {
     const s: StepId[] = ["you"];
-    if (caps && (caps.importable.length > 0 || caps.opml)) s.push("world");
+    if (caps.importable.length > 0 || caps.opml) s.push("world");
     s.push("publish");
     if (!isMobile) s.push("tour");
-    return s;
-  }, [caps, isMobile]);
+    stepsRef.current = s;
+  }
+  const steps = stepsRef.current;
 
   const [index, setIndex] = useState(0);
-  // Capabilities can resolve after the first paint and lengthen the list. Clamp
-  // rather than let the index dangle past the end.
-  const safeIndex = Math.min(index, steps.length - 1);
-  const step = steps[safeIndex];
-  const isLast = safeIndex === steps.length - 1;
+
+  // Every hook above this line, per the rules of hooks. The wait is a beat of
+  // nothing rather than a spinner: the sheet is arriving over a workspace that
+  // is itself still settling, and a frame of chrome that then re-lays-out is
+  // worse than one that simply appears. `getNetworkCapabilities` resolves on
+  // failure too, so this cannot hang on a dead gateway.
+  if (!steps) return null;
+
+  const step = steps[index];
+  const isLast = index === steps.length - 1;
 
   function next() {
     if (isLast) onClose();
-    else setIndex(safeIndex + 1);
+    else setIndex(index + 1);
   }
 
   return (
     <Glasshouse onClose={onClose} maxWidth={620} ariaLabel="Welcome">
       <div className="px-6 sm:px-10 py-10">
         <p className="label-ui text-grey-600">
-          {safeIndex + 1} / {steps.length}
+          {index + 1} / {steps.length}
         </p>
 
         <div className="mt-6">
@@ -137,11 +153,11 @@ export function Welcome({
             be read and then refuses. */}
         <div className="mt-10 flex items-center justify-between gap-4">
           <div>
-            {safeIndex > 0 && (
+            {index > 0 && (
               <button
                 type="button"
                 className="btn-text-muted"
-                onClick={() => setIndex(safeIndex - 1)}
+                onClick={() => setIndex(index - 1)}
               >
                 Back
               </button>

@@ -25,6 +25,13 @@ import { PubFollowButton } from './PubFollowButton'
 // so they follow the global light/dark toggle; the cover and logo are
 // photographs of something real and stay exactly as they are — the same call
 // the landing demos make for `DemoPhoto`.
+//
+// IT SERVES BOTH REGISTERS, via the same seam `ArticleLink` uses. The workspace
+// overlay used to hand-duplicate this block — a smaller, coverless, logoless
+// echo of it — so a publication's identity was one thing on its public page and
+// another inside the workspace. Passing `onNavigate`/`onSubscribe` swaps this
+// header's links for buttons that switch the overlay's view in place, which is
+// what lets one header serve a surface that must not navigate.
 // =============================================================================
 
 export type PubViewName = 'home' | 'about' | 'masthead' | 'archive'
@@ -49,7 +56,8 @@ const VIEWS: { view: PubViewName; label: string; href: (slug: string) => string 
 export function PublicationMasthead({
   pub,
   view,
-  showNav = true,
+  onNavigate,
+  onSubscribe,
 }: {
   pub: MastheadPub
   /** Which of the four sections is current. Omitted on /subscribe, which is a
@@ -57,7 +65,10 @@ export function PublicationMasthead({
    *  nav (it is its only way back into the publication) but marks nothing
    *  current, because nothing in it is. */
   view?: PubViewName
-  showNav?: boolean
+  /** Overlay mode: switch view in place instead of navigating (the escape ban).
+   *  Both handlers are passed together or not at all. */
+  onNavigate?: (view: PubViewName) => void
+  onSubscribe?: () => void
 }) {
   const cover = pub.cover_blossom_url
   const logo = pub.logo_blossom_url
@@ -110,12 +121,22 @@ export function PublicationMasthead({
               publicationId={pub.id}
               initialFollowing={pub.isFollowing ?? false}
             />
-            <Link
-              href={`/pub/${pub.slug}/subscribe`}
-              className="btn-soft py-1.5 px-4 text-ui-sm"
-            >
-              Subscribe
-            </Link>
+            {onSubscribe ? (
+              <button
+                type="button"
+                onClick={onSubscribe}
+                className="btn-soft py-1.5 px-4 text-ui-sm"
+              >
+                Subscribe
+              </button>
+            ) : (
+              <Link
+                href={`/pub/${pub.slug}/subscribe`}
+                className="btn-soft py-1.5 px-4 text-ui-sm"
+              >
+                Subscribe
+              </Link>
+            )}
             <a
               href={`/api/v1/pub/${pub.slug}/rss`}
               className="label-ui text-grey-600 hover:text-black focus-ring"
@@ -125,29 +146,42 @@ export function PublicationMasthead({
           </div>
         </div>
 
-        {showNav && (
-          // Current view is carried by weight of colour, not by an underline —
-          // a thin rule under the active tab is the commonest way a tab strip
-          // smuggles a single-pixel line into a design that bans them.
-          <nav
-            data-explain="pub.nav"
-            aria-label={`${pub.name} sections`}
-            className="mt-10 flex items-center justify-center gap-6"
-          >
-            {VIEWS.map((n) => (
+        {/* Current view is carried by weight of colour, not by an underline —
+            a thin rule under the active tab is the commonest way a tab strip
+            smuggles a single-pixel line into a design that bans them. */}
+        <nav
+          data-explain="pub.nav"
+          aria-label={`${pub.name} sections`}
+          className="mt-10 flex items-center justify-center gap-6"
+        >
+          {VIEWS.map((n) => {
+            const className = `label-ui focus-ring transition-colors ${
+              view === n.view ? 'text-black' : 'text-grey-600 hover:text-black'
+            }`
+            const current = view === n.view ? 'page' : undefined
+
+            return onNavigate ? (
+              <button
+                key={n.view}
+                type="button"
+                onClick={() => onNavigate(n.view)}
+                aria-current={current}
+                className={className}
+              >
+                {n.label}
+              </button>
+            ) : (
               <Link
                 key={n.view}
                 href={n.href(pub.slug)}
-                aria-current={view === n.view ? 'page' : undefined}
-                className={`label-ui focus-ring transition-colors ${
-                  view === n.view ? 'text-black' : 'text-grey-600 hover:text-black'
-                }`}
+                aria-current={current}
+                className={className}
               >
                 {n.label}
               </Link>
-            ))}
-          </nav>
-        )}
+            )
+          })}
+        </nav>
       </div>
     </header>
   )

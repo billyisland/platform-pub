@@ -23,6 +23,80 @@ starts.
 
 ## Progress
 
+- **2026-08-13, second sitting (§0q closes: one publication instead of two, and three things a browser found)** —
+  CONSOLIDATED-TODO §0q.8a, 8g, 8h, 8l; 8k answered by the owner with no code.
+  No migration, no flag, no money-path behaviour change. Gateway 594/594, web
+  `tsc` + `next build` clean, root ESLint 0 errors, hairline tripwire clean on
+  every touched file. **Everything here was driven — in a real browser, or by
+  curl against the running stack — and that is where half of it came from.**
+
+  **§0q.8a — the publication registers stopped forking, and merging them is what
+  exposed the two worse bugs.** The four view bodies now live once, in
+  `web/src/components/publication/pub-sections.tsx`
+  (`PubHomepage`/`PubArchive`/`PubMastheadList`/`PubSubscribeTerms`), and the
+  overlay's header is `PublicationMasthead` itself in an overlay mode that
+  mirrors `ArticleLink`'s seam — `onNavigate`/`onSubscribe` swap its `<Link>`s
+  for `<button>`s, which is what lets one header serve a surface forbidden to
+  navigate. `subscribe` joined `PubView` (a workspace member previously had **no
+  path to a publication's subscription terms at all**), and
+  `/pub/:slug/subscribe` now redirects a member into the overlay like its four
+  siblings. `showNav` and `theme_config` deleted, the latter from both gateway
+  SELECTs as well as the web type.
+
+  What the merge turned up, neither of it in the audit: **(1)** the overlay
+  answered *any* fetch failure with "Publication not found" — the §0q.8d
+  empty-state lie in its strongest form, since a 404 claims a colleague's
+  publication has been *deleted*. Now split on `ApiError.status`: 404 is
+  missing, anything else is `LoadFailed`. Driven both ways, the outage arm with
+  `docker compose stop gateway`. **(2)** The standalone homepage's last branch
+  tested `layout === 'blog'`, so an unrecognised template rendered the page as
+  *nothing*, while the overlay's `if/if/return blog` had always been right —
+  one home now, and Blog is the fallback. Merging two implementations is how you
+  learn which one was wrong; neither was visible from inside its own file.
+
+  And two the browser found that compiling could not: the flush cover scrolled
+  under the drag grip (fixed the reader's way — Glasshouse `topSeam` plus a top
+  pad that keeps the cover clear of it at rest), and `mastheadRole` rendered the
+  schema enum raw, so `.label-ui` billed an editor-in-chief as
+  "EDITOR_IN_CHIEF".
+
+  **§0q.8g — the welcome sheet stopped moving under a fast clicker.** Its step
+  list was computed from capabilities that resolve after the first paint, so
+  `world` spliced in at index 1 and a member who had already pressed Next was
+  moved *backwards*; the previous code clamped the index, which fixes the
+  overflow and not the jump. The list is now built once into a ref the first
+  time capabilities are known, and the sheet renders nothing until then — there
+  is no window in which a provisional list exists. `isMobile` is frozen by the
+  same ref (a resize mid-flow was the same bug in miniature). Driven by polling
+  every 50ms from navigation on a real account with `onboarded_at` nulled: the
+  counter only ever paints "1 / 4".
+
+  **§0q.8h — a bad file and a dead blob store stopped being the same answer.**
+  `MediaStoreError` now carries `failure: "undecodable" | "unavailable"`, and
+  the route maps them to 400-with-the-reason and 500-without. These are opposite
+  facts: one says *these bytes will never work*, the other says *ours is down* —
+  and answering both with 500 told a member their good PNG was our outage.
+  `ALLOWED_IMAGE_TYPES` moved to the route, where CLAUDE.md files the
+  declared-MIME check. All three arms driven against the dev gateway: random
+  bytes labelled `image/png` → 400, a real PNG with Blossom stopped → 500, the
+  same PNG with Blossom up → 201.
+
+  **§0q.8l — the publication slug became part of the address.** The article was
+  fetched by d-tag alone, so `/pub/anyones-magazine/<d-tag>` served someone
+  else's piece under their masthead *and* echoed the wrong slug into the OG url,
+  which is the URL a share propagates. One `canonicalPath` helper now serves the
+  page and its metadata (they could otherwise disagree about which URL is
+  canonical, and that disagreement was the bug), and a mismatch **redirects**
+  rather than 404s — the article exists and the reader nearly had its name. A
+  piece belonging to no publication redirects to `/article/:dTag`. Driven: both
+  redirects 307 to the right place, the canonical URL unchanged at 200.
+
+  **§0q.8k — answered, not built.** A charged-back read keeps its permanent
+  `article_unlocks` row. Same argument as the free allowance: once a paywall has
+  been opened for someone it stays open, and clawing access back over a disputed
+  penny costs the reader more than the penny is worth to us. It is now a
+  decision on the record rather than a side effect of §1.6's unconditional flip.
+
 - **2026-08-13 (the §0q tail: two silences, a dropped date, and a type that had already rotted)** —
   CONSOLIDATED-TODO §0q items 4, 5, 6 and the cheap half of 8 (b, c, d, f, i, j).
   No migration; no money-path behaviour change. Gateway 594/594 and

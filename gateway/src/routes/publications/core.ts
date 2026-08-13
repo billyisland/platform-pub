@@ -98,7 +98,7 @@ export async function publicationCoreRoutes(app: FastifyInstance) {
     const { rows } = await pool.query(
       `SELECT id, slug, name, tagline, about, logo_blossom_url, cover_blossom_url,
               nostr_pubkey, subscription_price_pence, annual_discount_pct,
-              default_article_price_pence, homepage_layout, theme_config, status, founded_at
+              default_article_price_pence, homepage_layout, status, founded_at
        FROM publications
        WHERE slug = $1 AND status = 'active'`,
       [slug]

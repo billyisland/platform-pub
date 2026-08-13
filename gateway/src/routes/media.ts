@@ -2,11 +2,7 @@ import fs from "fs/promises";
 import type { FastifyInstance } from "fastify";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import {
-  storeImage,
-  ALLOWED_IMAGE_TYPES,
-  MediaStoreError,
-} from "../services/media-store.js";
+import { storeImage, MediaStoreError } from "../services/media-store.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
@@ -21,6 +17,17 @@ import logger from "@platform-pub/shared/lib/logger.js";
 // =============================================================================
 
 const MEDIA_DIR = process.env.MEDIA_DIR ?? "/app/media";
+
+/** MIME types this route accepts from a client — a claim ABOUT THE REQUEST,
+ *  which is why it lives here and not in the bytes module. It is a cheap first
+ *  filter on what the client says it is sending; `sharp` inside `storeImage` is
+ *  what decides whether the bytes really are an image. */
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
 
 // oEmbed provider endpoints
 const OEMBED_PROVIDERS: Record<string, string> = {
@@ -88,10 +95,19 @@ export async function mediaRoutes(app: FastifyInstance) {
           size: stored.sizeBytes,
         });
       } catch (err) {
-        // MediaStoreError already logged its specifics at the failure point.
-        if (!(err instanceof MediaStoreError)) {
-          logger.error({ err, uploaderId }, "Media upload error");
+        // MediaStoreError already logged its specifics at the failure point,
+        // and says which side failed. Bytes we cannot decode are the client's
+        // 400 — the same answer the declared-MIME check above gives, since a
+        // .png that is really a PDF is the same mistake found one step later.
+        // Anything else (Blossom down, a mismatched hash) is ours: 500, and no
+        // detail, because the caller can do nothing with it.
+        if (err instanceof MediaStoreError) {
+          if (err.failure === "undecodable") {
+            return reply.status(400).send({ error: err.message });
+          }
+          return reply.status(500).send({ error: "Upload failed" });
         }
+        logger.error({ err, uploaderId }, "Media upload error");
         return reply.status(500).send({ error: "Upload failed" });
       }
     },

@@ -51,7 +51,10 @@ export function mastheadRole(m: {
   role?: string | null
   contributor_type?: string | null
 }): string {
-  const base = m.title || m.role || ''
+  // `title` is the member's own words; `role` is the schema's enum, and its
+  // underscores are punctuation from a database, not from a masthead — rendered
+  // raw through `.label-ui` an editor-in-chief was billed "EDITOR_IN_CHIEF".
+  const base = m.title || m.role?.replace(/_/g, ' ') || ''
   return m.contributor_type === 'one_off' ? `${base} · one-off` : base
 }
 

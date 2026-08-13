@@ -168,7 +168,7 @@ export const publications = {
       id: string; slug: string; name: string; tagline: string | null; about: string | null;
       logo_blossom_url: string | null; cover_blossom_url: string | null;
       nostr_pubkey: string; subscription_price_pence: number; annual_discount_pct: number;
-      homepage_layout: string; theme_config: Record<string, any>;
+      homepage_layout: string;
       founded_at: string; follower_count: number; member_count: number; article_count: number;
       isFollowing: boolean; isSubscribed: boolean;
     }>(`/publications/${slug}/public`),

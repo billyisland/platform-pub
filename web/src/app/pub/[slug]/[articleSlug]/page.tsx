@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../../lib/markdown'
 import { ArticleReader } from '../../../../components/article/ArticleReader'
@@ -16,6 +16,15 @@ import type { ArticleMetadata } from '../../../../lib/api'
 // `max-w-feed` main between a publication nav bar and a footer — a second
 // chassis on a route where LayoutShell already mounts PublicNavRow. The layout
 // is deleted; an article is the reading experience and takes no frame.
+//
+// THE SLUG IS PART OF THE ADDRESS, NOT DECORATION. The article is fetched by
+// d-tag alone, so before `canonicalPath` any publication slug rendered the
+// piece happily — /pub/anyones-magazine/<d-tag> served somebody else's article
+// under their masthead, and the OG url echoed the wrong slug back, so that is
+// the URL a share would have propagated. A mismatch redirects to the piece's
+// real home (its publication's, or the personal /article/:dTag for a piece that
+// belongs to no publication) rather than 404ing: the article exists and the
+// reader asked for it by a name that is nearly right.
 // =============================================================================
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
@@ -26,6 +35,22 @@ async function getArticle(dTag: string): Promise<ArticleMetadata | null> {
   })
   if (!res.ok) return null
   return res.json()
+}
+
+/**
+ * Where this article actually lives — `null` when the requested slug is already
+ * it. One home for the rule, so the page and its metadata cannot disagree about
+ * which URL is canonical (the metadata's OG url was the half that shipped the
+ * wrong slug onward).
+ */
+function canonicalPath(
+  article: ArticleMetadata,
+  requestedSlug: string,
+): string | null {
+  const home = article.publication
+    ? `/pub/${article.publication.slug}/${article.dTag}`
+    : `/article/${article.dTag}`
+  return article.publication?.slug === requestedSlug ? null : home
 }
 
 function extractFirstImage(markdown: string | null): string | undefined {
@@ -46,7 +71,9 @@ export async function generateMetadata({
   const description = article.summary || `By ${article.writer.displayName ?? article.writer.username}`
   const authorName = article.writer.displayName ?? article.writer.username
   const pubName = article.publication?.name
-  const url = `https://all.haus/pub/${params.slug}/${article.dTag}`
+  const url = `https://all.haus${
+    canonicalPath(article, params.slug) ?? `/pub/${params.slug}/${article.dTag}`
+  }`
   const image = extractFirstImage(article.contentFree)
 
   return {
@@ -78,6 +105,9 @@ export default async function PublicationArticlePage({
 }) {
   const article = await getArticle(params.articleSlug)
   if (!article) return notFound()
+
+  const canonical = canonicalPath(article, params.slug)
+  if (canonical) redirect(canonical)
 
   const freeHtml = article.contentFree
     ? await renderMarkdown(article.contentFree)

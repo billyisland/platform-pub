@@ -1,8 +1,11 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { ProfileLink } from '../../../../components/ui/ProfileLink'
 import { PublicationMasthead } from '../../../../components/publication/PublicationMasthead'
-import { mastheadRole, LoadFailed } from '../../../../components/publication/article-shared'
+import { LoadFailed } from '../../../../components/publication/article-shared'
+import {
+  PubMastheadList,
+  type MastheadMember,
+} from '../../../../components/publication/pub-sections'
 import { PublicPage } from '../../../../components/public/PublicPage'
 import WorkspacePaneRedirect from '../../../../components/layout/WorkspacePaneRedirect'
 
@@ -48,7 +51,7 @@ export default async function MastheadPage({ params }: { params: { slug: string 
   if (!pub) return notFound()
 
   const failed = data === null
-  const members = data?.members ?? []
+  const members: MastheadMember[] = data?.members ?? []
 
   return (
     <PublicPage>
@@ -60,36 +63,7 @@ export default async function MastheadPage({ params }: { params: { slug: string 
         ) : members.length === 0 ? (
           <p className="label-ui text-grey-600 py-16 text-center">NO MASTHEAD YET</p>
         ) : (
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-9">
-            {members.map((m: any) => (
-              <li key={m.username} className="flex items-start gap-4">
-                {m.avatar_blossom_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={m.avatar_blossom_url}
-                    alt=""
-                    className="w-14 h-14 rounded-full object-cover shrink-0"
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-full bg-grey-200 shrink-0" />
-                )}
-                <div className="min-w-0">
-                  <ProfileLink
-                    href={`/${m.username}`}
-                    className="font-sans font-medium text-black hover:opacity-70"
-                  >
-                    {m.display_name || m.username}
-                  </ProfileLink>
-                  <p className="label-ui text-grey-600 mt-1">{mastheadRole(m)}</p>
-                  {m.bio && (
-                    <p className="font-sans text-ui-sm text-grey-600 mt-2 leading-[1.55]">
-                      {m.bio}
-                    </p>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+          <PubMastheadList members={members} />
         )}
       </div>
     </PublicPage>

@@ -2,28 +2,47 @@
 
 // =============================================================================
 // PublicationPanel — the publication surface rendered inside the surface overlay
-// (useSurfaceOverlay). One body for all four publication views (home · about ·
-// masthead · archive), switched by the `view` prop; an in-overlay nav swaps
-// between them by re-opening the store on the matching view (which replaceStates
-// the real /pub/<slug>[/<view>] URL, so Back still closes the whole overlay and
-// direct visits resolve the same surfaces full-page). Article rows open the
-// reader overlay (useReader) in place rather than navigating to
+// (useSurfaceOverlay). One body for all five publication views (home · about ·
+// masthead · archive · subscribe), switched by the `view` prop; an in-overlay
+// nav swaps between them by re-opening the store on the matching view (which
+// replaceStates the real /pub/<slug>[/<view>] URL, so Back still closes the
+// whole overlay and direct visits resolve the same surfaces full-page). Article
+// rows open the reader overlay (useReader) in place rather than navigating to
 // /pub/:slug/:article and escaping the workspace. The full-page /pub/[slug]/**
 // routes still render their own server-side surfaces on direct visits.
+//
+// THIS FILE OWNS ARRANGEMENT AND LOADING, NOTHING ELSE. The header is
+// `PublicationMasthead` (the same block the public pages carry, in its overlay
+// mode) and every body is a `pub-sections.tsx` component — because this panel
+// used to hand-roll both, and every one of them had drifted: a coverless
+// name-and-tagline header, an archive dated in the feed's relative voice, a
+// single-column masthead, and no route to the subscription terms at all.
+//
+// AN OUTAGE IS NOT AN EMPTY PUBLICATION. Each loader distinguishes three
+// outcomes — loading, loaded (possibly empty), failed — because answering a
+// failed fetch with `[]` renders "NO ARTICLES YET" over a full archive, which
+// is a confident false claim about somebody else's work. Same rule the public
+// pages were fixed to in §0q.8d; this surface is where a MEMBER reads it.
 // =============================================================================
 
 import { useCallback, useEffect, useState } from "react";
 import { publications as pubApi } from "../../lib/api";
+import { ApiError } from "../../lib/api/client";
 import { useReader } from "../../stores/reader";
 import { useSurfaceOverlay, type PubView } from "../../stores/surfaceOverlay";
-import { formatDateFromISO } from "../../lib/format";
 import { renderMarkdown } from "../../lib/markdown";
-import { ProfileLink } from "../ui/ProfileLink";
-import { PubFollowButton } from "./PubFollowButton";
-import { HomepageBlog } from "./HomepageBlog";
-import { HomepageMagazine } from "./HomepageMagazine";
-import { HomepageMinimal } from "./HomepageMinimal";
-import { mastheadRole, type PubArticle } from "./article-shared";
+import {
+  PublicationMasthead,
+  type PubViewName,
+} from "./PublicationMasthead";
+import { EmptyState, LoadFailed, type PubArticle } from "./article-shared";
+import {
+  PubArchive,
+  PubHomepage,
+  PubMastheadList,
+  PubSubscribeTerms,
+  type MastheadMember,
+} from "./pub-sections";
 
 interface PubPublic {
   id: string;
@@ -31,18 +50,51 @@ interface PubPublic {
   name: string;
   tagline: string | null;
   about: string | null;
+  logo_blossom_url: string | null;
+  cover_blossom_url: string | null;
+  subscription_price_pence: number;
+  annual_discount_pct: number;
   isFollowing: boolean;
   /** The writer's chosen homepage template — the overlay honours it, so the
    *  publication reads the same here as on its public page. */
   homepage_layout?: string | null;
 }
 
-const NAV: { view: PubView; label: string }[] = [
-  { view: "home", label: "Home" },
-  { view: "about", label: "About" },
-  { view: "masthead", label: "Masthead" },
-  { view: "archive", label: "Archive" },
-];
+function Loading() {
+  return (
+    <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
+  );
+}
+
+/**
+ * A section's own load, as the three outcomes that matter: `null` data while
+ * in flight, `failed` for a fetch that did not answer, data otherwise. A hook
+ * rather than four copies, because the copies are exactly where the empty-state
+ * lie crept in the first time.
+ */
+function useSection<T>(load: () => Promise<T>, deps: unknown[]) {
+  const [data, setData] = useState<T | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setFailed(false);
+    load()
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return { data, failed };
+}
 
 export function PublicationPanel({
   slug,
@@ -53,23 +105,30 @@ export function PublicationPanel({
 }) {
   const [pub, setPub] = useState<PubPublic | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  // Two different failures, two different things to say: the publication is
+  // gone, or we could not reach the gateway. Answering both with "not found"
+  // tells a member their colleague's publication has been deleted.
+  const [missing, setMissing] = useState(false);
+  const [failed, setFailed] = useState(false);
   const openArticle = useReader((s) => s.openNative);
   const openPublication = useSurfaceOverlay((s) => s.openPublication);
 
-  // The masthead header (name/tagline/follow/RSS) is shared by every view, so
-  // we always load the publication record; per-view bodies load their own data.
+  // The masthead (cover/logo/name/tagline/actions/nav) is shared by every view,
+  // so we always load the publication record; per-view bodies load their own.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setNotFound(false);
+    setMissing(false);
+    setFailed(false);
     pubApi
       .getPublic(slug)
       .then((p) => {
         if (!cancelled) setPub(p as PubPublic);
       })
-      .catch(() => {
-        if (!cancelled) setNotFound(true);
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) setMissing(true);
+        else setFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -79,22 +138,24 @@ export function PublicationPanel({
     };
   }, [slug]);
 
-  const handleOpen = useCallback(
-    (dTag: string) => () => {
-      if (dTag) openArticle(dTag);
-    },
-    [openArticle],
+  const navigate = useCallback(
+    (next: PubViewName) => openPublication(slug, next),
+    [openPublication, slug],
+  );
+  const subscribe = useCallback(
+    () => openPublication(slug, "subscribe"),
+    [openPublication, slug],
   );
 
   if (loading) {
     return (
       <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
-        <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
+        <Loading />
       </div>
     );
   }
 
-  if (notFound || !pub) {
+  if (missing) {
     return (
       <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
         <h1 className="font-sans text-2xl font-medium text-black">
@@ -107,66 +168,54 @@ export function PublicationPanel({
     );
   }
 
-  return (
-    <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
-      {/* Masthead — shared across views */}
-      <div className="text-center mb-8">
-        <h1 className="font-serif text-2xl font-light tracking-tight text-black">
-          {pub.name}
-        </h1>
-        {pub.tagline && (
-          <p className="font-sans text-ui-sm text-grey-600 mt-2">
-            {pub.tagline}
-          </p>
-        )}
-        <div className="mt-4 flex items-center justify-center gap-4">
-          <PubFollowButton
-            publicationId={pub.id}
-            initialFollowing={pub.isFollowing ?? false}
-          />
-          <a
-            href={`/api/v1/pub/${pub.slug}/rss`}
-            className="label-ui text-grey-600 hover:text-black"
-          >
-            RSS
-          </a>
-        </div>
+  if (failed || !pub) {
+    return (
+      <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
+        <LoadFailed what="this publication" />
       </div>
+    );
+  }
 
-      {/* In-overlay sub-nav — swaps views in place, no full-page escape */}
-      <nav
-        data-explain="pub.nav"
-        className="flex items-center justify-center gap-5 mb-10"
+  return (
+    // No horizontal padding on the root: the masthead's cover is full-bleed to
+    // the pane's edges, exactly as it is to the viewport's on the public page,
+    // and every body below carries its own measure. The top pad is the reader's
+    // `pt-2` argument at this surface's scale — it holds the cover clear of the
+    // drag grip and the ✕ at rest, so the Glasshouse's `topSeam` stays pure
+    // background until the cover is actually scrolled under it.
+    <div className="pt-10 pb-12">
+      <PublicationMasthead
+        pub={pub}
+        view={view === "subscribe" ? undefined : view}
+        onNavigate={navigate}
+        onSubscribe={subscribe}
+      />
+
+      <div
+        className={`mx-auto px-4 sm:px-6 pt-12 ${
+          view === "subscribe" ? "max-w-article" : "max-w-feed"
+        }`}
       >
-        {NAV.map((n) => (
-          <button
-            key={n.view}
-            type="button"
-            onClick={() => openPublication(pub.slug, n.view)}
-            aria-current={view === n.view ? "page" : undefined}
-            className={`label-ui transition-colors ${
-              view === n.view
-                ? "text-black"
-                : "text-grey-600 hover:text-black"
-            }`}
-          >
-            {n.label}
-          </button>
-        ))}
-      </nav>
-
-      {view === "home" && (
-        <HomeView
-          slug={pub.slug}
-          layout={pub.homepage_layout ?? "blog"}
-          onOpen={openArticle}
-        />
-      )}
-      {view === "archive" && (
-        <ArticleList slug={pub.slug} limit={100} onOpen={handleOpen} />
-      )}
-      {view === "masthead" && <MastheadView slug={pub.slug} />}
-      {view === "about" && <AboutView name={pub.name} about={pub.about} />}
+        {view === "home" && (
+          <HomeView
+            slug={pub.slug}
+            layout={pub.homepage_layout}
+            onOpen={openArticle}
+          />
+        )}
+        {view === "archive" && (
+          <ArchiveView slug={pub.slug} onOpen={openArticle} />
+        )}
+        {view === "masthead" && <MastheadView slug={pub.slug} />}
+        {view === "about" && <AboutView name={pub.name} about={pub.about} />}
+        {view === "subscribe" && (
+          <PubSubscribeTerms
+            name={pub.name}
+            monthlyPence={pub.subscription_price_pence ?? 0}
+            annualDiscountPct={pub.annual_discount_pct ?? 0}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -187,110 +236,51 @@ function HomeView({
   onOpen,
 }: {
   slug: string;
-  layout: string;
+  layout: string | null | undefined;
   onOpen: (dTag: string) => void;
 }) {
-  const [articles, setArticles] = useState<PubArticle[] | null>(null);
+  const { data, failed } = useSection(
+    () => pubApi.getPublicArticles(slug, { limit: 20 }),
+    [slug],
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    setArticles(null);
-    pubApi
-      .getPublicArticles(slug, { limit: 20 })
-      .then((a) => {
-        if (!cancelled) setArticles((a.articles ?? []) as PubArticle[]);
-      })
-      .catch(() => {
-        if (!cancelled) setArticles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+  if (failed) return <LoadFailed what="these articles" />;
+  if (data === null) return <Loading />;
 
-  if (articles === null) {
-    return (
-      <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
-    );
-  }
-
-  const props = { slug, articles, onOpen };
-  if (layout === "magazine") return <HomepageMagazine {...props} />;
-  if (layout === "minimal") return <HomepageMinimal {...props} />;
-  return <HomepageBlog {...props} />;
+  return (
+    <PubHomepage
+      slug={slug}
+      layout={layout}
+      articles={(data.articles ?? []) as PubArticle[]}
+      onOpen={onOpen}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Article list — the archive's dense list. Opens the reader overlay; never
-// links out to /pub/:slug/:article.
+// Archive — the year-grouped index, identical to the public page's. It used to
+// be a flat list dated in the feed's relative voice; a publication's archive is
+// a record, and a record carries its dates in full.
 // ---------------------------------------------------------------------------
-function ArticleList({
+function ArchiveView({
   slug,
-  limit,
   onOpen,
 }: {
   slug: string;
-  limit: number;
-  onOpen: (dTag: string) => () => void;
+  onOpen: (dTag: string) => void;
 }) {
-  const [articles, setArticles] = useState<any[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setArticles(null);
-    pubApi
-      .getPublicArticles(slug, { limit })
-      .then((a) => {
-        if (!cancelled) setArticles(a.articles ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setArticles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, limit]);
-
-  if (articles === null) {
-    return (
-      <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
-    );
-  }
-
-  if (articles.length === 0) {
-    return (
-      <div className="label-ui text-grey-600 py-12 text-center">
-        NO ARTICLES YET
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-7">
-      {articles.map((a: any) => (
-        <button
-          key={a.nostr_event_id ?? a.nostr_d_tag}
-          type="button"
-          onClick={onOpen(a.nostr_d_tag)}
-          className="group block w-full text-left"
-        >
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="font-serif text-base text-black group-hover:text-crimson-dark transition-colors">
-              {a.title}
-            </h2>
-            {a.published_at && (
-              <span className="font-mono text-mono-xs text-grey-600 shrink-0">
-                {formatDateFromISO(a.published_at)}
-              </span>
-            )}
-          </div>
-          <p className="label-ui text-grey-600 mt-1">
-            {a.author_display_name ?? a.author_username}
-          </p>
-        </button>
-      ))}
-    </div>
+  const { data, failed } = useSection(
+    () => pubApi.getPublicArticles(slug, { limit: 100 }),
+    [slug],
   );
+
+  if (failed) return <LoadFailed what="this archive" />;
+  if (data === null) return <Loading />;
+
+  const articles = (data.articles ?? []) as PubArticle[];
+  if (articles.length === 0) return <EmptyState />;
+
+  return <PubArchive slug={slug} articles={articles} onOpen={onOpen} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,67 +288,21 @@ function ArticleList({
 // (ProfileLink), which supersedes this surface per the one-Glasshouse rule.
 // ---------------------------------------------------------------------------
 function MastheadView({ slug }: { slug: string }) {
-  const [members, setMembers] = useState<any[] | null>(null);
+  const { data, failed } = useSection(() => pubApi.getMasthead(slug), [slug]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setMembers(null);
-    pubApi
-      .getMasthead(slug)
-      .then((d) => {
-        if (!cancelled) setMembers(d.members ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setMembers([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+  if (failed) return <LoadFailed what="this masthead" />;
+  if (data === null) return <Loading />;
 
-  if (members === null) {
-    return (
-      <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
-    );
-  }
-
+  const members = (data.members ?? []) as MastheadMember[];
   if (members.length === 0) {
     return (
-      <div className="label-ui text-grey-600 py-12 text-center">
+      <p className="label-ui text-grey-600 py-16 text-center">
         NO MASTHEAD YET
-      </div>
+      </p>
     );
   }
 
-  return (
-    <div className="max-w-article mx-auto space-y-6">
-      {members.map((m: any) => (
-        <div key={m.username} className="flex items-start gap-4">
-          {m.avatar_blossom_url ? (
-            <img
-              src={m.avatar_blossom_url}
-              alt=""
-              className="w-12 h-12 rounded-full object-cover shrink-0"
-            />
-          ) : (
-            <div className="w-12 h-12 rounded-full bg-grey-200 shrink-0" />
-          )}
-          <div>
-            <ProfileLink
-              href={`/${m.username}`}
-              className="font-sans font-medium text-black hover:opacity-70"
-            >
-              {m.display_name || m.username}
-            </ProfileLink>
-            <p className="label-ui text-grey-600 mt-0.5">{mastheadRole(m)}</p>
-            {m.bio && (
-              <p className="font-sans text-ui-sm text-grey-600 mt-1">{m.bio}</p>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <PubMastheadList members={members} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +337,7 @@ function AboutView({ name, about }: { name: string; about: string | null }) {
         About {name}
       </h2>
       {html === null ? (
-        <div className="label-ui text-grey-600 py-8 text-center">LOADING…</div>
+        <Loading />
       ) : html ? (
         <div
           className="prose prose-sm"

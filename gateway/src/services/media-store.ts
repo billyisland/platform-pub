@@ -27,14 +27,6 @@ const PUBLIC_MEDIA_URL =
 // safeFetch exemption at the upload call site.
 const BLOSSOM_URL = process.env.BLOSSOM_URL ?? "http://blossom:3003";
 
-/** MIME types the upload route accepts from a client. */
-export const ALLOWED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-]);
-
 export interface StoredImage {
   url: string;
   sha256: string;
@@ -44,9 +36,25 @@ export interface StoredImage {
   duplicate: boolean;
 }
 
+/**
+ * Which SIDE failed — the caller's bytes, or our store.
+ *
+ * These are opposite facts and a caller must be able to tell them apart.
+ * `undecodable` means these bytes will fail again however many times they are
+ * sent — the route answers 400, and a bulk caller can skip the one image.
+ * `unavailable` means the bytes were fine and the store was not — 500, and a
+ * bulk caller should stop rather than march on quietly dropping every picture
+ * in the archive. Answering both with 500 (what this did before) tells a member
+ * their perfectly good PNG is our outage, and tells us an outage is a bad file.
+ */
+export type MediaStoreFailure = "undecodable" | "unavailable";
+
 /** Anything that went wrong between the bytes and the stored blob. */
 export class MediaStoreError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly failure: MediaStoreFailure,
+  ) {
     super(message);
     this.name = "MediaStoreError";
   }
@@ -80,6 +88,7 @@ export async function storeImage(
     logger.warn({ err, uploaderId }, "Media crunch failed — not a decodable image");
     throw new MediaStoreError(
       `Not a decodable image: ${err instanceof Error ? err.message : "unknown"}`,
+      "undecodable",
     );
   }
 
@@ -137,7 +146,10 @@ export async function storeImage(
       { uploaderId, sha256, status: blossomRes.status, detail },
       "Blossom upload failed",
     );
-    throw new MediaStoreError(`Blossom upload failed: ${blossomRes.status}`);
+    throw new MediaStoreError(
+      `Blossom upload failed: ${blossomRes.status}`,
+      "unavailable",
+    );
   }
   // Blossom hashes the body independently — verify it stored what we sent
   // before recording the row. Mismatch ⇒ abort, no INSERT.
@@ -149,7 +161,10 @@ export async function storeImage(
       { uploaderId, sha256, returned: descriptor.sha256 },
       "Blossom returned a mismatched hash — aborting insert",
     );
-    throw new MediaStoreError("Blossom returned a mismatched hash");
+    throw new MediaStoreError(
+      "Blossom returned a mismatched hash",
+      "unavailable",
+    );
   }
 
   // Public URL is backend-independent (nginx proxies /media/<sha256>.webp

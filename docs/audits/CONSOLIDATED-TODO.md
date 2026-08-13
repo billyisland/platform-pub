@@ -495,18 +495,26 @@ the end). Six defects, one on a money path, plus a consolidation batch.
    fix belongs in `subscription-period.ts` as the one home).
 
 8. **Consolidation batch (simplification/muddiness — one sitting):**
-   - **(a) Finish what b06787f4 started: the registers still fork past the
-     homepage.** *(The masthead's ROLE LINE was shared out to
-     `article-shared.tsx::mastheadRole` on 2026-08-12 with item 2 — the rest of
-     this stands.)* The overlay archive is a flat relative-dated `ArticleList`
-     against the standalone's year-grouped absolute dates (contradicting
-     `article-shared.tsx`'s own "dates are part of the record" comment); the
-     overlay header hand-duplicates the block `PublicationMasthead` owns; a
-     workspace member has **no path to the subscription terms at all**;
-     `showNav` is never passed false; `theme_config` is fetched, typed and
-     consumed nowhere. One pass: share archive/masthead the way home is
-     shared, add the Subscribe affordance to the overlay, delete the dead
-     prop and the dead field.
+   - ~~**(a) Finish what b06787f4 started: the registers still fork past the
+     homepage.**~~ — **DONE 2026-08-13, and driven in a browser.** All four
+     view bodies now live in `components/publication/pub-sections.tsx`
+     (`PubHomepage`/`PubArchive`/`PubMastheadList`/`PubSubscribeTerms`) and the
+     overlay's header is `PublicationMasthead` itself, in an overlay mode that
+     mirrors `ArticleLink`'s seam (`onNavigate`/`onSubscribe` swap its links for
+     buttons). `subscribe` joined `PubView`, so the terms are reachable in the
+     workspace and `/pub/:slug/subscribe` redirects a member into the overlay
+     like its four siblings. `showNav` and `theme_config` are gone (the latter
+     from both gateway SELECTs too). **Two things the sharing turned up that the
+     audit had not:** the overlay answered *any* fetch failure with
+     "Publication not found" — the §0q.8d empty-state lie in its strongest
+     form, a claim that someone's publication has been deleted — now split
+     404-vs-outage on `ApiError.status` with `LoadFailed` for the latter (both
+     arms driven, the outage one with the gateway stopped); and the standalone
+     homepage's last branch tested `layout === 'blog'`, so an unrecognised
+     template rendered the page as *nothing*, which the overlay's own fallback
+     had always handled correctly — one home, one fallback. The flush cover
+     needed the reader's `topSeam` treatment, and a browser also found
+     `mastheadRole` billing an editor-in-chief as "EDITOR_IN_CHIEF".
    - ~~**(b) `PlatformConfig` is declared twice**~~ — **DONE 2026-08-13, and
      it had already rotted**: shared's had grown `payoutHaltEscalationHours`
      and the payment-service copy had not. Deleted, with a comment in its
@@ -535,28 +543,40 @@ the end). Six defects, one on a money path, plus a consolidation batch.
      boot seeded `null`~~ — **DONE 2026-08-13 with item 5**, the same fault one
      layer down. Branches on `before === null`: same two log levels, honest
      subjects, `firstProof` on the log object.
-   - **(g) `Welcome.tsx:98`** splices the `world` step in when capabilities
-     resolve, so a fast clicker sees the sheet jump backwards. Unreachable
-     while `FOLLOW_IMPORT_ENABLED` is dark; lock the step list at open.
-   - **(h) `MediaStoreError` conflates bad bytes (a 400) with Blossom
-     failure (a 500)** and the route answers 500 for both (`media.ts:90–96`)
-     — the extraction minted the typed error that would let the route
-     distinguish, then didn't. Also `ALLOWED_IMAGE_TYPES` sits in the bytes
-     module while CLAUDE.md files the declared-MIME check under the route;
-     move the constant when touched.
+   - ~~**(g) `Welcome.tsx:98`** splices the `world` step in when capabilities
+     resolve~~ — **DONE 2026-08-13.** The list is now built once, in a ref, the
+     first time capabilities are known, and the sheet renders nothing until
+     then — so there is no window in which a provisional list can be shown,
+     rather than a clamp that fixes the overflow and not the jump. `isMobile`
+     is frozen by the same ref (a resize mid-flow was the same bug). Driven:
+     polling every 50ms from navigation, the counter only ever paints "1 / 4".
+   - ~~**(h) `MediaStoreError` conflates bad bytes (a 400) with Blossom
+     failure (a 500)**~~ — **DONE 2026-08-13.** The error carries a `failure`
+     of `undecodable` | `unavailable` and the route maps them to 400 (with the
+     reason) and 500 (without). `ALLOWED_IMAGE_TYPES` moved to the route, where
+     the declared-MIME check belongs. Both arms driven against the dev gateway:
+     random bytes labelled `image/png` → 400, a real PNG with Blossom stopped →
+     500, a real PNG with Blossom up → 201.
    - ~~**(i) `members.ts:273`** returns a raw `flatten()` as `error`~~ —
      **DONE 2026-08-13, at three sites rather than the one audited**: the same
      line was also at :118 and :425 in the same file. All three now use
      `zodValidationError`.
    - ~~**(j) ARCHIVE-IMPORT-ADR §II** names the extracted function
      `publishArticle`~~ — **DONE 2026-08-13.** One word.
-   - **(k) Owner flag, no build:** the §1.6 unconditional `article_unlocks`
-     flip also makes permanent the unlocks of *charged-back* reads (the
-     reader got their money back). Probably right under the gift philosophy;
-     nobody has said so explicitly.
-   - **(l) Pre-existing, minor:** `/pub/:slug/:articleSlug` fetches by d-tag
-     alone, so a wrong-slug URL renders the article and echoes the wrong
-     slug into its OG url.
+   - ~~**(k) Owner flag, no build**~~ — **ANSWERED 2026-08-13: the unlock
+     stays.** A charged-back read keeps its permanent `article_unlocks` row, on
+     the same argument as the free allowance — once a paywall has been opened
+     for someone it stays open, and clawing access back over a disputed penny
+     costs the reader more than the penny is worth to us. Recorded here because
+     the behaviour is now a decision rather than a side effect of §1.6's
+     unconditional flip; revisit only if chargeback abuse ever appears.
+   - ~~**(l) Pre-existing, minor:** `/pub/:slug/:articleSlug` fetches by d-tag
+     alone~~ — **DONE 2026-08-13.** One `canonicalPath` helper serves the page
+     and its metadata (the OG url was the half that propagated the wrong slug),
+     and a mismatch **redirects** rather than 404s — the article exists and the
+     reader asked for it by a name that is nearly right. A piece belonging to no
+     publication redirects to `/article/:dTag`. Driven: wrong slug → 307 to the
+     real one, personal article under a pub slug → 307 to `/article/…`.
 
 **Verified clean, needn't be re-audited:** a574b7e8's extraction is
 behaviour-preserving line-by-line against the pre-commit scheduler (SQL
@@ -1219,12 +1239,42 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 ---
 
-## NEXT SESSION STARTS HERE (rewritten 2026-08-13, after the §0q tail)
+## NEXT SESSION STARTS HERE (rewritten 2026-08-13, after §0q.8's tail)
 
 Read the box before the queue — this block says what work EXISTS, not what is deployed.
 
-**Where THIS session ended (2026-08-13).** The §0q audit window is now closed
-except for 8a, 8g, 8h, 8k and 8l. Items 4, 5, 6 and 8b/8c/8d/8f/8i/8j all
+**Where THIS session ended (2026-08-13, second sitting). §0q IS CLOSED.** 8a, 8g,
+8h and 8l shipped; 8k was answered by the owner (a charged-back read **keeps**
+its unlock — the gift argument, now recorded rather than incidental). No
+migration, no flag, no money-path change; gateway 594/594, web `tsc` +
+`next build` clean, root ESLint 0 errors, hairline tripwire clean. **Everything
+in this batch was driven in a real browser or against the running stack**, which
+is the whole reason it is worth reading further:
+
+  - **8a was three defects, and only one of them was in the audit.** Sharing the
+    four view bodies exposed that the overlay answered *any* fetch failure with
+    "Publication not found" (the §0q.8d lie in its strongest form — a claim that
+    someone's publication has been deleted), and that the standalone homepage's
+    last branch tested `layout === 'blog'`, so an unrecognised template rendered
+    the page as nothing while the overlay's own fallback had always been right.
+    **Merging two forks is how you find out which fork was wrong**; neither was
+    findable by reading either surface alone.
+  - **A browser found two more that compiling did not** — the flush cover
+    scrolling under the drag grip (fixed the reader's way, `topSeam` + top pad)
+    and `mastheadRole` billing an editor-in-chief as "EDITOR_IN_CHIEF". Same
+    lesson as LOGGED-OUT-REGISTER §IX 7: render it.
+  - **The two `null`-until-known fixes are the same shape.** 8g's welcome now
+    renders nothing until capabilities answer, rather than clamping an index
+    against a list that grows; the publication overlay distinguishes "not found"
+    from "not reached". A provisional value shown early is a lie told
+    confidently — the fix is to have no provisional state, not to correct it.
+  - **Still deliberately NOT done, unchanged from this morning:** the six
+    `getPublication`-style fetchers under `pub/` `notFound()` on an outage.
+    Deciding what a public page renders, and what status search engines get,
+    during an outage is its own small piece of work. Written into §0q.8d.
+
+**Where the first sitting ended (2026-08-13).** Items 4, 5, 6 and
+8b/8c/8d/8f/8i/8j all
 shipped in one batch — no migration, no flag, no money-path behaviour change,
 gateway 594/594 and payment-service 364/364 green **with a DB attached** (the
 DB-backed files ran rather than skipping). Full record in FIX-PROGRAMME; four
@@ -1243,20 +1293,14 @@ things are worth having in front of you here:
     assertion stayed green, the new one failed. A title is not a pin.
   - **§0q.4's fix cleared the §3.5 slice-3 gate**, so the archive importer's
     date-correction path is no longer blocked on it.
-  - **One residual was deliberately NOT done and is a real design call**: the
-    six `getPublication`-style fetchers under `pub/` still `notFound()` when the
-    gateway is down — the same false claim §0q.8d just fixed, in a stronger
-    form (a 404 says the publication does not exist). Deciding what a public
-    page renders, and what HTTP status it carries for search engines, during an
-    outage is its own small piece of work. Written into §0q.8d.
 
-**Where THIS session ended (2026-08-12, second sitting).** **Feed formulas Phase 2 step 2 — migration 179**, and with it the whole of Phase 2. The operator confirmed a formula designated on prod with a real signup seeded from it, which was the gate, so `feeds.is_starter_template` is gone along with `cloneFeedForOwner`, `seedStarterFeeds`'s fallback arm, the merge 409 and the delete 409 + its fail-closed backstop. **The §0l bug class is now retired at the schema, not guarded at the route.** ADR §15 and FIX-PROGRAMME carry it in full; three things are worth having in front of you here:
+**Where the 2026-08-12 second sitting ended.** **Feed formulas Phase 2 step 2 — migration 179**, and with it the whole of Phase 2. The operator confirmed a formula designated on prod with a real signup seeded from it, which was the gate, so `feeds.is_starter_template` is gone along with `cloneFeedForOwner`, `seedStarterFeeds`'s fallback arm, the merge 409 and the delete 409 + its fail-closed backstop. **The §0l bug class is now retired at the schema, not guarded at the route.** ADR §15 and FIX-PROGRAMME carry it in full; three things are worth having in front of you here:
 
   - **Deploy ordering is the REVERSE of the usual.** Old code names the dropped column, so **deploy the images first, then migrate**. New code against an unmigrated DB is completely fine; old code against a migrated one 500s on merge, delete and the admin seed panel — and nothing else, which was checked rather than assumed: seeding is untouched (the old fallback arm is unreachable while a formula is designated, and `listFeedsForOwner` catches the call regardless).
   - **`cloned_from_feed_id` deliberately outlives the flag.** Nothing writes it any more, but it is the only provenance members seeded before the cutover have, and it is what `feedProvenanceSql`'s legacy arm reads. Do not tidy it away as dead code.
   - **Two test files were rewritten, not deleted** (`feed-delete.test.ts`, `feed-merge.test.ts`) — their predecessors were named after the guard but also held the only coverage of the only-feed refusal, the H6 teardown ordering, and merge's direction. That is the general move whenever a guard retires: check what its test file was holding *besides* the guard.
 
-**Where the first sitting ended (same day).** Phase 2 **step 1** (ADR §14, no migration): `seedStarterFeeds` repointed at the designated formula, `from_starter` re-derived off `cloned_from_feed_id`, `createFeedForOwner` moved to `feeds/shared.ts` to break an import cycle, and the hand-run `UPDATE feeds SET is_starter_template = true` replaced by the *Default seed* panel on `/admin/config`.
+**Where the 2026-08-12 first sitting ended.** Phase 2 **step 1** (ADR §14, no migration): `seedStarterFeeds` repointed at the designated formula, `from_starter` re-derived off `cloned_from_feed_id`, `createFeedForOwner` moved to `feeds/shared.ts` to break an import cycle, and the hand-run `UPDATE feeds SET is_starter_template = true` replaced by the *Default seed* panel on `/admin/config`.
 
 **And a live incident in between** — prod ingested nothing for 21 hours because `feed-ingest` had been stopped and nothing restarted it (FIX-PROGRAMME 2026-08-12). Fixed, plus three code fixes shipped with it (idempotent shutdown, the heartbeat alarm on `/admin/overview`, the Jetstream silence watchdog) and a fourth found underneath (the replay cap). **What is left of it is §8.13** — wildcard-mode Jetstream cannot hold live pace, and one unchased `external_items`/`feed_items` divergence inside it. Prod does not have that problem today and acquires it at 150 atproto sources.
 
@@ -1264,27 +1308,27 @@ things are worth having in front of you here:
 
 **1. Two surfaces owed a browser, neither a task of its own.** The *Default seed* panel on `/admin/config` has been driven as an API and read as markup, never seen — same gap as Phase 1's web half, smaller stakes (operator-only, existing tab, that page's own classes), and this session removed its legacy branch, so what renders now is the plain designated/undesignated fork. Glance at it next time `/admin/config` is open. Same for the two formula surfaces' known soft spots, neither of which blocked the ship: the formula page shows no avatars (deliberate for v1 — `PUBLIC_MEDIA_URL` points at prod in dev, so an avatar there proves nothing), and the composer section uses the composer's own white `fieldBg` rather than `bg-glasshouse-well`, matching its host rather than the newer sitewide convention. Migrating the whole composer's fields is a separate, larger call.
 
-**Still open and unblocked from earlier windows** (none gated on a human): what
-is left of §0q.8 — **8a**, the one that deserves its own sitting (the
-publication registers still fork past the homepage: overlay archive flat and
-relative-dated against the standalone's year-grouped absolute dates, the overlay
-header hand-duplicating `PublicationMasthead`'s block, a workspace member with
-no path to the subscription terms at all, plus the dead `showNav` prop and the
-fetched-but-unconsumed `theme_config`) — and the four small ones it makes sense
-to carry with it: **8g** (`Welcome.tsx` splices the `world` step in when
-capabilities resolve, so a fast clicker sees the sheet jump backwards;
-unreachable while `FOLLOW_IMPORT_ENABLED` is dark), **8h** (`MediaStoreError`
-conflates bad bytes with Blossom failure and the route answers 500 for both),
-**8k** (owner flag, no build — the §1.6 unconditional `article_unlocks` flip
-also makes permanent the unlocks of charged-back reads) and **8l** (a
-wrong-slug `/pub/:slug/:articleSlug` renders the article and echoes the wrong
-slug into its OG url).
+**What is unblocked and unclaimed now that §0q is closed** (none of it gated on
+a human): the one design call §0q.8d left behind — what a public `/pub/**` page
+renders, and with what status, when the gateway is down (the six fetchers still
+`notFound()`); **§6**, the Slice-8 dedup design session, which has been
+outstanding on its own since the July cleanup batch; and **§8.13**, the
+wildcard-mode Jetstream pacing problem, which prod does not have today and
+acquires at 150 atproto sources.
 
 **Two items that ARE gated on a human, unchanged:** §3.5's Substack adapter still needs a real export in hand (ADR §XI slice 0 — five unconfirmed facts, one of which decides whether "a paid post lands as a draft" is even honest), and §3.7's waitlist-panel browser look plus its Export CSV decide-or-decline.
 
-**Also worth an eyeball rather than a task: the welcome is in front of every existing prod member**, since migration 176 reads NULL as un-welcomed and nobody has ever been asked for a display name. Log in and take the four steps as a member would.
+**Also worth an eyeball rather than a task: the welcome is in front of every existing prod member**, since migration 176 reads NULL as un-welcomed and nobody has ever been asked for a display name. Log in and take the four steps as a member would. *(Driven in dev on 2026-08-13 with 8g — steps 1→2 with a real account whose `onboarded_at` was nulled and restored — so the sheet is known to render and advance; what is owed is a human reading the copy on prod, not a smoke test.)*
 
 **Dev-state notes for whoever picks this up.**
+- **There IS a browser available, and it is how §0q.8 was verified.** Playwright's
+  chromium is in `~/.cache/ms-playwright`, but the `playwright` package resolves
+  only from its npx dir (`~/.npm/_npx/5c6d8c4f680fcd0a`) — put the script *in*
+  that directory and `node` it from anywhere. `page.request.post` to
+  `/api/v1/auth/dev-login` puts the session cookie in the browser context, so a
+  script can drive the workspace as a member; `/reader?overlay=surface&surface=…`
+  opens a pane without needing the standalone page to render first (which
+  matters when the thing you are testing is the gateway being *down*).
 - **A publication fixture sits on the dev DB**: `evidence-audit` dressed as *The Longshore Review* — cover, logo, tagline, about, 8 articles across 2025–26 (3 with covers, 2 paywalled), 3 invented writers on the masthead, all imagery SVG **data URIs** so it needs no network and no Blossom blob. **Two of its five masthead members were set to `contributor_type = 'one_off'` on 2026-08-12**, so the masthead exercises both arms of the role line (§0q.2) instead of rendering five identical ones. Layout `magazine`. Delete with `DELETE FROM articles WHERE nostr_d_tag LIKE 'lr-%'`; otherwise it is the fastest way back into any publication surface.
 - **The dev gateway AND web images carry formulas through Phase 2 step 1**, both rebuilt 2026-08-12, and the stack was left running **dark** (`FEED_FORMULAS_ENABLED=0`) — which is the interesting state, since seeding runs anyway. `FEED_FORMULAS_ENABLED=1 docker compose up -d gateway` relights the share half, no rebuild; a plain `up -d gateway` puts it back to dark (the compose default is `:-0`). Remember the new-tab rule above after any flip.
 - **Dev is already cut over, so it shows the intended end state.** `kellenmoen@test.local` (the dev admin) owns *The house starter* — a three-source formula (account + tag + Guardian RSS) cut from their *Founder's feed* and **designated**, with no flagged template anywhere. `freshseed@test.local` is the fresh account it was proved on: one feed, `fromStarter: true`, `origin: null`. To see the pre-cutover state instead, `UPDATE feed_formulas SET is_default_seed = FALSE WHERE is_default_seed` and flag a feed by hand.
