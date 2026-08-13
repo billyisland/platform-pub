@@ -6,23 +6,18 @@
 export type ReadState = 'provisional' | 'accrued' | 'platform_settled' | 'writer_paid'
 
 // -----------------------------------------------------------------------------
-// Config — all monetary values in pence (integers, never floats)
+// Config
+//
+// `PlatformConfig` lives in shared/src/types/config.ts and is NOT redeclared
+// here. It was, until 2026-08-13, and the two copies rotted: shared's grew
+// `payoutHaltEscalationHours` and this one did not, because the parity suites
+// pin config VALUES and nothing pins the type. Every consumer here already
+// takes its config from `loadConfig()` in @platform-pub/shared/db/client.js,
+// which returns shared's shape — so the local copy was never the thing being
+// loaded, only a second description of it that could disagree in silence.
+//
+// Import the type from '@platform-pub/shared/types/config.js'.
 // -----------------------------------------------------------------------------
-
-export interface PlatformConfig {
-  freeAllowancePence: number           // default 500  (£5.00)
-  tabSettlementThresholdPence: number  // default 800  (£8.00)
-  monthlyFallbackMinimumPence: number  // default 200  (£2.00)
-  writerPayoutThresholdPence: number   // default 2000 (£20.00)
-  publicationPayoutThresholdPence: number // default 2000 (£20.00) — the publication pool's own threshold
-  platformFeeBps: number               // default 800  (8.00%)
-  monthlyFallbackDays: number          // default 30   (days since last read before monthly settlement)
-  // Funds segregation (migration 165) — inert while STRIPE_ALLOCATED_FUNDS is
-  // off. See shared/src/db/config-defaults.sql for why each is a dial.
-  payoutMaxSlices: number              // default 20   (max child transfers per payout)
-  allocatedResidualAlertBps: number    // default 2000 (PLACEHOLDER — re-measure before the live flip)
-  allocationSyncFreshnessHours: number // default 24   (allocated_pence staleness before re-read)
-}
 
 // -----------------------------------------------------------------------------
 // Gate pass — the event that enters the payment service

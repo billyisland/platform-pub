@@ -104,6 +104,34 @@ export default function AdminOverviewPage() {
             </div>
           )}
 
+          {/* NEVER CONFIRMED is a third state, and it is not fine. The banner
+              above fires only on a PROVEN mismatch, so a peer the gateway has
+              never been able to prove either way — rolled back to an image with
+              no /auth-check, or unreachable for every probe since boot — was
+              rendered here as a clean bill of health. That is the sticky case
+              the whole check exists to end: a peer 404ing forever is never
+              definitive, so a simultaneously drifted secret would be silent
+              everywhere except one boot log line, on the surface built to show
+              it. Quieter than the mismatch banner because it is not yet a known
+              fault — it is the absence of the evidence that there isn't one. */}
+          {data.parity.unverified.length > 0 && (
+            <div className="bg-glasshouse-well px-4 py-3 mb-8">
+              <p className="label-ui text-grey-600 mb-1">
+                Shared secret never confirmed — {data.parity.unverified.join(', ')}
+              </p>
+              <p className="text-ui-xs text-black">
+                The gateway has not been able to prove its internal secret matches
+                {data.parity.unverified.length === 1 ? ' this service' : ' these services'}, either
+                way — every probe since boot came back unreachable or unrecognised. This is not a
+                mismatch, and it is not an all-clear:{' '}
+                {data.parity.unverified.length === 1 ? 'that peer' : 'those peers'} could be running
+                a drifted secret right now and nothing here would say so. Check{' '}
+                <span className="font-mono">docker compose ps</span> and confirm the service is up
+                and on a current image.
+              </p>
+            </div>
+          )}
+
           {/* Ingest down. Beside the parity banner and for the same reason:
               this is the platform silently not working, not a control working
               as designed. On 2026-08-11 feed-ingest was stopped by a stray

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { PlatformConfig } from '../src/types/index.js'
+import type { PlatformConfig } from '@platform-pub/shared/types/config.js'
 
 // =============================================================================
 // Settlement Logic Tests

@@ -44,6 +44,21 @@ export async function proxyToService(
     const res = await fetch(url, fetchOpts)
     const body = await res.json().catch(() => null)
 
+    // AN UPSTREAM REFUSAL MUST LEAVE A FOOTPRINT — the same defect 3dc8949a
+    // fixed in callPaymentService (admin-dashboard.ts), which this helper still
+    // had. The status and body go straight to the browser and the catch below
+    // only fires when `fetch` itself throws, so a 403 or 500 from key-service or
+    // payment-service reached the caller having written NOTHING to the gateway
+    // log. That is how an INTERNAL_SERVICE_TOKEN mismatch survived on prod
+    // (2026-08-07): every proxied call was refused, paywalled unlocks among
+    // them, and no log line anywhere named the status.
+    if (res.status < 200 || res.status >= 300) {
+      logger.warn(
+        { url, method, status: res.status, body },
+        'Service proxy returned non-2xx — check INTERNAL_SECRET parity between the gateway and this service if this is a 401/403'
+      )
+    }
+
     return reply.status(res.status).send(body)
   } catch (err) {
     logger.error({ err, url, method }, 'Service proxy failed')

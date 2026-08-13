@@ -468,35 +468,26 @@ the end). Six defects, one on a money path, plus a consolidation batch.
    named `slug` carries the d-tag. Commented at the alias, since a field whose
    name lies reads as this exact bug to the next person.
 
-4. **MEDIUM (latent — gates §3.5 slice 3) — the `feed_items` upsert drops a
-   corrected `published_at`.** `article-publisher.ts:187` takes
-   `published_at = EXCLUDED.published_at` on the `articles` conflict arm; the
-   `feed_items` arm (`:234–240`) omits the column. Invisible today (the
-   scheduler passes now() to both), but ARCHIVE-IMPORT-ADR §VII *designs*
-   re-runs to converge through this upsert via deterministic d-tags — a
-   re-run correcting a date would split the article/profile surfaces from
-   every follower's feed, silently. The "writes the same instant to both
-   columns" test pins only the INSERT arm. **Fix:** one line in the conflict
-   list + extend that test to the conflict arm; land it before slice 3 makes
-   the path live.
+4. ~~**MEDIUM (latent — gates §3.5 slice 3) — the `feed_items` upsert drops a
+   corrected `published_at`.**~~ — **DONE 2026-08-13.** One line on the
+   conflict arm, plus a test that reads the `DO UPDATE SET` list **out of the
+   SQL** and asserts both arms refresh the column *from its own `EXCLUDED`
+   counterpart*, so a cross-wire reads as not-refreshed rather than as fine.
+   Mutation-proved: reverting the production line fails that test and only
+   that test. The §3.5 slice-3 gate is cleared.
 
-5. **MEDIUM — the admin overview renders the parity `unverified` state as
-   fine.** `admin/overview/page.tsx:92` banners on `!parity.ok` only, while
-   the API ships `parity.unverified` under a doc comment reading "never to be
-   rendered as fine" (`api/admin-dashboard.ts:74`). The sticky case: a peer
-   rolled back to a pre-`/auth-check` image 404s forever (`no_endpoint`,
-   never definitive), so a simultaneously drifted secret is silent everywhere
-   but one boot log line — on the surface built to show it. **Fix:** a
-   second, quieter banner for `unverified.length > 0` with its own copy
-   ("never confirmed" is a third state, per the invariant).
+5. ~~**MEDIUM — the admin overview renders the parity `unverified` state as
+   fine.**~~ — **DONE 2026-08-13**, together with 8f, which is the same fault
+   one layer down. A second, deliberately quieter banner (grey label, not
+   crimson — this is the absence of evidence, not a known fault) names the
+   peers and says in words that it is neither a mismatch nor an all-clear.
 
-6. **LOW (test) — the in-transaction outbox claim is asserted by name only.**
-   `article-publisher.test.ts:251` checks the enqueue's payload but never its
-   client argument — the only evidence the enqueue rode the transaction. Move
-   `enqueueRelayPublish` after `withTransaction` and the suite stays green
-   while the repo's most-cited invariant breaks. **Fix:** assert
-   `enqueueMock.mock.calls[0][0]` is the client the mocked `withTransaction`
-   handed its callback.
+6. ~~**LOW (test) — the in-transaction outbox claim is asserted by name
+   only.**~~ — **DONE 2026-08-13.** The mocked `withTransaction` now captures
+   the client it hands its callback and the test asserts identity against it.
+   The audit's claim was reproduced rather than trusted: with the enqueue
+   hoisted out of the transaction the payload assertion stayed green and the
+   new one failed.
 
 7. **Cross-ref:** the local-time month boundary in `subscription-convert.ts`
    re-surfaced with a sharper consequence than §0p.3 had recorded — amended
@@ -516,29 +507,34 @@ the end). Six defects, one on a money path, plus a consolidation batch.
      consumed nowhere. One pass: share archive/masthead the way home is
      shared, add the Subscribe affordance to the overlay, delete the dead
      prop and the dead field.
-   - **(b) `PlatformConfig` is declared twice** —
-     `payment-service/src/types/index.ts:12` duplicates
-     `shared/src/types/config.ts:8`, and both a0867c04 and 3e1f7dc2 had to
-     edit both. The parity suite pins values, not types, so the local copy
-     rots silently. Delete it; import shared's.
-   - **(c) `proxyToService` still has the no-footprint defect 3dc8949a fixed
-     in `callPaymentService`** (`articles/shared.ts:44`): an upstream non-2xx
-     reaches the browser with nothing in the gateway log. Same ~6 lines,
-     moved into the shared helper.
-   - **(d) On the public pub pages an outage renders as emptiness:**
-     `getArticles`/`getMasthead` return `{articles: []}` on any non-ok
-     response, so a gateway 500 paints "NO ARTICLES PUBLISHED YET", cached
-     60s (`archive/page.tsx:33`, `masthead/page.tsx:22`, `page.tsx:41`).
-     These were `notFound()` before the rework. Distinguish error from empty.
+   - ~~**(b) `PlatformConfig` is declared twice**~~ — **DONE 2026-08-13, and
+     it had already rotted**: shared's had grown `payoutHaltEscalationHours`
+     and the payment-service copy had not. Deleted, with a comment in its
+     place recording that every consumer already took its config from
+     `loadConfig()` (which returns shared's shape), so the local interface was
+     never the thing being loaded — only a second description of it, free to
+     disagree in silence.
+   - ~~**(c) `proxyToService` still has the no-footprint defect 3dc8949a fixed
+     in `callPaymentService`**~~ — **DONE 2026-08-13.** Same ~6 lines, same
+     reasoning, now in both places.
+   - ~~**(d) On the public pub pages an outage renders as emptiness**~~ —
+     **DONE 2026-08-13.** All three fetchers return `null` for a failure,
+     distinct from an empty list, and the pages render a shared `LoadFailed`.
+     `notFound()` was rejected as the alternative: a 404 makes the same false
+     claim in a stronger form, that the publication does not exist. **Residual,
+     not done and a genuine design call:** the six `getPublication`-style
+     fetchers under `pub/` still `notFound()` on an outage, which is that
+     stronger false claim — deciding what a public page should render (and
+     what status it should carry, for search engines) when the gateway is down
+     is its own small piece of work, not a line in this batch.
    - ~~**(e) `contributor_type !== 'staff'`**~~ — **DONE 2026-08-12 with item 2**,
      which served the column and therefore had to settle the sentinel in the
      same breath (`one_off`, rendered "· one-off"). One home, `mastheadRole()`
      in `article-shared.tsx`.
-   - **(f) Parity transition-log wording overstates what is known** when
-     boot seeded `null` (`internal-parity.ts:272`): a first-ever match logs
-     "RESTORED", a first-ever mismatch logs "APPEARED AT RUNTIME —
-     redeployed with a different secret", sending the operator to
-     reconstruct a redeploy that never happened. Branch on `before === null`.
+   - ~~**(f) Parity transition-log wording overstates what is known** when
+     boot seeded `null`~~ — **DONE 2026-08-13 with item 5**, the same fault one
+     layer down. Branches on `before === null`: same two log levels, honest
+     subjects, `firstProof` on the log object.
    - **(g) `Welcome.tsx:98`** splices the `world` step in when capabilities
      resolve, so a fast clicker sees the sheet jump backwards. Unreachable
      while `FOLLOW_IMPORT_ENABLED` is dark; lock the step list at open.
@@ -548,12 +544,12 @@ the end). Six defects, one on a money path, plus a consolidation batch.
      distinguish, then didn't. Also `ALLOWED_IMAGE_TYPES` sits in the bytes
      module while CLAUDE.md files the declared-MIME check under the route;
      move the constant when touched.
-   - **(i) `members.ts:273`** returns a raw `flatten()` as `error` — the
-     banned envelope ("[object Object]" client-side); pre-existing but
-     touched territory. One line via `zodValidationError`.
-   - **(j) ARCHIVE-IMPORT-ADR §II** names the extracted function
-     `publishArticle`; §XII and CLAUDE.md say `publishPersonalArticle` — a
-     later reader greps the wrong name. One word.
+   - ~~**(i) `members.ts:273`** returns a raw `flatten()` as `error`~~ —
+     **DONE 2026-08-13, at three sites rather than the one audited**: the same
+     line was also at :118 and :425 in the same file. All three now use
+     `zodValidationError`.
+   - ~~**(j) ARCHIVE-IMPORT-ADR §II** names the extracted function
+     `publishArticle`~~ — **DONE 2026-08-13.** One word.
    - **(k) Owner flag, no build:** the §1.6 unconditional `article_unlocks`
      flip also makes permanent the unlocks of *charged-back* reads (the
      reader got their money back). Probably right under the gift philosophy;
@@ -1223,9 +1219,36 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 ---
 
-## NEXT SESSION STARTS HERE (rewritten 2026-08-12, after feed formulas Phase 2 step 2)
+## NEXT SESSION STARTS HERE (rewritten 2026-08-13, after the §0q tail)
 
 Read the box before the queue — this block says what work EXISTS, not what is deployed.
+
+**Where THIS session ended (2026-08-13).** The §0q audit window is now closed
+except for 8a, 8g, 8h, 8k and 8l. Items 4, 5, 6 and 8b/8c/8d/8f/8i/8j all
+shipped in one batch — no migration, no flag, no money-path behaviour change,
+gateway 594/594 and payment-service 364/364 green **with a DB attached** (the
+DB-backed files ran rather than skipping). Full record in FIX-PROGRAMME; four
+things are worth having in front of you here:
+
+  - **Two of the nine were worse than the audit had them, and both times
+    because the audit found one instance of a pattern rather than the pattern.**
+    §0q.8i's banned `flatten()` envelope was at three sites in `members.ts`, not
+    the one cited; §0q.8b's duplicated `PlatformConfig` had *already* diverged
+    (shared grew `payoutHaltEscalationHours`, the copy did not). When an audit
+    item names a line, grep the file before fixing the line.
+  - **§0q.6 is the standing lesson about test titles.** The outbox test was
+    called "inside the txn" and asserted only the payload — which is identical
+    whether the enqueue rides the transaction or runs after it commits. The fix
+    was mutation-proved by hoisting the enqueue out of the transaction: the old
+    assertion stayed green, the new one failed. A title is not a pin.
+  - **§0q.4's fix cleared the §3.5 slice-3 gate**, so the archive importer's
+    date-correction path is no longer blocked on it.
+  - **One residual was deliberately NOT done and is a real design call**: the
+    six `getPublication`-style fetchers under `pub/` still `notFound()` when the
+    gateway is down — the same false claim §0q.8d just fixed, in a stronger
+    form (a 404 says the publication does not exist). Deciding what a public
+    page renders, and what HTTP status it carries for search engines, during an
+    outage is its own small piece of work. Written into §0q.8d.
 
 **Where THIS session ended (2026-08-12, second sitting).** **Feed formulas Phase 2 step 2 — migration 179**, and with it the whole of Phase 2. The operator confirmed a formula designated on prod with a real signup seeded from it, which was the gate, so `feeds.is_starter_template` is gone along with `cloneFeedForOwner`, `seedStarterFeeds`'s fallback arm, the merge 409 and the delete 409 + its fail-closed backstop. **The §0l bug class is now retired at the schema, not guarded at the route.** ADR §15 and FIX-PROGRAMME carry it in full; three things are worth having in front of you here:
 
@@ -1241,7 +1264,21 @@ Read the box before the queue — this block says what work EXISTS, not what is 
 
 **1. Two surfaces owed a browser, neither a task of its own.** The *Default seed* panel on `/admin/config` has been driven as an API and read as markup, never seen — same gap as Phase 1's web half, smaller stakes (operator-only, existing tab, that page's own classes), and this session removed its legacy branch, so what renders now is the plain designated/undesignated fork. Glance at it next time `/admin/config` is open. Same for the two formula surfaces' known soft spots, neither of which blocked the ship: the formula page shows no avatars (deliberate for v1 — `PUBLIC_MEDIA_URL` points at prod in dev, so an avatar there proves nothing), and the composer section uses the composer's own white `fieldBg` rather than `bg-glasshouse-well`, matching its host rather than the newer sitewide convention. Migrating the whole composer's fields is a separate, larger call.
 
-**Still open and unblocked from earlier windows** (none gated on a human): the publications-overlay pair visible on dev today (§0q.2/3 — "· undefined" in the overlay masthead, and `/@username` 404s where the intercept doesn't reach) and the smaller batch §0q.4–8. Any of these folds into a session alongside the above.
+**Still open and unblocked from earlier windows** (none gated on a human): what
+is left of §0q.8 — **8a**, the one that deserves its own sitting (the
+publication registers still fork past the homepage: overlay archive flat and
+relative-dated against the standalone's year-grouped absolute dates, the overlay
+header hand-duplicating `PublicationMasthead`'s block, a workspace member with
+no path to the subscription terms at all, plus the dead `showNav` prop and the
+fetched-but-unconsumed `theme_config`) — and the four small ones it makes sense
+to carry with it: **8g** (`Welcome.tsx` splices the `world` step in when
+capabilities resolve, so a fast clicker sees the sheet jump backwards;
+unreachable while `FOLLOW_IMPORT_ENABLED` is dark), **8h** (`MediaStoreError`
+conflates bad bytes with Blossom failure and the route answers 500 for both),
+**8k** (owner flag, no build — the §1.6 unconditional `article_unlocks` flip
+also makes permanent the unlocks of charged-back reads) and **8l** (a
+wrong-slug `/pub/:slug/:articleSlug` renders the article and echoes the wrong
+slug into its OG url).
 
 **Two items that ARE gated on a human, unchanged:** §3.5's Substack adapter still needs a real export in hand (ADR §XI slice 0 — five unconfirmed facts, one of which decides whether "a paid post lands as a draft" is even honest), and §3.7's waitlist-panel browser look plus its Export CSV decide-or-decline.
 

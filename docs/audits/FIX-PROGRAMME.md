@@ -23,6 +23,94 @@ starts.
 
 ## Progress
 
+- **2026-08-13 (the §0q tail: two silences, a dropped date, and a type that had already rotted)** —
+  CONSOLIDATED-TODO §0q items 4, 5, 6 and the cheap half of 8 (b, c, d, f, i, j).
+  No migration; no money-path behaviour change. Gateway 594/594 and
+  payment-service 364/364 green **with a DB attached** (both suites' DB-backed
+  files run, not skipped), web `tsc` + `next build` clean, root ESLint 0 errors,
+  hairline tripwire clean on every touched web file, and both money guards
+  (`check-ledger-adjacency.sh`, `check-read-chargeable.sh`) pass.
+
+  **§0q.4 — the `feed_items` upsert dropped a corrected `published_at`, and the
+  test that should have caught it only ever read the INSERT arm.** The `articles`
+  conflict arm took `published_at = EXCLUDED.published_at`; the `feed_items` arm
+  omitted the column entirely. Invisible with the scheduler as the only caller
+  (it passes `now()` to both), but ARCHIVE-IMPORT-ADR §VII *designs* import
+  re-runs to converge through this exact upsert on a deterministic d-tag — which
+  is the path a corrected date arrives on. A re-run would have refreshed the
+  article surface and left every follower's feed on the old instant, with
+  neither row wrong on its own. One line, plus a new test that reads the
+  `DO UPDATE SET` list **out of the SQL** and asserts both arms refresh the
+  column *from its own `EXCLUDED` counterpart* — so a cross-wire reads as
+  not-refreshed rather than as fine. Mutation-proved: reverting the production
+  line fails that test and only that test.
+
+  **§0q.6 — "inside the txn" was in the test's title and nowhere in its
+  assertions.** The outbox test checked the enqueue's payload, which is
+  identical whether the call rides the transaction or runs after it has
+  committed. Moving `enqueueRelayPublish` below `withTransaction` — the precise
+  shape the relay-outbox invariant forbids, since the article would then commit
+  with no outbox row — left the suite green. Now the mocked `withTransaction`
+  captures the client it hands its callback and the test asserts identity
+  against it. Mutation-proved with the enqueue hoisted out of the transaction:
+  the payload assertion stayed green, the new one failed. That is the audit's
+  claim reproduced rather than taken on trust.
+
+  **§0q.5 + §0q.8f — the parity check's third state was rendered as fine in one
+  place and misdescribed in the other.** `/admin/overview` bannered on
+  `!parity.ok` alone, so a peer that has never been *provably* anything — rolled
+  back to an image with no `/auth-check`, or unreachable for every probe since
+  boot — showed a clean page. That is the sticky case the check exists for: a
+  404 is never definitive, so a simultaneously drifted secret would be silent
+  everywhere but one boot log line, on the surface built to show it. Added a
+  second, deliberately quieter banner (grey label, not crimson — this is the
+  absence of evidence, not a known fault) naming the peers and saying in words
+  that it is neither a mismatch nor an all-clear. And in `internal-parity.ts`
+  the transition log now branches on `before === null`: a first-ever match no
+  longer logs "RESTORED" (claiming a break nobody observed) and a first-ever
+  mismatch no longer says "redeployed with a different secret" (sending the
+  operator to reconstruct a redeploy that may never have happened, when the
+  likelier truth is that it has been broken all along and we could not see it).
+  Same two log levels, honest subjects, and `firstProof` on the log object.
+
+  **§0q.8d — on the public publication pages an outage rendered as an empty
+  publication, and cached for 60s.** `getArticles`/`getMasthead` answered any
+  non-ok response with an empty collection, so a gateway 500 painted "NO
+  ARTICLES PUBLISHED YET" over a publication with a full archive — telling a
+  visitor, with total confidence, the opposite of the truth about a writer.
+  All three fetchers now return `null` for a failure, distinct from an empty
+  list, and the pages render a shared `LoadFailed` that says it is a failure and
+  that trying again is worth it. `notFound()` was rejected as the alternative:
+  a 404 makes the same false claim in a stronger form, that the publication does
+  not exist. This also makes the three list-fetchers consistent with the six
+  `getPublication`-style fetchers under `pub/`, which already returned `null`.
+
+  **§0q.8b — the duplicated `PlatformConfig` had already rotted, exactly as
+  predicted.** `payment-service/src/types/index.ts` declared its own copy beside
+  `shared/src/types/config.ts`; shared's had since grown
+  `payoutHaltEscalationHours` and the local one had not. Nothing caught it
+  because the parity suites pin config *values*, not the type. Deleted, with a
+  comment in its place recording why there is no local copy — and noting that
+  every consumer already took its config from `loadConfig()`, which returns
+  shared's shape, so the local interface was never the thing being loaded, only
+  a second description of it free to disagree in silence.
+
+  **§0q.8c — `proxyToService` still had the no-footprint defect `3dc8949a` fixed
+  in `callPaymentService`.** An upstream non-2xx went straight to the browser
+  with nothing in the gateway log; the surrounding try/catch only fires when
+  `fetch` itself throws. Same ~6 lines, same reasoning, now in both places.
+
+  **§0q.8i — the banned envelope, at three sites rather than the one audited.**
+  `members.ts:273` returned a raw `flatten()` as `error` (renders as "[object
+  Object]" client-side); the same line was also at :118 and :425 in the same
+  file. All three now use `zodValidationError`.
+
+  **§0q.8j** — ARCHIVE-IMPORT-ADR §II's code block said `publishArticle`; the
+  function is `publishPersonalArticle`. One word.
+
+  **Deploy:** gateway + web + payment-service images. No migration, no config
+  dial, no flag. Nothing here is order-sensitive in either direction.
+
 - **2026-08-12 (the publication masthead stops saying "undefined" and its links stop 404ing)** —
   CONSOLIDATED-TODO §0q items 2 and 3, plus 8e, which item 2 forced.
 

@@ -34,6 +34,9 @@ interface Call {
 
 let txCalls: Call[] = [];
 let signedTemplates: Array<Record<string, any>> = [];
+/** The client `withTransaction` handed its callback — the identity the outbox
+ *  enqueue must be called with. See the enqueue test for why. */
+let txClient: unknown = null;
 const emailMock = vi.fn();
 const driveMock = vi.fn();
 const enqueueMock = vi.fn();
@@ -60,8 +63,10 @@ function scriptedQuery(sql: string, params: unknown[] = []) {
 
 vi.mock("@platform-pub/shared/db/client.js", () => ({
   pool: { query: vi.fn() },
-  withTransaction: (cb: (c: { query: typeof scriptedQuery }) => Promise<unknown>) =>
-    cb({ query: scriptedQuery }),
+  withTransaction: (cb: (c: { query: typeof scriptedQuery }) => Promise<unknown>) => {
+    txClient = { query: scriptedQuery };
+    return cb(txClient as { query: typeof scriptedQuery });
+  },
 }));
 
 vi.mock("../src/lib/key-custody-client.js", () => ({
@@ -127,6 +132,25 @@ function paramIndexFor(sql: string, table: string, column: string): number {
   return Number(placeholder[1]) - 1;
 }
 
+/**
+ * Given an upsert, return the columns its `ON CONFLICT … DO UPDATE SET` arm
+ * refreshes FROM THEIR OWN `EXCLUDED` counterpart — so a cross-wired
+ * `published_at = EXCLUDED.created_at` reads as not-refreshed rather than as
+ * fine. Derived from the SQL for the same reason `paramIndexFor` is: a
+ * remembered list pins the memory rather than the query.
+ */
+function conflictRefreshes(sql: string, table: string): string[] {
+  const stripped = sql.replace(/--[^\n]*/g, "");
+  const m = stripped.match(
+    new RegExp(`INSERT INTO ${table}\\b[\\s\\S]*?DO UPDATE SET([\\s\\S]*)`, "i"),
+  );
+  if (!m) throw new Error(`no INSERT INTO ${table} … DO UPDATE SET found in SQL`);
+  const setList = m[1].split(/\bRETURNING\b/i)[0];
+  return [...setList.matchAll(/(\w+)\s*=\s*EXCLUDED\.(\w+)/gi)]
+    .filter(([, col, excluded]) => col.toLowerCase() === excluded.toLowerCase())
+    .map(([, col]) => col.toLowerCase());
+}
+
 function insertFor(table: string): Call {
   const call = txCalls.find((c) => c.sql.includes(`INSERT INTO ${table}`));
   if (!call) throw new Error(`no INSERT INTO ${table} was issued`);
@@ -157,6 +181,7 @@ const INPUT = {
 beforeEach(() => {
   txCalls = [];
   signedTemplates = [];
+  txClient = null;
   emailMock.mockClear();
   driveMock.mockClear();
   enqueueMock.mockClear();
@@ -219,6 +244,19 @@ describe("publishPersonalArticle — the date split", () => {
       String(Math.floor((publishedAtParam("articles") as Date).getTime() / 1000)),
     );
   });
+
+  it("converges published_at on BOTH upserts' conflict arms, not just the inserts", async () => {
+    // The test above pins the INSERT arms only, and both upserts are re-entered
+    // by design: ARCHIVE-IMPORT-ADR §VII converges an import re-run through the
+    // deterministic d-tag, which is the path a CORRECTED date arrives on. An
+    // arm that refreshes one column and not the other splits the article and
+    // profile surfaces from every follower's feed, with neither row wrong on
+    // its own. Asserted as a pair so a future column added to one arm alone
+    // fails here rather than in a follower's timeline.
+    await publishPersonalArticle(INPUT, { publishedAt: BACKDATE });
+    expect(conflictRefreshes(insertFor("articles").sql, "articles")).toContain("published_at");
+    expect(conflictRefreshes(insertFor("feed_items").sql, "feed_items")).toContain("published_at");
+  });
 });
 
 describe("publishPersonalArticle — the suppressions", () => {
@@ -257,5 +295,13 @@ describe("publishPersonalArticle — the suppressions", () => {
       entityType: "article",
       entityId: ARTICLE_ID,
     });
+    // "inside the txn" is the CLIENT ARGUMENT and nothing else. The payload
+    // assertion above is identical whether the enqueue rides the transaction or
+    // runs after it has committed — so without this line the test's own title
+    // was unpinned, and moving the enqueue below `withTransaction` (the exact
+    // shape the invariant forbids, since the article would then commit with no
+    // outbox row) left the suite green.
+    expect(txClient).not.toBeNull();
+    expect(enqueueMock.mock.calls[0][0]).toBe(txClient);
   });
 });

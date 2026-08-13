@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import type { PlatformConfig } from "../types/index.js";
+import type { PlatformConfig } from "@platform-pub/shared/types/config.js";
 import {
   pool,
   withTransaction,

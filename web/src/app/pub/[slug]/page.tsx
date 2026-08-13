@@ -4,6 +4,7 @@ import { HomepageBlog } from '../../../components/publication/HomepageBlog'
 import { HomepageMagazine } from '../../../components/publication/HomepageMagazine'
 import { HomepageMinimal } from '../../../components/publication/HomepageMinimal'
 import { PublicationMasthead } from '../../../components/publication/PublicationMasthead'
+import { LoadFailed } from '../../../components/publication/article-shared'
 import { PublicPage } from '../../../components/public/PublicPage'
 import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
 
@@ -33,11 +34,12 @@ async function getPublication(slug: string) {
   return res.json()
 }
 
+/** null means the fetch FAILED — distinct from a publication with no articles. */
 async function getArticles(slug: string) {
   const res = await fetch(`${GATEWAY}/api/v1/publications/by-slug/${slug}/articles?limit=20`, {
     next: { revalidate: 60 },
   })
-  if (!res.ok) return { articles: [] }
+  if (!res.ok) return null
   return res.json()
 }
 
@@ -82,16 +84,27 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
   if (!pub) return notFound()
 
   const layout = pub.homepage_layout ?? 'blog'
-  const articles = data.articles ?? []
+  const failed = data === null
+  const articles = data?.articles ?? []
 
   return (
     <PublicPage>
       <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}` }} />
       <PublicationMasthead pub={pub} view="home" />
       <div className="mx-auto max-w-content px-4 sm:px-6 pt-14 pb-20">
-        {layout === 'magazine' && <HomepageMagazine slug={pub.slug} articles={articles} />}
-        {layout === 'minimal' && <HomepageMinimal slug={pub.slug} articles={articles} />}
-        {layout === 'blog' && <HomepageBlog slug={pub.slug} articles={articles} />}
+        {/* An outage renders as an outage, not as a publication with nothing in
+            it — every template's own empty state would otherwise make that
+            claim. The masthead above still renders: `pub` loaded, so the
+            publication's identity is known and only its articles are missing. */}
+        {failed ? (
+          <LoadFailed what="these articles" />
+        ) : (
+          <>
+            {layout === 'magazine' && <HomepageMagazine slug={pub.slug} articles={articles} />}
+            {layout === 'minimal' && <HomepageMinimal slug={pub.slug} articles={articles} />}
+            {layout === 'blog' && <HomepageBlog slug={pub.slug} articles={articles} />}
+          </>
+        )}
       </div>
     </PublicPage>
   )

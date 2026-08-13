@@ -44,7 +44,7 @@ This is the load-bearing decision. A bulk publisher written alongside the real o
 The extracted signature gains an options object; every new field defaults to today's behaviour, so the scheduler's call is unchanged:
 
 ```ts
-publishArticle(input, {
+publishPersonalArticle(input, {
   publishedAt?: Date        // D2 — defaults to now
   sendEmail?: boolean       // D3 — defaults to true
   matchDrives?: boolean     // D3 — defaults to true

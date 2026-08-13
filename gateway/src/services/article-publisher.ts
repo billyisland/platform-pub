@@ -237,7 +237,16 @@ export async function publishPersonalArticle(
         nostr_event_id = EXCLUDED.nostr_event_id,
         author_name = EXCLUDED.author_name,
         author_avatar = EXCLUDED.author_avatar,
-        media = EXCLUDED.media
+        media = EXCLUDED.media,
+        -- Converges with the articles arm above. Both columns hold the SAME
+        -- instant (ADR §III) and the INSERT arms write it from one variable, so
+        -- an upsert that refreshed only one of them would split the article and
+        -- profile surfaces from every follower's feed — silently, since neither
+        -- row is wrong on its own. Invisible while the scheduler is the only
+        -- caller (it passes now() to both), but ARCHIVE-IMPORT-ADR §VII designs
+        -- re-runs to converge through exactly this upsert on a deterministic
+        -- d-tag, which is where a corrected date arrives.
+        published_at = EXCLUDED.published_at
     `,
       [
         artId,

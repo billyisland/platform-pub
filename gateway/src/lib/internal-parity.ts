@@ -268,15 +268,29 @@ export async function reprobeParity(): Promise<void> {
       parityState.set(peer.name, now);
       if (now === before) return;
 
+      // WHAT THE OPERATOR IS SENT TO LOOK FOR DEPENDS ON WHETHER THERE WAS A
+      // PRIOR STATE. `before === null` is the never-confirmed third state (this
+      // peer was unreachable, or on a pre-/auth-check image, for every probe
+      // since boot) — so this round is the FIRST proof either way, and there is
+      // no transition to describe. Saying "RESTORED" claims a break that was
+      // never observed; saying "redeployed with a different secret" sends the
+      // operator to reconstruct a redeploy that may never have happened, when
+      // the likelier truth is that it has been broken the whole time and we
+      // could not see it. Same two log levels, honest subjects.
+      const firstProof = before === null;
       if (now) {
         logger.warn(
-          { peer: peer.name, secretEnv: peer.secretEnv },
-          "Internal parity RESTORED — this peer's shared secret matches again",
+          { peer: peer.name, secretEnv: peer.secretEnv, firstProof },
+          firstProof
+            ? "Internal parity CONFIRMED for the first time since boot — this peer was never reachable to prove either way before now, and its shared secret matches"
+            : "Internal parity RESTORED — this peer's shared secret matches again",
         );
       } else {
         logger.error(
-          { peer: peer.name, secretEnv: peer.secretEnv },
-          "SHARED SECRET MISMATCH APPEARED AT RUNTIME — this peer was redeployed with a different secret, so every call to it now fails silently. NOT exiting: that would take the whole site down for a fault in one peer. The gateway's /health is now failing, so `docker compose ps` shows it unhealthy. Fix the env var in both .env files and recreate both containers",
+          { peer: peer.name, secretEnv: peer.secretEnv, firstProof },
+          firstProof
+            ? "SHARED SECRET MISMATCH — first definitive probe of this peer since boot (it was unreachable or on an older image until now), so this may have been broken all along rather than newly introduced. Every call to it fails silently. NOT exiting: that would take the whole site down for a fault in one peer. The gateway's /health is now failing, so `docker compose ps` shows it unhealthy. Fix the env var in both .env files and recreate both containers"
+            : "SHARED SECRET MISMATCH APPEARED AT RUNTIME — this peer was redeployed with a different secret, so every call to it now fails silently. NOT exiting: that would take the whole site down for a fault in one peer. The gateway's /health is now failing, so `docker compose ps` shows it unhealthy. Fix the env var in both .env files and recreate both containers",
         );
       }
     }),

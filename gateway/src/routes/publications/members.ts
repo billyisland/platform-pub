@@ -4,6 +4,7 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../../middleware/auth.js'
 import { requirePublicationPermission, requirePublicationOwner } from '../../middleware/publication-auth.js'
 import logger from '@platform-pub/shared/lib/logger.js'
+import { zodValidationError } from '@platform-pub/shared/lib/validation.js'
 import { ROLE_DEFAULTS } from './shared.js'
 
 // =============================================================================
@@ -115,7 +116,7 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const parsed = InviteMemberSchema.safeParse(req.body)
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() })
+        return reply.status(400).send(zodValidationError(parsed.error))
       }
 
       const { id } = req.params
@@ -270,7 +271,9 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const parsed = UpdateMemberSchema.safeParse(req.body)
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() })
+        // The shared envelope, never a raw flatten() as `error` — the client
+        // renders that field as text and an object arrives as "[object Object]".
+        return reply.status(400).send(zodValidationError(parsed.error))
       }
 
       const { id, memberId } = req.params
@@ -420,7 +423,7 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const parsed = TransferOwnershipSchema.safeParse(req.body)
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() })
+        return reply.status(400).send(zodValidationError(parsed.error))
       }
 
       const { id } = req.params

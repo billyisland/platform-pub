@@ -5,6 +5,7 @@ import { PublicPage } from '../../../../components/public/PublicPage'
 import {
   ArticleLink,
   EmptyState,
+  LoadFailed,
   PubByline,
   articleKey,
   formatPubDate,
@@ -34,11 +35,12 @@ async function getPublication(slug: string) {
   return res.json()
 }
 
+/** null means the fetch FAILED — distinct from a publication with no articles. */
 async function getArticles(slug: string) {
   const res = await fetch(`${GATEWAY}/api/v1/publications/by-slug/${slug}/articles?limit=100`, {
     next: { revalidate: 60 },
   })
-  if (!res.ok) return { articles: [] }
+  if (!res.ok) return null
   return res.json()
 }
 
@@ -72,7 +74,8 @@ export default async function ArchivePage({ params }: { params: { slug: string }
   ])
   if (!pub) return notFound()
 
-  const articles: PubArticle[] = data.articles ?? []
+  const failed = data === null
+  const articles: PubArticle[] = data?.articles ?? []
   const years = groupByYear(articles)
 
   return (
@@ -80,7 +83,9 @@ export default async function ArchivePage({ params }: { params: { slug: string }
       <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}/archive` }} />
       <PublicationMasthead pub={pub} view="archive" />
       <div className="mx-auto max-w-feed px-4 sm:px-6 pt-14 pb-20">
-        {articles.length === 0 ? (
+        {failed ? (
+          <LoadFailed what="this archive" />
+        ) : articles.length === 0 ? (
           <EmptyState />
         ) : (
           years.map(([year, group], gi) => (

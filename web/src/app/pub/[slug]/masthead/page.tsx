@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { ProfileLink } from '../../../../components/ui/ProfileLink'
 import { PublicationMasthead } from '../../../../components/publication/PublicationMasthead'
-import { mastheadRole } from '../../../../components/publication/article-shared'
+import { mastheadRole, LoadFailed } from '../../../../components/publication/article-shared'
 import { PublicPage } from '../../../../components/public/PublicPage'
 import WorkspacePaneRedirect from '../../../../components/layout/WorkspacePaneRedirect'
 
@@ -16,11 +16,12 @@ async function getPublication(slug: string) {
   return res.json()
 }
 
+/** null means the fetch FAILED — distinct from a publication with no masthead. */
 async function getMasthead(slug: string) {
   const res = await fetch(`${GATEWAY}/api/v1/publications/${slug}/masthead`, {
     next: { revalidate: 60 },
   })
-  if (!res.ok) return { members: [] }
+  if (!res.ok) return null
   return res.json()
 }
 
@@ -46,14 +47,17 @@ export default async function MastheadPage({ params }: { params: { slug: string 
   ])
   if (!pub) return notFound()
 
-  const members = data.members ?? []
+  const failed = data === null
+  const members = data?.members ?? []
 
   return (
     <PublicPage>
       <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}/masthead` }} />
       <PublicationMasthead pub={pub} view="masthead" />
       <div className="mx-auto max-w-feed px-4 sm:px-6 pt-14 pb-20">
-        {members.length === 0 ? (
+        {failed ? (
+          <LoadFailed what="this masthead" />
+        ) : members.length === 0 ? (
           <p className="label-ui text-grey-600 py-16 text-center">NO MASTHEAD YET</p>
         ) : (
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-9">
