@@ -111,8 +111,13 @@ starts.
   **Deploy requirements** (neither urgent, neither automatic): clear the prune's
   exhausted rows via `graphile_worker.complete_jobs(...)`, and repair the 304
   sources per above. Both commands are in the CONSOLIDATED-TODO next-session
-  block. Prune sweep **done on prod 2026-08-13**; the source repair follows the
-  image.
+  block. **All done and verified on prod 2026-08-13**: 84 prune rows cleared,
+  both code markers read 1 in the running container (`COALESCE(sent_at,
+  created_at)` in feed-ingest's dist, `301, 302, 303, 307, 308` in its copy of
+  shared), the five sources repaired, and — the part that matters — all five
+  re-fetched cleanly within minutes at `error_count` 0 / `last_error` NULL. The
+  fix is therefore proven against the real origins that were tripping it, not
+  only against a mocked transport.
 
 - **2026-08-13, second sitting (§0q closes: one publication instead of two, and three things a browser found)** —
   CONSOLIDATED-TODO §0q.8a, 8g, 8h, 8l; 8k answered by the owner with no code.
