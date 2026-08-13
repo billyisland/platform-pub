@@ -814,7 +814,8 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
     - **`external_items` grew by 71 in ten minutes while `feed_items` gained none** in the same window. Not chased. Either a dual-write path that diverges for some item class, or a dedup key collapsing them — worth an hour before anything else here, because it is the only one of the three that could be silently losing content rather than merely delaying it.
     **Prod is NOT in this state and must not be assumed into it**: at 55 atproto sources it runs FILTERED, receives only its own DIDs' events, and replays a 24h window in seconds. The day prod crosses 150 sources it inherits all of the above at once — so the trigger for this item is the atproto source count, not a complaint. Sharding past ~200 subs is already item 4 above; this is the smaller, sooner half.
 
-14. **Two smaller ingest faults found in the same sweep, neither chased** (2026-08-12). `relay_outbox_prune` has failed on **every** run since at least 2026-08-03 — 25 attempts, all `column "updated_at" does not exist` — so the outbox is never pruned (harmless at prod's 23 rows, wrong in principle, and it is a permanently red job nobody sees). And several RSS sources error with `Redirect 304 with no Location header`: a 304 is *not modified*, the successful answer to a conditional GET, so something is treating the cheap happy path as a failure and incrementing `error_count` toward deactivation — meaning a well-behaved feed that always 304s could eventually be switched off for being healthy.
+14. ~~**Two smaller ingest faults found in the same sweep, neither chased** (2026-08-12).~~ — **DONE 2026-08-13**, both, each driven against the running dev stack rather than only compiled. `relay_outbox_prune` named `updated_at`, a column `relay_outbox` does not have (it has `created_at`/`last_attempt_at`/`sent_at`), so retention is now `COALESCE(sent_at, created_at)` — sent time is what "sent 30 days ago" means, COALESCEd so a 'sent' row whose stamp was never written ages out instead of becoming immortal. The 304 was in `safeFetch`, not in the adapter: it treated the whole 3xx range as "redirect", and 304 carries no `Location` by definition, so the conditional GET's happy path threw and the `status === 304` branch in `adapters/rss.ts` was unreachable dead code. Now keyed on the Fetch spec's five redirect statuses (301/302/303/307/308). **Two things this turned up that the item did not have.** (a) The error did not only count toward deactivation — it also drove the poll backoff, so the healthy feed was being polled 16× *less* often than a broken one would be: `simonwillison.net/atom/everything/` sat at `error_count` 6 and `fetch_interval_seconds` 19200. After the fix, one real fetch took it to 0 / NULL / 3600. (b) The graveyard is not one job. Clearing the prune's dead rows revealed **1038** permanently-failed graphile jobs on dev (651 `feed_ingest_nostr`, 384 `feed_ingest_activitypub` — the 401'd Mastodon actors and relay timeouts), none of them retried again, none of them surfaced anywhere. That is a **live gap, not a fixed one**: nothing on `/admin/overview` counts permanently-failed jobs, which is precisely why a job could be red for ten days unnoticed. See item 15.
+15. **Nothing surfaces a permanently-failed graphile job** (opened 2026-08-13 out of item 14). The heartbeat alarm answers "is the worker running"; it cannot answer "is the worker failing everything it picks up", because a job that exhausts its attempts just stops being retried and sits in `graphile_worker.jobs` forever. That is how `relay_outbox_prune` went 25 attempts × ~10 nights unseen, and dev currently holds 1038 such rows. The fix is the same shape as the heartbeat one and belongs beside it: a `count(*) WHERE attempts >= max_attempts` grouped by `task_identifier` on `/admin/overview`, with the alert threshold a `platform_config` dial. Two design points worth settling first — most of dev's 1038 are the *expected* debris of dead external sources, so the count needs either a per-task view or an exclusion, or it is an alarm that is red on day one and learned past (the exact failure the dial exists to avoid); and nothing currently ever reaps these rows, so decide whether the surface also prunes.
 
 ## 9. Features (specified, unbuilt)
 
@@ -1239,11 +1240,19 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 ---
 
-## NEXT SESSION STARTS HERE (rewritten 2026-08-13, after §0q.8's tail)
+## NEXT SESSION STARTS HERE (rewritten 2026-08-13, after §8.14)
 
 Read the box before the queue — this block says what work EXISTS, not what is deployed.
 
-**Where THIS session ended (2026-08-13, second sitting). §0q IS CLOSED.** 8a, 8g,
+**Where THIS session ended (2026-08-13, third sitting). §8.14 is closed, and it opened §8.15.** Two ingest faults, both small, both driven against the running stack: the outbox prune's non-existent `updated_at` column, and `safeFetch` classifying 304 Not Modified as a redirect. No migration, no flag, no money path. shared 122/122, feed-ingest 288/288 **with a DB attached**, root ESLint 0 errors. Three things worth having in front of you:
+
+  - **The 304 bug's real cost was not the one in the item.** It was written up as "error_count creeps toward deactivation", and that is true — but the same failure also drove the poll backoff, so the *better-behaved* a feed was, the less often we fetched it. `simonwillison.net` was at `fetch_interval_seconds` 19200 against a healthy 300–3600. **A bug that penalises the happy path scales with how well the other end behaves**, which is why it looked like nothing on a dashboard: no feed broke, they all just got quietly slower.
+  - **The fix was in the shared client, not the adapter that reported it.** `adapters/rss.ts` already had a correct `status === 304` branch; it had simply never been reachable, because `safeFetch` threw one layer down. Where a caller's handling of a case looks right and the case never arrives, suspect the layer under it before rewriting the caller.
+  - **Clearing the prune's dead jobs found 1038 more.** They are mostly the expected debris of dead external sources, so the number is not itself an emergency — but nothing anywhere counts them, which is the mechanism that let one job be red for ten nights. That is now §8.15, and it is the more valuable half of §8.14.
+
+**Deploy requirements for this batch** (nothing is automatic, and neither is urgent): after the images are up, clear the outbox prune's exhausted job rows — `SELECT count(*) FROM graphile_worker.complete_jobs(ARRAY(SELECT id FROM graphile_worker.jobs WHERE task_identifier = 'relay_outbox_prune' AND attempts >= max_attempts));` (the ones still mid-retry need nothing — they now run green on their own next attempt). And check whether prod deactivated any feed for being healthy: `SELECT id, source_uri, error_count, is_active FROM external_sources WHERE last_error LIKE 'Redirect 3%';` — anything there wants `error_count = 0, last_error = NULL, is_active = TRUE, fetch_interval_seconds = 300`. Dev returned zero rows after the fix; prod is unmeasured.
+
+**Where the 2026-08-13 second sitting ended. §0q IS CLOSED.** 8a, 8g,
 8h and 8l shipped; 8k was answered by the owner (a charged-back read **keeps**
 its unlock — the gift argument, now recorded rather than incidental). No
 migration, no flag, no money-path change; gateway 594/594, web `tsc` +
@@ -1308,13 +1317,15 @@ things are worth having in front of you here:
 
 **1. Two surfaces owed a browser, neither a task of its own.** The *Default seed* panel on `/admin/config` has been driven as an API and read as markup, never seen — same gap as Phase 1's web half, smaller stakes (operator-only, existing tab, that page's own classes), and this session removed its legacy branch, so what renders now is the plain designated/undesignated fork. Glance at it next time `/admin/config` is open. Same for the two formula surfaces' known soft spots, neither of which blocked the ship: the formula page shows no avatars (deliberate for v1 — `PUBLIC_MEDIA_URL` points at prod in dev, so an avatar there proves nothing), and the composer section uses the composer's own white `fieldBg` rather than `bg-glasshouse-well`, matching its host rather than the newer sitewide convention. Migrating the whole composer's fields is a separate, larger call.
 
-**What is unblocked and unclaimed now that §0q is closed** (none of it gated on
+**What is unblocked and unclaimed** (none of it gated on
 a human): the one design call §0q.8d left behind — what a public `/pub/**` page
 renders, and with what status, when the gateway is down (the six fetchers still
 `notFound()`); **§6**, the Slice-8 dedup design session, which has been
-outstanding on its own since the July cleanup batch; and **§8.13**, the
+outstanding on its own since the July cleanup batch; **§8.13**, the
 wildcard-mode Jetstream pacing problem, which prod does not have today and
-acquires at 150 atproto sources.
+acquires at 150 atproto sources; and the new **§8.15**, surfacing
+permanently-failed graphile jobs, which is small but wants its two design
+points settled rather than a count dropped onto the page.
 
 **Two items that ARE gated on a human, unchanged:** §3.5's Substack adapter still needs a real export in hand (ADR §XI slice 0 — five unconfirmed facts, one of which decides whether "a paid post lands as a draft" is even honest), and §3.7's waitlist-panel browser look plus its Export CSV decide-or-decline.
 

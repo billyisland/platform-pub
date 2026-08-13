@@ -24,6 +24,20 @@ const MAX_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_REDIRECTS = 3;
 
+// The redirect statuses, per the Fetch spec — exactly these five, NOT the whole
+// 3xx range. 304 Not Modified is the *successful* answer to a conditional GET
+// and carries no Location, so treating every 3xx as a redirect turned the cheap
+// happy path of a well-behaved feed into `Redirect 304 with no Location header`
+// — an error that increments `external_sources.error_count`, which deactivates
+// the source at `feed_ingest_max_error_count` (10). A feed could therefore be
+// switched off for being healthy, and the `status === 304` branch in
+// feed-ingest's rss adapter was dead code it could never reach. (300 Multiple
+// Choices, 305 and 306 are likewise not redirects; they now reach the caller as
+// ordinary non-ok responses rather than throwing.)
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([
+  301, 302, 303, 307, 308,
+]);
+
 // Numeric IPv4 CIDR ranges as [low, high] inclusive 32-bit pairs. The old
 // regex list missed non-canonical IPv6 forms ("::01" vs "::1", "fea0::1" in
 // fe80::/10 but not fe80::/16); numeric comparison catches them all.
@@ -332,7 +346,7 @@ export async function safeFetch(
       });
 
       // Handle redirects manually so we can re-validate each hop
-      if (response.status >= 300 && response.status < 400) {
+      if (REDIRECT_STATUSES.has(response.status)) {
         // If caller requested manual redirect handling, return as-is
         if (options.redirect === "manual") {
           return {

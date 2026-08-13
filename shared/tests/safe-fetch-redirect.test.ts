@@ -288,3 +288,102 @@ describe("safeFetch — redirect method/body downgrade (M25)", () => {
     expect(hopHeaders(1)["user-agent"]).toContain("all.haus");
   });
 });
+
+// =============================================================================
+// §8.14 — 304 is not a redirect.
+//
+// safeFetch treated the whole 3xx range as "redirect", so a 304 Not Modified —
+// the successful answer to the conditional GET feed-ingest's rss adapter makes,
+// and by definition Location-less — threw `Redirect 304 with no Location
+// header`. That error increments external_sources.error_count, which
+// deactivates the source at 10: a feed could be switched off for behaving well.
+// Measured on dev: simonwillison.net/atom/everything/ sat at error_count 5.
+//
+// The controls matter more than usual here, because the fix NARROWS a
+// condition: a test that only proves 304 comes back cannot tell you the
+// redirect handling still works. Each case below therefore pairs with a real
+// redirect status that must behave exactly as before.
+// =============================================================================
+
+function notModified(headers: Record<string, string> = {}) {
+  // A 304 carries validators and no body — this is what an origin actually
+  // sends, hence `body: null` (safeFetch's reader path handles bodyless).
+  return { status: 304, ok: false, headers: new Headers(headers), body: null };
+}
+
+describe("safeFetch — 304 Not Modified is not a redirect (§8.14)", () => {
+  it("returns the 304 to the caller instead of throwing", async () => {
+    undiciFetch.mockResolvedValueOnce(notModified({ etag: '"v2"' }));
+
+    const res = await safeFetch("https://feed.example/atom", {
+      headers: { "If-None-Match": '"v2"' },
+    });
+
+    expect(res.status).toBe(304);
+    expect(res.ok).toBe(false);
+    // The caller needs the validators to store for next time.
+    expect(res.headers.get("etag")).toBe('"v2"');
+    // And it must not have been followed anywhere: one hop, the original URL.
+    expect(undiciFetch).toHaveBeenCalledTimes(1);
+    expect(res.url).toBe("https://feed.example/atom");
+  });
+
+  it("CONTROL: a real redirect with no Location still throws", async () => {
+    undiciFetch.mockResolvedValueOnce({
+      status: 302,
+      ok: false,
+      headers: new Headers(),
+      body: null,
+    });
+
+    await expect(safeFetch("https://feed.example/atom")).rejects.toThrow(
+      /no Location header/,
+    );
+  });
+
+  it("CONTROL: a real redirect is still followed", async () => {
+    undiciFetch
+      .mockResolvedValueOnce(redirectTo(301, "https://feed.example/atom.xml"))
+      .mockResolvedValueOnce(okResponse("<feed/>"));
+
+    const res = await safeFetch("https://feed.example/atom");
+
+    expect(undiciFetch).toHaveBeenCalledTimes(2);
+    expect(hopUrl(1)).toBe("https://feed.example/atom.xml");
+    expect(res.text).toBe("<feed/>");
+  });
+
+  it("the other non-redirect 3xx codes come back as ordinary responses", async () => {
+    // 300 Multiple Choices, 305 and 306 are not redirect statuses either; a
+    // Location-less one used to throw the same misleading error.
+    for (const status of [300, 305, 306]) {
+      undiciFetch.mockReset();
+      undiciFetch.mockResolvedValueOnce({
+        status,
+        ok: false,
+        headers: new Headers(),
+        body: null,
+      });
+
+      const res = await safeFetch("https://feed.example/atom");
+      expect(res.status).toBe(status);
+      expect(res.ok).toBe(false);
+    }
+  });
+
+  // Mutation-checked against the pre-fix `status >= 300 && < 400`: the first and
+  // fourth cases above fail, the two redirect controls pass (as controls must),
+  // and THIS one passes either way — the manual branch already returned a 3xx
+  // to the caller, so it pins the manual path's unchanged behaviour rather than
+  // the fix. Said out loud because a test that cannot fail is not evidence.
+  it("CONTROL (non-discriminating): a 304 under redirect:manual is returned", async () => {
+    undiciFetch.mockResolvedValueOnce(notModified({ etag: '"v2"' }));
+
+    const res = await safeFetch("https://feed.example/atom", {
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(304);
+    expect(res.headers.get("etag")).toBe('"v2"');
+  });
+});

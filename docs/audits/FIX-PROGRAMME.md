@@ -23,6 +23,74 @@ starts.
 
 ## Progress
 
+- **2026-08-13, third sitting (§8.14: a prune that never pruned, and a feed punished for behaving well)** —
+  CONSOLIDATED-TODO §8.14, both faults. No migration, no flag, no money-path
+  change. shared 122/122, feed-ingest 288/288 **with a DB attached** (the
+  DB-backed files ran rather than skipping), root ESLint 0 errors, `tsc` clean.
+  Both fixes were driven against the running dev stack, not only compiled.
+
+  **Fault 1 — `relay_outbox_prune` ran a DELETE against a column that does not
+  exist.** `relay_outbox` has `created_at` / `last_attempt_at` / `sent_at`; the
+  prune filtered on `updated_at`. Every nightly run since at least 2026-08-03
+  raised 42703, burned its 25 graphile attempts and left a dead job row. Nothing
+  had ever been pruned, on any environment, since the task was written. Retention
+  is now `COALESCE(sent_at, created_at) < now() - INTERVAL '30 days'`: `sent_at`
+  is what "sent 30 days ago" means (`relay-publish.ts` writes
+  `status='sent', sent_at=now()` in one UPDATE), COALESCEd onto `created_at` so a
+  'sent' row whose stamp was never written — a hand-run recovery UPDATE that sets
+  the status and forgets the timestamp — ages out rather than being silently
+  exempt from every future prune forever. Only `sent` is pruned: `abandoned` is
+  what `relay_outbox_reconcile` alerts on, so pruning it would erase the evidence
+  the alert exists to raise. The SQL is exported as `RELAY_OUTBOX_PRUNE_SQL`.
+
+  **Fault 2 — `safeFetch` classified 304 Not Modified as a redirect, and the bug
+  punished feeds for behaving well.** The guard was `status >= 300 && < 400`. A
+  304 is the *successful* answer to a conditional GET and by definition carries
+  no `Location`, so `feed-ingest`'s `If-None-Match`/`If-Modified-Since` happy path
+  threw `Redirect 304 with no Location header` — and the `status === 304` branch
+  in `adapters/rss.ts` was dead code it could never reach. Now keyed on the Fetch
+  spec's redirect set (301/302/303/307/308); 300, 305 and 306 also stop throwing
+  and reach the caller as ordinary non-ok responses. **The item had half the
+  cost.** It recorded that the error increments `external_sources.error_count`
+  toward deactivation at 10 — true, `simonwillison.net/atom/everything/` was at 6
+  and climbing — but the same failure also drove the poll backoff, so the feed
+  had been pushed to `fetch_interval_seconds` 19200 against a healthy 300–3600.
+  A well-behaved feed was being polled 16× less often *because* it was
+  well-behaved, and no feed ever broke, which is why nothing showed. Driven end
+  to end: one real fetch after the fix took the source to `error_count` 0,
+  `last_error` NULL, interval 3600 — the previously-unreachable branch executing
+  for the first time.
+
+  **Tests.** `feed-ingest/src/tasks/relay-outbox-prune-integration.test.ts` is
+  DB-backed and had to be: the defect is "the SQL names a column the schema does
+  not have", which only Postgres can adjudicate — a mocked `pool.query` answers
+  from its fixture and passes identically against both versions. Four cases, SQL
+  imported not copied, negative control = the pre-fix DELETE verbatim (must still
+  raise 42703). **Mutation-proved three ways**: reverting to `updated_at` fails 3
+  of 4; keying on `created_at` fails 2 (caught by `recentlySentButAncient` —
+  created 200 days ago, sent 5 days ago, must survive); dropping the COALESCE
+  fails 2. Five cases added to `shared/tests/safe-fetch-redirect.test.ts`,
+  mutation-proved against the pre-fix range check: 2 fail, the two redirect
+  controls pass as controls must, and the `redirect:manual` case passes either
+  way — so it is **labelled non-discriminating in the test name**, because the
+  manual branch already returned a 3xx and it pins that unchanged behaviour
+  rather than the fix.
+
+  **Found underneath, not fixed — now §8.15.** Clearing the prune's exhausted
+  job rows (10 of them; the other 7 were mid-retry and now self-heal) surfaced
+  **1038** permanently-failed graphile jobs on dev — 651 `feed_ingest_nostr`,
+  384 `feed_ingest_activitypub`, the debris of 401'd Mastodon actors and relay
+  timeouts. None will ever retry, none is surfaced anywhere, and nothing reaps
+  them. The heartbeat alarm answers "is the worker running"; it cannot answer
+  "is the worker failing everything it picks up". That mechanism is why one job
+  stayed red for ten nights, and it is the more valuable half of §8.14.
+
+  **Deploy requirements** (neither urgent, neither automatic): clear the prune's
+  exhausted rows via `graphile_worker.complete_jobs(...)`, and check prod for a
+  feed deactivated by the 304 (`last_error LIKE 'Redirect 3%'`) — dev returned
+  zero rows after the fix; prod is unmeasured. Both commands are in the
+  CONSOLIDATED-TODO next-session block.
+
 - **2026-08-13, second sitting (§0q closes: one publication instead of two, and three things a browser found)** —
   CONSOLIDATED-TODO §0q.8a, 8g, 8h, 8l; 8k answered by the owner with no code.
   No migration, no flag, no money-path behaviour change. Gateway 594/594, web
