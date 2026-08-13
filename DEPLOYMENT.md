@@ -474,6 +474,55 @@ and whether the resume was `clamped`). Near zero means a genuinely half-open
 socket, which the silence watchdog now terminates after 90 seconds of no
 frames.
 
+## Troubleshooting: a scheduled job has failed for good
+
+Symptom: `/admin/overview` shows a crimson **N scheduled runs have failed for
+good** banner, and a **Jobs** panel below it. This is the third liveness
+question, and the one nothing used to ask: the worker can be running and every
+source fresh while a nightly task has failed every night for months.
+`relay_outbox_prune` was red for **84 consecutive nights** on prod that way, and
+the fault underneath it had silently switched off four members' feeds.
+
+The whole surface is built out of failures because it has to be: graphile
+**deletes** successful jobs, so "has this task ever succeeded?" is not a question
+that table can answer.
+
+**The banner names the task and shows its last error.** Read the error, then:
+
+```bash
+docker compose logs feed-ingest --since 24h | grep -i <task_name>
+```
+
+Fix the cause, deploy, then clear the rows with **Clear scheduled runs** in the
+Jobs panel. Nothing reaps them automatically — the rows are the evidence, and
+for the cron arm the clearing IS the acknowledgement, so the banner stays up
+until a human acts on it. It will not come back unless the task fails again.
+
+**The two arms mean different things, and only one is a fault.**
+
+- **Scheduled runs lost** — one dead row is one run of a singleton task that did
+  not happen and never will. Alarms at one.
+- **Per-source, dead** — one source among hundreds. Never alarms, and no action
+  is required: graphile frees the job key on permanent failure, so the source
+  keeps being polled normally and the row is a tombstone. **Clear per-source
+  debris** tidies them; it changes nothing about ingest.
+
+**"…of those, errored" is the number to read**, not the total. Most per-source
+rows carry no error at all: they were interrupted mid-job by a worker restart,
+and the poll enqueues with `maxAttempts: 1`, so they died having never failed.
+Dev carried 1026 of those against 3 real errors. They arrive in spikes whenever
+`feed-ingest` restarts, which is expected and costs that source one 60s tick.
+
+**"Scheduled, retrying" is not an alarm.** Those jobs still have attempts left,
+and their stored error can predate a fix that has not been retried yet (graphile
+backs off up to ~6 hours). Check it again after the next attempt before chasing
+it.
+
+**If the panel says "Unavailable"**, the job table could not be read — that is
+not a report of zero. It reads a private graphile table (the public view omits
+the payload the cron/per-source split needs), so a graphile-worker upgrade can
+move it. Check the gateway log for `dead-job query failed`.
+
 ## Troubleshooting: feature not appearing after a rebuild
 
 Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviour doesn't show.

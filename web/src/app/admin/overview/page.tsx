@@ -45,6 +45,29 @@ export default function AdminOverviewPage() {
     void load()
   }, [load])
 
+  // Clearing dead jobs is an operator act and never automatic (§8.15): the rows
+  // ARE the evidence, and a retention window would take the cron banner green a
+  // week after a quarterly task failed. For the cron arm the clear IS the
+  // acknowledgement, which is why that confirm names what is being thrown away.
+  async function reap(scope: 'cron' | 'per_entity') {
+    const prompt =
+      scope === 'cron'
+        ? 'Clear the failed scheduled runs? This deletes the only record that they failed — do it once you have read the error and fixed the cause, not to quieten the banner.'
+        : 'Clear the per-source debris? These are individual ingest jobs that will never run again; their sources are unaffected and keep being polled.'
+    if (!window.confirm(prompt)) return
+    setActing(`reap:${scope}`)
+    setActionResult(null)
+    try {
+      const r = await adminDashboard.reapDeadJobs(scope)
+      setActionResult(`Cleared ${r.cleared} dead job${r.cleared === 1 ? '' : 's'}.`)
+      await load()
+    } catch {
+      setActionResult('Failed to clear the dead jobs.')
+    } finally {
+      setActing(null)
+    }
+  }
+
   async function trigger(kind: 'settlements' | 'payouts') {
     const prompt =
       kind === 'settlements'
@@ -158,6 +181,55 @@ export default function AdminOverviewPage() {
                 <span className="font-mono">docker compose ps feed-ingest</span> and start it with{' '}
                 <span className="font-mono">docker compose up -d feed-ingest</span>.
               </p>
+            </div>
+          )}
+
+          {/* A scheduled run that did not happen. Beside the two banners above
+              and for their reason: the worker can be running, every source
+              fresh, every number here healthy, while a nightly task has failed
+              every night since May. `relay_outbox_prune` was red for 84
+              consecutive nights on prod and the fault underneath it had
+              silently switched off four members' feeds — nothing anywhere said
+              so, because a job that exhausts its attempts stops being retried
+              and simply sits there.
+
+              At one, not at a threshold: these are singleton tasks, so one dead
+              row is one run of one job that never ran. (The per-source arm is a
+              pile of hundreds and is deliberately quiet — see the Jobs panel.)
+
+              It stays up until an operator clears it, which is the whole design:
+              nothing reaps these, so the acknowledgement is a human act rather
+              than the passage of time. */}
+          {data.jobs.readable && data.jobs.cron.dead > 0 && (
+            <div className="bg-glasshouse-well px-4 py-3 mb-8">
+              <p className="label-ui text-crimson mb-1">
+                {data.jobs.cron.dead} scheduled{' '}
+                {data.jobs.cron.dead === 1 ? 'run has' : 'runs have'} failed for good
+              </p>
+              <p className="text-ui-xs text-black">
+                {data.jobs.cron.tasks
+                  .filter((t) => t.failed + t.abandoned > 0)
+                  .map((t) => t.task)
+                  .join(', ')}
+                {' — '}
+                {data.jobs.cron.failed > 0 && data.jobs.cron.abandoned > 0
+                  ? `${data.jobs.cron.failed} failed, ${data.jobs.cron.abandoned} abandoned mid-run. `
+                  : data.jobs.cron.abandoned > 0
+                    ? `abandoned mid-run with no attempts left, so ${data.jobs.cron.dead === 1 ? 'it' : 'they'} died without erroring. `
+                    : `out of attempts, so nothing will retry ${data.jobs.cron.dead === 1 ? 'it' : 'them'}. `}
+                {data.jobs.cron.dead === 1
+                  ? 'That is one scheduled run that did not happen and never will. '
+                  : 'Each of these is one scheduled run that did not happen and never will. '}
+                Check{' '}
+                <span className="font-mono">docker compose logs feed-ingest</span>, fix the cause,
+                then clear them in the Jobs panel below — clearing is the acknowledgement, so the
+                banner stays up until you do.
+              </p>
+              {data.jobs.cron.tasks.find((t) => t.lastError) && (
+                <p className="text-ui-xs text-grey-600 mt-2 font-mono break-words">
+                  {data.jobs.cron.tasks.find((t) => t.lastError)!.lastError}
+                </p>
+              )}
             </div>
           )}
 
@@ -452,6 +524,128 @@ export default function AdminOverviewPage() {
                 />
               ))}
             </StatGrid>
+          </StatSection>
+
+          <div className="slab-rule-4 mb-8" />
+          {/* Dead jobs. Two arms, and the difference between them is the whole
+              design — the same split as Worker vs protocols above, for the same
+              reason. A SCHEDULED task's dead row means a run did not happen and
+              alarms at one; a PER-SOURCE row is one source among hundreds, so a
+              threshold on it would be red from the first day and get learned
+              past, which is the failure the alarm would exist to avoid.
+
+              Successful jobs are deleted, so "has this ever worked?" is not a
+              question this table can answer. Failures are all there is to see. */}
+          <StatSection
+            label="Jobs"
+            helper={
+              data.jobs.readable
+                ? `Background jobs that will never run again. Scheduled runs alarm at one — each is a run that did not happen. Per-source jobs are debris and never alarm; their sources keep being polled. Arrivals are counted over ${data.jobs.windowHours}h, because the pile is cumulative and the rate is what means anything.`
+                : undefined
+            }
+          >
+            {!data.jobs.readable ? (
+              // Not zero. This panel reads past a supported graphile API, so it
+              // can fail on its own terms — and "no dead jobs" would be this
+              // feature committing precisely the silence it was built to end.
+              <div className="bg-glasshouse-well p-4">
+                <p className="label-ui text-grey-600 mb-1">Unavailable</p>
+                <p className="text-ui-xs text-black">
+                  The job queue could not be read, so this is not a report of zero dead jobs — it is
+                  no report at all. Most likely graphile-worker moved its tables in an upgrade;
+                  check the gateway log for{' '}
+                  <span className="font-mono">dead-job query failed</span>.
+                </p>
+              </div>
+            ) : (
+              <>
+                <StatGrid>
+                  <StatCard
+                    label="Scheduled runs lost"
+                    value={data.jobs.cron.dead}
+                    detail={
+                      data.jobs.cron.dead === 0
+                        ? 'nothing outstanding'
+                        : `${data.jobs.cron.recent} in the last ${data.jobs.windowHours}h`
+                    }
+                    warn={data.jobs.cron.dead > 0}
+                  />
+                  <StatCard
+                    label="Scheduled, retrying"
+                    value={data.jobs.cron.retrying}
+                    // Never an alarm: a retrying row's error can predate a fix
+                    // that has not been retried yet, and one transient failure
+                    // of a once-a-minute task would flash red for seconds.
+                    detail={
+                      data.jobs.cron.retrying === 0
+                        ? 'none failing'
+                        : 'failing now, attempts left — may be a fixed fault not yet retried'
+                    }
+                  />
+                  <StatCard
+                    label="Per-source, dead"
+                    value={data.jobs.perEntity.dead}
+                    detail={`${data.jobs.perEntity.recent} in the last ${data.jobs.windowHours}h`}
+                  />
+                  <StatCard
+                    label="…of those, errored"
+                    value={data.jobs.perEntity.failed}
+                    // The distinction the pile hides: on dev only 25 of 1038
+                    // rows had errored at all. The rest were interrupted by a
+                    // worker restart with no attempts left — dead having never
+                    // failed. Reporting them as failures would state a fault
+                    // that is not there.
+                    detail={
+                      data.jobs.perEntity.abandoned > 0
+                        ? `${data.jobs.perEntity.abandoned} abandoned by worker restarts`
+                        : 'none abandoned'
+                    }
+                  />
+                </StatGrid>
+
+                {(data.jobs.cron.tasks.length > 0 || data.jobs.perEntity.tasks.length > 0) && (
+                  <div className="mt-4 space-y-2">
+                    {[...data.jobs.cron.tasks, ...data.jobs.perEntity.tasks].map((t) => (
+                      <div key={t.task} className="bg-glasshouse-well p-4">
+                        <p className="label-ui text-grey-600 mb-1">{t.task}</p>
+                        <p className="text-ui-xs text-black">
+                          {[
+                            t.failed > 0 && `${t.failed} failed`,
+                            t.abandoned > 0 && `${t.abandoned} abandoned`,
+                            t.retrying > 0 && `${t.retrying} retrying`,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                          {t.lastDeadAt && ` · last died ${timeAgo(t.lastDeadAt)}`}
+                        </p>
+                        {t.lastError && (
+                          <p className="text-ui-xs text-grey-600 mt-1 font-mono break-words">
+                            {t.lastError}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3 mt-4">
+                  <button
+                    className="btn-soft"
+                    disabled={acting !== null || data.jobs.cron.dead === 0}
+                    onClick={() => void reap('cron')}
+                  >
+                    {acting === 'reap:cron' ? 'Clearing…' : 'Clear scheduled runs'}
+                  </button>
+                  <button
+                    className="btn-soft"
+                    disabled={acting !== null || data.jobs.perEntity.dead === 0}
+                    onClick={() => void reap('per_entity')}
+                  >
+                    {acting === 'reap:per_entity' ? 'Clearing…' : 'Clear per-source debris'}
+                  </button>
+                </div>
+              </>
+            )}
           </StatSection>
 
           <div className="slab-rule-4 mb-8" />

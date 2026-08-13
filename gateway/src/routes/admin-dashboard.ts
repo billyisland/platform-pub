@@ -29,6 +29,7 @@ import { sendWaitlistInviteEmail } from '@platform-pub/shared/lib/email.js'
 // POST /admin/dashboard/seed-formula   — designate that (FEED-FORMULAS D6/D11)
 // POST /admin/dashboard/waitlist/admit — admit one waitlister (creates their
 //                                        account, sends the invitation)
+// POST /admin/dashboard/dead-jobs/reap — clear one arm of the dead-job pile
 // POST /admin/dashboard/trigger-settlements — proxy to payment-service
 // POST /admin/dashboard/trigger-payouts     — proxy to payment-service
 //
@@ -54,6 +55,10 @@ const STATE_KEYS = new Set(['payouts_halted', 'jetstream_healthy', 'feed_ingest_
 // case it exists for (the row missing).
 export const INGEST_HEARTBEAT_ALERT_SECONDS_FALLBACK = 600
 
+// The in-code twin of config-defaults.sql's dead_job_arrival_window_hours,
+// parity-tested for the same reason as the one above.
+export const DEAD_JOB_ARRIVAL_WINDOW_HOURS_FALLBACK = 24
+
 // The regulatory tax thresholds. Canonical values live in
 // shared/src/db/config-defaults.sql; these fallbacks are tripwired against it
 // by gateway/tests/admin-dashboard.test.ts (the §0h.7 parity pattern).
@@ -68,6 +73,128 @@ export const REGULATORY_DIAL_DEFAULTS = {
 type RegulatoryDial = keyof typeof REGULATORY_DIAL_DEFAULTS
 
 const NUMERIC_RE = /^-?\d+(\.\d+)?$/
+
+// -----------------------------------------------------------------------------
+// Dead background jobs (CONSOLIDATED-TODO §8.15).
+//
+// The heartbeat above answers *is the worker running*. It cannot answer *is the
+// worker failing everything it picks up*: a job that exhausts its attempts stops
+// being retried and sits in graphile_worker's table forever, mentioning itself
+// to nobody. That is how `relay_outbox_prune` was red for 84 consecutive nights
+// on prod, with the fault underneath it silently deactivating four members'
+// feeds.
+//
+// THE CONSTRAINT THAT SHAPES ALL OF THIS: successful jobs are DELETED. "Has this
+// task ever succeeded?" is not answerable here. Failures are all you can see.
+//
+// WHY THE PRIVATE TABLE. The public `graphile_worker.jobs` view omits `payload`,
+// and the payload is where the only non-drifting cron discriminator lives (see
+// below). Reading `_private_jobs` is reaching past a supported API, so the
+// caller catches its own failure and the surface renders "unavailable" rather
+// than a reassuring zero — and a graphile upgrade that renames it costs this
+// panel, never the money page it sits on.
+//
+// THE DISCRIMINATOR IS STRUCTURAL, NOT A LIST. graphile stamps `_cron` into the
+// payload of every job it queues from the crontab (`makeJobForItem`,
+// graphile-worker/dist/cron.js) — verified against live rows on the dev stack,
+// not inferred from the source. So the two arms need no hand-maintained task
+// list that can drift out of step with feed-ingest's crontab, and it stays
+// correct for the `?id=`-aliased entries (trust_epoch_*) that a join against
+// known_crontabs would silently misfile.
+//
+//   CRON/SINGLETON — one scheduled run, no payload. A dead row means THAT RUN
+//   DID NOT HAPPEN. Always worth alarming, at count >= 1.
+//
+//   PER-ENTITY — carries a sourceId; one dead row is one source among hundreds.
+//   Informational only. A threshold on the total is red from day one and gets
+//   learned past, which is the exact failure the alarm would exist to avoid.
+//
+// FAILED vs ABANDONED, which the item did not have and which changes what the
+// numbers mean. Only 25 of dev's 1038 dead rows carry an error at all. The rest
+// have `last_error IS NULL`: the worker was interrupted mid-job (a restart, a
+// SIGTERM), attempts had already been incremented, and the poll's per-source
+// enqueue sets `maxAttempts: 1` — so there is no second chance and the job is
+// dead having never actually failed. They cluster on restart days (420 on 19
+// Jul, 281 on 10 Aug), not evenly. Reporting those 1013 as failures would state
+// a fault that isn't there, on the one surface built to be believed, so the two
+// are counted apart. Both still mean "this will never run", which is why both
+// feed the cron alarm.
+//
+// Neither kind blocks anything: graphile frees the job key on permanent failure
+// (every dead row here has `key IS NULL`, checked on dev), so the next enqueue
+// for that source inserts cleanly and an active source keeps being polled.
+//
+// RETRYING is reported beside them because it is the same fault ARRIVING. Those
+// seven `relay_outbox_prune` rows on dev sat at attempts 10-24 of 25 while the
+// briefed predicate (attempts >= max_attempts) rendered them as nothing — a
+// cron task failing all day, reading as a clean bill of health on the page that
+// exists to end exactly that. It is informational and never the alarm: a
+// retrying row's `last_error` can predate a fix that has not been retried yet
+// (which is precisely what those seven are), and one transient failure of a
+// once-a-minute task would otherwise flash red for seconds at a time.
+//
+// $1 = the arrival window in hours. The pile is cumulative and grows by
+// construction; the RATE is the signal.
+// -----------------------------------------------------------------------------
+export const DEAD_JOBS_SQL = `
+  WITH j AS (
+    SELECT t.identifier AS task,
+           (job.payload -> '_cron') IS NOT NULL AS is_cron,
+           job.attempts >= job.max_attempts AND job.locked_at IS NULL AS is_dead,
+           job.last_error,
+           job.updated_at
+      FROM graphile_worker._private_jobs job
+      JOIN graphile_worker._private_tasks t ON t.id = job.task_id
+     -- A row is interesting if it is dead, or if it has failed at least once and
+     -- still has attempts left. A locked row on its final attempt is neither: it
+     -- may yet succeed, and counting it as dead would report a running job as a
+     -- permanent failure once a minute, forever.
+     WHERE (job.attempts >= job.max_attempts AND job.locked_at IS NULL)
+        OR job.last_error IS NOT NULL
+  )
+  SELECT task,
+         is_cron,
+         COUNT(*) FILTER (WHERE is_dead AND last_error IS NOT NULL)::int AS failed,
+         COUNT(*) FILTER (WHERE is_dead AND last_error IS NULL)::int     AS abandoned,
+         COUNT(*) FILTER (WHERE NOT is_dead)::int                        AS retrying,
+         COUNT(*) FILTER (WHERE is_dead
+                            AND updated_at > now() - make_interval(hours => $1::int))::int
+           AS recent,
+         MAX(updated_at) FILTER (WHERE is_dead) AS last_dead_at,
+         (array_agg(last_error ORDER BY updated_at DESC)
+            FILTER (WHERE last_error IS NOT NULL))[1] AS last_error
+    FROM j
+   GROUP BY task, is_cron
+   ORDER BY is_cron DESC, failed DESC, abandoned DESC, task`
+
+type DeadJobRow = {
+  task: string
+  is_cron: boolean
+  failed: number
+  abandoned: number
+  retrying: number
+  recent: number
+  last_dead_at: Date | null
+  last_error: string | null
+}
+
+/**
+ * The arrival window, in hours, over which new deaths are counted.
+ *
+ * A dial because the pile is cumulative and the useful question is how fast it
+ * is growing, and the answer depends on cadence and on how often the operator
+ * looks — 1038 rows accrued since July says nothing, nine of them arriving today
+ * says something. Junk or a non-positive value falls back rather than becoming a
+ * window of NaN (which compares false against everything, so nothing is ever
+ * recent) or of zero (which reports every arrival as old news).
+ */
+async function deadJobWindowHoursDial(): Promise<number> {
+  const { rows } = await pool.query<{ value: string }>(
+    `SELECT value FROM platform_config WHERE key = 'dead_job_arrival_window_hours'`
+  )
+  const v = Number(rows[0]?.value)
+  return Number.isFinite(v) && v > 0 ? v : DEAD_JOB_ARRIVAL_WINDOW_HOURS_FALLBACK
+}
 
 // Designate the default-seed formula (FEED-FORMULAS-ADR D6/D11): either name a
 // formula that already exists, or cut one of the admin's own feeds into a new
@@ -95,6 +222,12 @@ const PatchConfigSchema = z.object({
     .min(1)
     .max(50),
 })
+
+// Which arm of the dead-job surface to clear. Two values, never "all": the two
+// arms mean categorically different things (see DEAD_JOBS_SQL) and reaping a
+// cron row destroys the evidence of a scheduled run that did not happen, so the
+// operator says which pile they mean.
+const ReapDeadJobsSchema = z.object({ scope: z.enum(['cron', 'per_entity']) }).strict()
 
 // UK financial (tax) year runs 6 April → 5 April.
 export function ukFinancialYear(now: Date): { start: string; end: string; daysRemaining: number } {
@@ -170,7 +303,9 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
       const config = await loadConfig()
       const nearThresholdPence = Math.floor(config.tabSettlementThresholdPence * 0.8)
 
-      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts, holdingDial, haltedAccounts, ingestBeat, ingestProtocols] =
+      const deadJobWindowHours = await deadJobWindowHoursDial()
+
+      const [tabs, readStates, settlements, payouts, outstanding, halt, revenue, custody, counts, holdingDial, haltedAccounts, ingestBeat, ingestProtocols, deadJobs] =
         await Promise.all([
           pool.query(
             `SELECT
@@ -280,6 +415,17 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
               GROUP BY protocol
               ORDER BY protocol`
           ),
+          // Dead background jobs (§8.15). Caught rather than allowed to reject:
+          // this is the one query in the round trip that reads past a supported
+          // API (DEAD_JOBS_SQL's header), and a graphile upgrade that renamed
+          // the private table must cost this panel, not the money dashboard it
+          // is rendered beside. `null` becomes an explicit "unavailable" below —
+          // never a zero, which is the reassuring reading of an absence this
+          // whole item exists to end.
+          pool.query<DeadJobRow>(DEAD_JOBS_SQL, [deadJobWindowHours]).catch((err) => {
+            req.log.warn({ err }, 'dead-job query failed — graphile_worker schema may have moved')
+            return null
+          }),
         ])
 
       const stateRow = (state: string) => {
@@ -444,6 +590,52 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
               activeSources: num(p.active_sources),
               lastFetchedAt: p.last_fetched_at ?? null,
             })),
+          }
+        })(),
+        // Dead background jobs (§8.15). The third arm of the same question the
+        // two above ask — the worker can be running, and every source fresh,
+        // while a scheduled task has failed every night for three months.
+        // DEAD_JOBS_SQL's header carries the reasoning; this only shapes it.
+        //
+        // `readable: false` is a THIRD state beside cron and per-entity, not a
+        // zero: the query is the one here that can fail on its own terms, and
+        // an unreadable table rendering as "no dead jobs" would be this
+        // feature's own failure mode, committed by the feature itself.
+        jobs: (() => {
+          if (!deadJobs) {
+            return { readable: false as const, windowHours: deadJobWindowHours }
+          }
+          const shape = (row: DeadJobRow) => ({
+            task: row.task,
+            failed: num(row.failed),
+            abandoned: num(row.abandoned),
+            retrying: num(row.retrying),
+            recent: num(row.recent),
+            lastDeadAt: row.last_dead_at ? new Date(row.last_dead_at).toISOString() : null,
+            // Truncated for the panel; the whole error is a `docker compose logs`
+            // away and a 4KB stack trace in a JSON payload helps nobody.
+            lastError: row.last_error ? row.last_error.slice(0, 300) : null,
+          })
+          const arm = (rows: DeadJobRow[]) => {
+            const tasks = rows.map(shape)
+            const sum = (k: 'failed' | 'abandoned' | 'retrying' | 'recent') =>
+              tasks.reduce((n, t) => n + t[k], 0)
+            return {
+              tasks: tasks.filter((t) => t.failed + t.abandoned + t.retrying > 0),
+              failed: sum('failed'),
+              abandoned: sum('abandoned'),
+              retrying: sum('retrying'),
+              recent: sum('recent'),
+              // What the cron banner alarms on: a dead run is a run that did not
+              // happen, whether it errored or was abandoned mid-flight.
+              dead: sum('failed') + sum('abandoned'),
+            }
+          }
+          return {
+            readable: true as const,
+            windowHours: deadJobWindowHours,
+            cron: arm(deadJobs.rows.filter((r) => r.is_cron)),
+            perEntity: arm(deadJobs.rows.filter((r) => !r.is_cron)),
           }
         })(),
         counts: {
@@ -1441,6 +1633,57 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
     } catch (err) {
       req.log.error({ err }, 'admin dashboard seed-formula designation failed')
       return reply.status(500).send({ error: 'Failed to designate the seed formula' })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // POST /admin/dashboard/dead-jobs/reap — clear one arm of the dead pile
+  //
+  // Nothing reaps these automatically, on purpose: clearing a row destroys the
+  // evidence the surface exists to show, and a retention window would take the
+  // cron banner green a week after a QUARTERLY task failed — with the fault
+  // unfixed and the next run three months out. That is the reassuring-absence
+  // failure §8.15 was opened to end, rebuilt inside its own remedy.
+  //
+  // So clearing is an operator act, and for the cron arm it IS the
+  // acknowledgement: the banner stays up until a human has seen it. Note the
+  // asymmetry that makes this easy to get wrong — reaping a cron row hides a
+  // fault, reaping a per-entity one tidies debris — which is why `scope` is
+  // required and there is no "clear everything".
+  //
+  // `complete_jobs` is graphile's supported API and silently skips locked rows,
+  // so the reply reports what was actually cleared rather than what was asked
+  // for; a row mid-retry is left alone to finish, and is caught next time.
+  // ---------------------------------------------------------------------------
+  app.post('/admin/dashboard/dead-jobs/reap', { preHandler: requireAdmin }, async (req, reply) => {
+    const parsed = ReapDeadJobsSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send(zodValidationError(parsed.error))
+    }
+    const adminId = (req as any).session!.sub as string
+    const isCron = parsed.data.scope === 'cron'
+
+    try {
+      const { rows } = await pool.query<{ cleared: string }>(
+        `WITH dead AS (
+           SELECT job.id
+             FROM graphile_worker._private_jobs job
+            WHERE job.attempts >= job.max_attempts
+              AND job.locked_at IS NULL
+              AND ((job.payload -> '_cron') IS NOT NULL) = $1::boolean
+         )
+         SELECT COUNT(*)::text AS cleared
+           FROM graphile_worker.complete_jobs(ARRAY(SELECT id FROM dead))`,
+        [isCron]
+      )
+      const cleared = num(rows[0]?.cleared)
+      // Logged because for the cron arm this is the acknowledgement itself —
+      // the one record that a human saw the fault before the count went to nil.
+      logger.info({ adminId, scope: parsed.data.scope, cleared }, 'owner dashboard: dead jobs reaped')
+      return reply.send({ cleared })
+    } catch (err) {
+      req.log.error({ err }, 'dead-job reap failed')
+      return reply.status(500).send({ error: 'Failed to clear the dead jobs' })
     }
   })
 

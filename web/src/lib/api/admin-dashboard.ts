@@ -5,6 +5,26 @@ import { request } from './client'
 // Types mirror gateway/src/routes/admin-dashboard.ts response shapes.
 // =============================================================================
 
+/** One arm of the dead-job surface — see `AdminOverview.jobs`. */
+export interface AdminDeadJobArm {
+  /** Dead and errored + dead and abandoned: everything that will not run. */
+  dead: number
+  failed: number
+  abandoned: number
+  retrying: number
+  /** Deaths inside `windowHours` — the pile is cumulative, the rate is signal. */
+  recent: number
+  tasks: Array<{
+    task: string
+    failed: number
+    abandoned: number
+    retrying: number
+    recent: number
+    lastDeadAt: string | null
+    lastError: string | null
+  }>
+}
+
 export interface AdminOverview {
   accrual: {
     activeTabCount: number
@@ -105,6 +125,34 @@ export interface AdminOverview {
       lastFetchedAt: string | null
     }>
   }
+  /**
+   * Background jobs that will never run again (§8.15) — the third liveness
+   * question, and the one nothing answered: the worker can be running and every
+   * source fresh while a scheduled task has failed every night for months.
+   * `relay_outbox_prune` was red for 84 consecutive nights on prod that way.
+   *
+   * `readable: false` is a THIRD state, never a zero — this is the one query on
+   * the overview that reads past a supported graphile API, and an unreadable
+   * table rendering as "no dead jobs" would be this feature's own failure mode.
+   *
+   * `cron` ALARMS at one: a dead scheduled run is a run that did not happen.
+   * `perEntity` (one source among hundreds) never alarms — a threshold on a
+   * cumulative pile is red from day one and gets learned past.
+   *
+   * Within each arm, `failed` ran and threw; `abandoned` was interrupted
+   * mid-flight and had no attempts left, so it died having never failed (most
+   * of the pile, arriving in spikes on worker restarts). Both mean "will not
+   * run". `retrying` is the same fault ARRIVING and is informational — its
+   * error can predate a fix that has not been retried yet.
+   */
+  jobs:
+    | { readable: false; windowHours: number }
+    | {
+        readable: true
+        windowHours: number
+        cron: AdminDeadJobArm
+        perEntity: AdminDeadJobArm
+      }
   counts: {
     totalAccounts: number
     activeAccounts: number
@@ -372,6 +420,15 @@ export const adminDashboard = {
     request<AdminWaitlistAdmitResult>('/admin/dashboard/waitlist/admit', {
       method: 'POST',
       body: JSON.stringify({ email }),
+    }),
+  // Nothing reaps dead jobs automatically (§8.15): clearing a row destroys the
+  // evidence the surface exists to show. `scope` is required and there is no
+  // "clear everything" — reaping a cron row hides a fault, reaping a per-entity
+  // one tidies debris.
+  reapDeadJobs: (scope: 'cron' | 'per_entity') =>
+    request<{ cleared: number }>('/admin/dashboard/dead-jobs/reap', {
+      method: 'POST',
+      body: JSON.stringify({ scope }),
     }),
   triggerSettlements: () =>
     request<{ settlementTriggered: number }>('/admin/dashboard/trigger-settlements', {

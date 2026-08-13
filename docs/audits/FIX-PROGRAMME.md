@@ -23,6 +23,88 @@ starts.
 
 ## Progress
 
+- **2026-08-13, fifth sitting (§8.15: a dead job now says so)** — CONSOLIDATED-TODO
+  §8.15, the mechanism behind the whole §8.14/§8.16 cluster rather than a hygiene
+  item. No migration, no flag, no money path. gateway 608/608 with a DB attached,
+  `tsc` clean, `next build` clean, root ESLint 0 errors, drift guard green,
+  driven in a browser end to end.
+
+  **The gap:** the heartbeat alarm answers *is the worker running*. It cannot
+  answer *is the worker failing everything it picks up* — a job that exhausts its
+  attempts stops being retried and sits in graphile's table forever, telling
+  nobody. `relay_outbox_prune` was red for **84 consecutive nights on prod** that
+  way, with the fault underneath it silently switching off four members' feeds.
+
+  **The constraint that shapes the design: successful jobs are DELETED.** "Has
+  this task ever succeeded?" is not answerable from that table. Failures are all
+  there is to see, so the whole surface is built out of them.
+
+  **The discriminator is structural, not a list.** graphile stamps `_cron` into
+  the payload of everything it queues from the crontab, so cron-vs-per-entity
+  needs no hand-maintained task list that drifts, and it stays right for the
+  `?id=`-aliased entries (`trust_epoch_*`) a `known_crontabs` join would misfile.
+  Verified by catching a live cron job mid-flight on dev, not inferred from the
+  library source. Cost: `payload` is absent from the public `jobs` view, so the
+  query reads `_private_jobs` — hence the caller catches its own failure and the
+  panel renders an explicit **unavailable** rather than a reassuring zero.
+
+  **Three things driving it turned up that the written brief did not have**, each
+  of which would have shipped a surface that misreports:
+
+  1. **The briefed predicate (`attempts >= max_attempts`) renders a task failing
+     right now as nothing.** Seven `relay_outbox_prune` rows sat at attempts
+     10–24 of 25 — a cron task that had failed all day — and would have been
+     invisible until they exhausted. `retrying` is now reported beside the dead
+     count, informational (its `last_error` can predate a fix not yet retried,
+     which is exactly what those seven were) and never the alarm.
+  2. **1013 of dev's 1038 "permanently failed" jobs carry no error at all.** They
+     were interrupted mid-job by a worker restart, attempts already incremented,
+     and the poll's per-source enqueue sets `maxAttempts: 1` — so they died
+     having never failed, and they arrive in spikes on restart days (420 on 19
+     Jul, 281 on 10 Aug), not at the steady ~22/day the item assumed. Counting
+     them as failures would state a fault that is not there on the one page built
+     to be believed, so **failed** and **abandoned** are counted apart; both
+     still mean "will not run", so both feed the cron alarm.
+  3. **They block nothing** — graphile frees the job key on permanent failure
+     (every dead row has `key IS NULL`), so an active source keeps being polled.
+     That is what makes the per-entity arm genuinely informational, and it is now
+     a checked fact rather than the item's guess.
+
+  **Reaping: an operator button, never automatic** (the item's one open call).
+  Clearing destroys the evidence the surface exists to show, so for the cron arm
+  the clear IS the acknowledgement and the banner stays up until a human acts. A
+  retention window was rejected on a specific failure: it takes the banner green
+  a week after a *quarterly* task failed, fault unfixed and next run three months
+  out — §8.15's own bug class rebuilt inside its remedy. `scope` is required and
+  there is no "clear everything", because reaping a cron row hides a fault while
+  reaping a per-entity one tidies debris.
+
+  **One dial** (`dead_job_arrival_window_hours`, 24) with its in-code twin and a
+  third entry in the fallback-parity suite. It is a window, not a threshold: the
+  pile is cumulative and grows by construction, so the arrival rate is the signal
+  — and the cron arm alarms at one regardless, which is why no threshold exists
+  to be tuned wrong.
+
+  **Tests: 13, split by what can actually settle each claim.** The query runs
+  against real Postgres through its own exported SQL in a rolled-back transaction
+  (9 tests) — a `json` probe, four aggregate FILTERs, `make_interval` recency and
+  a three-way attempts/locked_at/last_error split are things only a database can
+  evaluate, and a mock would hand back whatever the author already believed. The
+  route's shaping and the unreadable-table third state run against the mock (4),
+  since that path needs the query to *fail*. **Eight mutations, each caught:**
+  dropping the `locked_at` guard, discriminating on task name, collapsing
+  abandoned into failed, letting `last_dead_at` see retrying rows, rendering
+  unreadable as zero, dropping `abandoned` from `dead`, letting the rejection
+  take down the money page, and ignoring the dial.
+
+  **Driven in the browser**, which is where the copy bug was ("nothing will retry
+  *them*" for a single run) and where the panel first paid for itself: on its very
+  first render it reported the seven retrying prune rows, 1026 restart-abandoned
+  jobs against 3 real errors, and a three-day-old `feed_ingest_rss` failure whose
+  stored `sourceId` has ` INSERT 0 1` pasted onto the end of it. The reap was
+  driven end to end — confirm, POST, `complete_jobs`, count to zero, banner gone,
+  button disabled — and the per-source pile verified untouched.
+
 - **2026-08-13, fourth sitting (§8.16: hold no items, send no validators)** —
   CONSOLIDATED-TODO §8.16, found while verifying §8.14 on prod and fixed the
   same day. No migration, no flag, no money path. feed-ingest 297/297 with a DB

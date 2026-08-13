@@ -98,3 +98,20 @@ describe("ingest-heartbeat alert threshold fallback vs config-defaults.sql", () 
     ).toEqual([]);
   });
 });
+
+describe("dead-job arrival window fallback vs config-defaults.sql", () => {
+  it("the in-code fallback matches the seeded default", async () => {
+    // Third copy of the same rule (§8.15). This one governs a window rather than
+    // an alarm, so a drift is quieter still: nothing errors, nothing goes red,
+    // the recent-arrivals figure beside a pile of a thousand rows is simply
+    // measured over a period nobody chose.
+    const { DEAD_JOB_ARRIVAL_WINDOW_HOURS_FALLBACK } = await import(
+      "../src/routes/admin-dashboard.js"
+    );
+    expect(
+      diffAgainstDefaults({
+        dead_job_arrival_window_hours: DEAD_JOB_ARRIVAL_WINDOW_HOURS_FALLBACK,
+      }),
+    ).toEqual([]);
+  });
+});

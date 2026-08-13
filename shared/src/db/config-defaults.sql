@@ -360,6 +360,35 @@ INSERT INTO platform_config (key, value, description) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Dead background jobs — the arrival window (CONSOLIDATED-TODO §8.15).
+--
+-- The heartbeat above says whether the worker is RUNNING. It cannot say whether
+-- the worker is failing everything it picks up: a job that exhausts its attempts
+-- stops being retried and sits in graphile_worker's table forever, telling
+-- nobody. `relay_outbox_prune` was red for 84 consecutive nights on prod that
+-- way, and the fault underneath it had silently switched off four members'
+-- feeds.
+--
+-- This is NOT an alarm threshold, and the distinction is the whole design. The
+-- two arms of that surface are discriminated structurally, not by a number: a
+-- CRON task's dead row means a scheduled run did not happen and alarms at one,
+-- while a PER-ENTITY row (one source among hundreds) is informational, because a
+-- threshold on a cumulative pile is red from the first day and gets learned past
+-- — the exact failure the alarm exists to avoid.
+--
+-- What this dial sets is the window over which NEW deaths are counted, because
+-- the pile is cumulative and the rate is the signal: dev's 1038 rows accrued
+-- since July say nothing, the nine that arrived today say something. A dial
+-- because the right window depends on cadence and on how often an operator
+-- looks — 24h suits a daily glance; widen it if the page is checked weekly, and
+-- note that most of that pile is jobs abandoned by worker restarts rather than
+-- jobs that failed, which arrive in spikes and not at a steady rate.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('dead_job_arrival_window_hours',   '24',   'Window (hours) over which newly-dead graphile jobs are counted as recent arrivals on /admin/overview. Not a threshold: the cron arm alarms at one dead row regardless, and the per-entity arm never alarms. Read by gateway admin-dashboard.ts.')
+ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Jetstream replay cap (dev diagnosis 2026-08-12).
 --
 -- A reconnect resumes from the OLDEST cursor across active atproto sources so
