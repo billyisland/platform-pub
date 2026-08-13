@@ -40,6 +40,74 @@ export function nextRssInterval(
   return Math.min(bounds.max, Math.max(bounds.min, Math.round(next)));
 }
 
+export interface ConditionalHeaders {
+  etag: string | null;
+  lastModified: string | null;
+  /** True when a stored validator was deliberately dropped (§8.16). */
+  suppressed: boolean;
+}
+
+/**
+ * The conditional-GET validators to send for this source — §8.16.
+ *
+ * **Hold no items, send no validators.** A validator is a claim about the
+ * ORIGIN's state ("has this changed since you last fetched it?"), and it is
+ * only safe to act on while our half of that sentence still holds: that we
+ * still HAVE what we fetched. `external_items_prune` deletes on
+ * `external_items.created_at` — our insert date, not the item's publish date —
+ * so a live but infrequently updated feed, whose whole current window predates
+ * the retention period, loses its rows. The stored validator then makes every
+ * later fetch a *correct* 304, and the source stays empty forever while
+ * reporting perfect health: subscribed, active, `error_count` 0, `last_error`
+ * NULL. Every component behaves properly and the member's feed is silent.
+ *
+ * Proven against the live origin on 2026-08-13 (`pfrazee.com/feed.xml`, empty
+ * since ~23 July): the stored ETag as `If-None-Match` returned 304 while the
+ * stored date as `If-Modified-Since` returned 200 — the origin's Last-Modified
+ * had moved while its ETag had not, a static rebuild that touched the file
+ * without changing the content. The loop is therefore **ETag-pinned**, which is
+ * why this drops BOTH validators: reasoning only about dates would not have
+ * closed it.
+ *
+ * Dropping them makes the next fetch unconditional, the window comes back, and
+ * conditional GETs resume by themselves on the fetch after that — self-healing,
+ * no schema change, and free for a healthy source, which always holds items and
+ * so never takes this branch.
+ */
+export function conditionalHeadersFor(
+  cursor: string | null,
+  holdsItems: boolean,
+): ConditionalHeaders {
+  let etag: string | null = null;
+  let lastModified: string | null = null;
+  if (cursor) {
+    try {
+      const parsed = JSON.parse(cursor);
+      etag = parsed.etag ?? null;
+      lastModified = parsed.lastModified ?? null;
+    } catch {
+      // Legacy or corrupt cursor — ignore
+    }
+  }
+  if (!holdsItems && (etag || lastModified)) {
+    return { etag: null, lastModified: null, suppressed: true };
+  }
+  return { etag, lastModified, suppressed: false };
+}
+
+/**
+ * The source load, exported so its `holds_items` probe can be run against a
+ * real Postgres rather than asserted against a mock that was told the answer.
+ */
+export const RSS_SOURCE_LOAD_SQL = `
+  SELECT es.id, es.source_uri, es.cursor, es.error_count, es.display_name,
+         es.fetch_interval_seconds,
+         EXISTS (SELECT 1 FROM external_items ei WHERE ei.source_id = es.id)
+           AS holds_items
+    FROM external_sources es
+   WHERE es.id = $1
+`;
+
 export const feedIngestRss: Task = async (payload, _helpers) => {
   const { sourceId } = payload as { sourceId: string };
 
@@ -53,8 +121,12 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
     error_count: number;
     display_name: string | null;
     fetch_interval_seconds: number;
+    holds_items: boolean;
   }>(
-    `SELECT id, source_uri, cursor, error_count, display_name, fetch_interval_seconds FROM external_sources WHERE id = $1`,
+    // `holds_items` is an index probe on idx_ext_items_source_id, not a count —
+    // it exists only to answer "do we still have what our cursor claims we
+    // fetched?" (see conditionalHeadersFor).
+    RSS_SOURCE_LOAD_SQL,
     [sourceId],
   );
 
@@ -93,17 +165,18 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
     down: parseFloat(config.get("feed_ingest_rss_interval_decay_factor") ?? "0.5"),
   };
 
-  // Parse cursor: we store etag and last-modified as JSON
-  let etag: string | null = null;
-  let lastModified: string | null = null;
-  if (source.cursor) {
-    try {
-      const parsed = JSON.parse(source.cursor);
-      etag = parsed.etag ?? null;
-      lastModified = parsed.lastModified ?? null;
-    } catch {
-      // Legacy or corrupt cursor — ignore
-    }
+  const { etag, lastModified, suppressed } = conditionalHeadersFor(
+    source.cursor,
+    source.holds_items,
+  );
+  if (suppressed) {
+    // Worth a line: a source that keeps landing here holds a cursor and never
+    // any items, which is a PARSE failure rather than a prune — and the loop
+    // this guard breaks would otherwise hide that just as effectively.
+    logger.info(
+      { sourceId, sourceUri: source.source_uri },
+      "Source holds no items — dropping conditional headers to force a full re-fetch",
+    );
   }
 
   try {

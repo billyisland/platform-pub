@@ -23,6 +23,64 @@ starts.
 
 ## Progress
 
+- **2026-08-13, fourth sitting (§8.16: hold no items, send no validators)** —
+  CONSOLIDATED-TODO §8.16, found while verifying §8.14 on prod and fixed the
+  same day. No migration, no flag, no money path. feed-ingest 297/297 with a DB
+  attached, `tsc` clean, root ESLint 0 errors.
+
+  **The bug in one sentence: a conditional GET's validator is a claim about the
+  ORIGIN's state, and we acted on it as a claim about ours.** "Send this if it
+  changed since I last saw it" is sound only while *last saw it* implies *still
+  hold it* — and `external_items_prune` deletes on `external_items.created_at`,
+  our INSERT date rather than the item's publish date, so a live but infrequently
+  updated feed whose whole current window predates the retention period loses its
+  rows. The stored validator then makes every later fetch a **correct** 304 and
+  the source sits empty forever, subscribed, active, `error_count` 0,
+  `last_error` NULL. Origin right, client right, member's feed silent.
+
+  **Measured against the live origin before writing a line of code**, and it
+  corrected the first guess: sending the stored ETag as `If-None-Match` returned
+  **304**, sending the stored date as `If-Modified-Since` returned **200**, and
+  both together — what the adapter sends — returned **304**. The origin's
+  Last-Modified had moved (24 Apr → 16 Jul) while its ETag had not: a static
+  rebuild that touched the file without changing the content. So the loop was
+  **ETag-pinned**, and the obvious date-shaped fix would have shipped looking
+  correct and changed nothing.
+
+  **The fix** is `conditionalHeadersFor(cursor, holdsItems)` — pure, exported,
+  drops both validators when the source holds nothing and reports `suppressed`
+  so the task can log it. The premise is an `EXISTS` probe folded into the
+  existing source load (`RSS_SOURCE_LOAD_SQL`), free on
+  `idx_ext_items_source_id`. Self-healing in both directions: empty ⇒
+  unconditional fetch ⇒ items ⇒ conditional GETs resume next poll. Free for a
+  healthy source, which never takes the branch. The log line earns its place —
+  a source landing there repeatedly has a cursor and never any items, i.e. a
+  parse failure, and the loop being closed would have hidden that just as well.
+
+  **Reproduced and healed in dev against the very origin that caused it** — the
+  useful shape when the fault is a state rather than an input: create the source,
+  ingest 6 items and store the identical ETag prod carried, `DELETE` the items to
+  simulate the prune, re-poll. Six items back, `error_count` 0, log line fired.
+  The negative control is the curl measurement rather than a second code path:
+  that ETag provably makes the origin answer 304, so without the guard the
+  re-poll stays at zero.
+
+  **Tests: 9, and the split is the point.** The decision is pure, so it is tested
+  directly — no mock, nothing to drift. The *premise* (`holds_items`) is a SQL
+  claim about our own data, and a mocked `pool.query` would hand back whichever
+  value the author already believed, pinning the belief rather than the query —
+  **which is the exact epistemic mistake §8.16 is**. So it runs against real
+  Postgres in a rolled-back transaction through the task's own exported SQL,
+  including a case proving the `EXISTS` stays correlated to *this* source (a
+  decorrelated predicate reads true whenever the table is non-empty, which on a
+  populated database is indistinguishable from a correct one and would make the
+  guard dead code exactly where it is needed). Mutation-proved three ways: no
+  guard fails 4, **`lastModified`-only fails 3**, decorrelated `EXISTS` fails 2.
+
+  **Prod residue:** one source, `pfrazee.com/feed.xml`, empty since ~23 July. The
+  guard heals it on its own next poll once deployed; `UPDATE external_sources SET
+  cursor = NULL WHERE id = 'ed17e5be-…'` only makes it sooner.
+
 - **2026-08-13, third sitting (§8.14: a prune that never pruned, and a feed punished for behaving well)** —
   CONSOLIDATED-TODO §8.14, both faults. No migration, no flag, no money-path
   change. shared 122/122, feed-ingest 288/288 **with a DB attached** (the
