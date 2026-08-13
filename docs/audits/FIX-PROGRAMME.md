@@ -85,11 +85,34 @@ starts.
   "is the worker failing everything it picks up". That mechanism is why one job
   stayed red for ten nights, and it is the more valuable half of §8.14.
 
+  **Measured on prod the same day, and it was worse there than the write-up
+  assumed.** 84 exhausted prune jobs cleared (dev had 10). And the 304's
+  deactivation was **not hypothetical**: five RSS sources carried the error and
+  **four were already switched off** — `simonwillison.net`, `jvns.ca`,
+  `pfrazee.com`, `thoughtforms.life` at `error_count` 10–12 and `is_active =
+  false`, with `schneier.com` at 6 and still live. This was quiet content loss
+  on real feeds, not a wrong-in-principle tidy-up: every member carrying one of
+  those four had it go silent, and nothing anywhere reported it. The repair is
+  `error_count = 0, last_error = NULL, is_active = TRUE, fetch_interval_seconds
+  = 300` over the same predicate, and it **must follow the image** or the old
+  code re-poisons the rows it just healed. No cursor reset: the stored
+  `If-Modified-Since` is old enough that the origins answer 200 with their
+  current window (anything that aged out of that window during the outage is not
+  recoverable from the feed at all).
+
+  **The generalisable part.** A bug on the happy path is invisible in exact
+  proportion to how well the other end behaves, and it selects for the
+  best-behaved participants — only a feed that honours conditional GET could be
+  hit, so the four it killed were four of the best-run feeds on the platform.
+  Nothing looked broken, no alert existed to fire, and the end state
+  (`is_active = false`) reads on every surface as a deliberate decision rather
+  than an accident.
+
   **Deploy requirements** (neither urgent, neither automatic): clear the prune's
-  exhausted rows via `graphile_worker.complete_jobs(...)`, and check prod for a
-  feed deactivated by the 304 (`last_error LIKE 'Redirect 3%'`) — dev returned
-  zero rows after the fix; prod is unmeasured. Both commands are in the
-  CONSOLIDATED-TODO next-session block.
+  exhausted rows via `graphile_worker.complete_jobs(...)`, and repair the 304
+  sources per above. Both commands are in the CONSOLIDATED-TODO next-session
+  block. Prune sweep **done on prod 2026-08-13**; the source repair follows the
+  image.
 
 - **2026-08-13, second sitting (§0q closes: one publication instead of two, and three things a browser found)** —
   CONSOLIDATED-TODO §0q.8a, 8g, 8h, 8l; 8k answered by the owner with no code.
