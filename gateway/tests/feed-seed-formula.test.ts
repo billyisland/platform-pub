@@ -467,6 +467,25 @@ describe.skipIf(!DB_URL)("the default seed", () => {
     expect(await designatedId()).toBeNull();
   });
 
+  it("refuses to designate a formula authored by a non-admin member", async () => {
+    // The formulaId branch's twin of the case above (§0s.1): designating a
+    // formula makes its AUTHOR's account undeletable (D11 through the
+    // CASCADE) and seeds every signup from it as ours, so the lookup is
+    // scoped to the admin set — a co-admin's formula is designatable, an
+    // arbitrary member's answers 404 as if it did not exist.
+    await undesignateAll();
+    const member = await account("non-admin-author");
+    const theirs = await formula(member.id, { name: "Member Formula" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/admin/dashboard/seed-formula",
+      payload: { formulaId: theirs.id },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("formula_not_found");
+    expect(await designatedId()).toBeNull();
+  });
+
   it("names the designated formula, so what is load-bearing is visible", async () => {
     await undesignateAll();
     const seed = await formula(adminId, { name: "Reported Seed" });

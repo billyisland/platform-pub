@@ -6,7 +6,9 @@ import pg from "pg";
 process.env.PAYMENT_SERVICE_URL ??= "http://payment-service.test";
 process.env.INTERNAL_SERVICE_TOKEN ??= "test-token";
 
-const { DEAD_JOBS_SQL } = await import("../src/routes/admin-dashboard.js");
+const { DEAD_JOBS_SQL, deadJobWindowHoursDial } = await import(
+  "../src/routes/admin-dashboard.js"
+);
 
 // =============================================================================
 // Dead background jobs — what the surface counts, and what it must not
@@ -280,5 +282,89 @@ describe.skipIf(!DB_URL)("dead background jobs", () => {
     expect(r[CRON_TASK].retrying).toBe(1);
     const ageHours = (Date.now() - new Date(r[CRON_TASK].last_dead_at!).getTime()) / 3_600_000;
     expect(ageHours).toBeGreaterThan(160);
+  });
+
+  it("rejects a fractional window at the bind — why the dial truncates", async () => {
+    // The negative control for the dial test below (§0s.2): make_interval's
+    // hours argument is $1::int, and Postgres refuses the text form of a
+    // fractional value outright. Were the SQL ever changed to floor()::int
+    // this starts passing the other way — then the dial's trunc is the second
+    // copy of the coercion and one of the two should go.
+    await expect(client.query(DEAD_JOBS_SQL, [36.5])).rejects.toThrow(
+      /invalid input syntax for type integer/,
+    );
+  });
+});
+
+// The dial reads platform_config through the SHARED POOL — a different
+// connection from the fixture client above, so the rolled-back-transaction
+// pattern cannot serve it: these writes commit and are restored in finally.
+// The key has no seeded row on a DB that has not re-run migrate since it was
+// added to config-defaults.sql, which is exactly why each case writes its own.
+describe.skipIf(!DB_URL)("the arrival-window dial", () => {
+  let client: pg.Client;
+  const KEY = "dead_job_arrival_window_hours";
+
+  beforeAll(async () => {
+    client = new pg.Client({ connectionString: DB_URL });
+    await client.connect();
+  });
+
+  afterAll(async () => {
+    await client.end();
+  });
+
+  async function withDialValue(value: string | null, fn: () => Promise<void>) {
+    const { rows: prior } = await client.query<{ value: string }>(
+      `SELECT value FROM platform_config WHERE key = $1`,
+      [KEY],
+    );
+    try {
+      if (value === null) {
+        await client.query(`DELETE FROM platform_config WHERE key = $1`, [KEY]);
+      } else {
+        await client.query(
+          `INSERT INTO platform_config (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [KEY, value],
+        );
+      }
+      await fn();
+    } finally {
+      if (prior.length === 0) {
+        await client.query(`DELETE FROM platform_config WHERE key = $1`, [KEY]);
+      } else {
+        await client.query(
+          `INSERT INTO platform_config (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [KEY, prior[0].value],
+        );
+      }
+    }
+  }
+
+  it("truncates a fractional value instead of darkening the panel", async () => {
+    // An operator setting 36.5 — or 0.5 to watch arrivals during an incident —
+    // must get a working window, not "unavailable" with graphile blamed.
+    await withDialValue("36.5", async () => {
+      expect(await deadJobWindowHoursDial()).toBe(36);
+    });
+    await withDialValue("0.5", async () => {
+      // Sub-hour truncates to 0, which as a window means "nothing is ever
+      // recent" — floored to the narrowest working window instead.
+      expect(await deadJobWindowHoursDial()).toBe(1);
+    });
+  });
+
+  it("falls back on junk, non-positive, and absent values", async () => {
+    await withDialValue("not-a-number", async () => {
+      expect(await deadJobWindowHoursDial()).toBe(24);
+    });
+    await withDialValue("-3", async () => {
+      expect(await deadJobWindowHoursDial()).toBe(24);
+    });
+    await withDialValue(null, async () => {
+      expect(await deadJobWindowHoursDial()).toBe(24);
+    });
   });
 });

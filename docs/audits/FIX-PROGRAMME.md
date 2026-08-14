@@ -23,6 +23,54 @@ starts.
 
 ## Progress
 
+- **2026-08-14 (§0s findings 1–5: the whole audit batch closed in one sitting)** —
+  all five findings from the Aug 10–13 commit audit fixed, each per its inline
+  correction. No migration, no flag, no money path. gateway 612/612 with a DB
+  attached (608 + 4 new), web 222/222, root ESLint 0 errors, `next build` clean,
+  hairline tripwire clean on the touched web files, `tsc` clean (gateway, shared).
+
+  1. **Seed-designation ownership (§0s.1, the one MEDIUM).** The `{formulaId}`
+     branch now scopes its lookup `AND ff.author_id = ANY($2::uuid[])` with
+     `getAdminIds()` — the admin SET, not the caller, so co-admin designation
+     stays legal while an arbitrary member's formula answers 404 and no admin can
+     make a member's account undeletable by typing a uuid. New test ("refuses to
+     designate a formula authored by a non-admin member"), **mutation-proved**:
+     reverting the WHERE clause flips it red.
+  2. **Fractional dead-jobs window (§0s.2).** `deadJobWindowHoursDial` truncates
+     (`Math.trunc(v) || 1`) — the ONE home; the SQL keeps `$1::int`. Two new
+     DB-backed tests: the dial pair (36.5→36, 0.5→1, junk/absent→24; committed
+     writes + restore, since the dial reads through the shared pool where a
+     rolled-back fixture is invisible) and a negative control pinning that the
+     bind itself still rejects 36.5 (if the SQL ever gains `floor()::int`, that
+     control flips and says one coercion should go). Mutation-proved. Also
+     re-ran migrate on dev, which seeded exactly the 1 missing dial the audit
+     predicted.
+  3. **Exclusion copy (§0s.3).** Both homes of the newsletters-only claim — the
+     public `/f/[token]` page AND the author-facing FeedFormulaSection preview
+     (same drift, found while fixing) — now say sources can't travel for more
+     than one reason (private newsletter addresses, sources that no longer
+     exist). Copy-only, per the finding.
+  4. **Seed client nesting (§0s.4).** `seedStarterFeeds` no longer holds a
+     pooled client across redemption: the claim is a SHORT transaction (advisory
+     lock → recheck → mint the feed row via `createFeedForOwner(client)`) that
+     COMMITS first — the feed row is the recorded "seeded" fact a racer sees —
+     then population runs on the pool via the new
+     `populateFeedFromFormula(feedId, ownerId, formulaId)` split out of
+     `redeemFormulaForOwner` (which now composes mint + populate; behaviour
+     unchanged for token redemption). The traded failure mode is stated in the
+     comment: a crash between claim and populate leaves a visibly EMPTY starter
+     feed, never a duplicate. All 14 seed-formula tests green unchanged.
+  5. **Stale docs/types (§0s.5).** (a) `resonanceGlyphEnabled`'s docblock now
+     states default-ON-since-2026-08-10 + the beta-inversion rationale and the
+     root-`.env` douse path. (b) The web `Publication` interface was drifted
+     deeper than the audit saw — the route returns the raw snake_case row and
+     `publications.get()` has NO callers — so it now mirrors the route's SELECT
+     list verbatim (comment says why), killing `themeConfig` and the
+     `logoBlossomlUrl` typo with it. (c) The `VOLUME_WEIGHTS` comment now states
+     the real contract: DEFAULT 4.0 = step 5, max-volume-on-add deliberate,
+     schema default frozen by follow-import's `weight = 4.0` sentinel and by
+     weight being live in ranking.
+
 - **2026-08-13, fifth sitting (§8.15: a dead job now says so)** — CONSOLIDATED-TODO
   §8.15, the mechanism behind the whole §8.14/§8.16 cluster rather than a hygiene
   item. No migration, no flag, no money path. gateway 608/608 with a DB attached,

@@ -4,7 +4,7 @@ import { pool, loadConfig, withTransaction } from '@platform-pub/shared/db/clien
 import { zodValidationError } from '@platform-pub/shared/lib/validation.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { requireEnv } from '@platform-pub/shared/lib/env.js'
-import { requireAdmin } from '../middleware/admin.js'
+import { requireAdmin, getAdminIds } from '../middleware/admin.js'
 import { getParityReport } from '../lib/internal-parity.js'
 import { provisionAccount } from '../lib/account-provision.js'
 import { freezeFeedIntoFormula, formulaMaxSources } from './feeds/formulas.js'
@@ -187,13 +187,21 @@ type DeadJobRow = {
  * says something. Junk or a non-positive value falls back rather than becoming a
  * window of NaN (which compares false against everything, so nothing is ever
  * recent) or of zero (which reports every arrival as old news).
+ *
+ * Truncated to an integer HERE, the one home — DEAD_JOBS_SQL binds
+ * make_interval(hours => $1::int) and Postgres rejects the text form of a
+ * fractional value outright (`invalid input syntax for type integer: "36.5"`),
+ * which would darken the whole panel and blame graphile for an operator's
+ * `0.5`. A sub-hour setting floors to 1 rather than to a zero-width window.
  */
-async function deadJobWindowHoursDial(): Promise<number> {
+export async function deadJobWindowHoursDial(): Promise<number> {
   const { rows } = await pool.query<{ value: string }>(
     `SELECT value FROM platform_config WHERE key = 'dead_job_arrival_window_hours'`
   )
   const v = Number(rows[0]?.value)
-  return Number.isFinite(v) && v > 0 ? v : DEAD_JOB_ARRIVAL_WINDOW_HOURS_FALLBACK
+  return Number.isFinite(v) && v > 0
+    ? Math.trunc(v) || 1
+    : DEAD_JOB_ARRIVAL_WINDOW_HOURS_FALLBACK
 }
 
 // Designate the default-seed formula (FEED-FORMULAS-ADR D6/D11): either name a
@@ -1542,6 +1550,14 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
           minted = true
         } else {
           formulaId = parsed.data.formulaId
+          // Scoped to the admin SET, for the same reason the feedId branch is
+          // owner-scoped: a designated formula's author cannot delete their
+          // account (the D11 trigger through the CASCADE), so an arbitrary
+          // member's formula id must not be designatable by typing a uuid.
+          // The set rather than the caller because co-admins are a supported
+          // configuration (admin_account_ids is a list) and the GET already
+          // models a designation authored by a different admin (authorIsSelf)
+          // — an account this can make undeletable is always an operator's own.
           const { rows } = await client.query<{
             revoked_at: Date | null
             live_sources: number
@@ -1549,8 +1565,8 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
             `SELECT ff.revoked_at,
                     (SELECT COUNT(*)::int FROM feed_formula_sources s WHERE s.formula_id = ff.id)
                       AS live_sources
-               FROM feed_formulas ff WHERE ff.id = $1`,
-            [formulaId]
+               FROM feed_formulas ff WHERE ff.id = $1 AND ff.author_id = ANY($2::uuid[])`,
+            [formulaId, await getAdminIds()]
           )
           if (rows.length === 0) return { error: 'formula_not_found' as const }
           // The schema CHECK would reject this too; the 409 exists to say WHY

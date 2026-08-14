@@ -1,20 +1,25 @@
 import { request } from './client'
 
+// The wire shape of GET /publications/:slug, which returns the raw row —
+// snake_case, mirroring the route's SELECT list (publications/core.ts). This
+// type drifted camelCase for years (plus a themeConfig no route has served
+// since 2e7fcf63) and nothing noticed because .get() currently has no callers;
+// keep it matching the SELECT, not what a consumer might wish the shape were.
 interface Publication {
   id: string
   slug: string
   name: string
   tagline: string | null
   about: string | null
-  logoBlossomlUrl: string | null
-  coverBlossomUrl: string | null
-  nostrPubkey: string
-  subscriptionPricePence: number
-  annualDiscountPct: number
-  defaultArticlePricePence: number
-  themeConfig: Record<string, any>
+  logo_blossom_url: string | null
+  cover_blossom_url: string | null
+  nostr_pubkey: string
+  subscription_price_pence: number
+  annual_discount_pct: number
+  default_article_price_pence: number
+  homepage_layout: string
   status: string
-  foundedAt: string
+  founded_at: string
 }
 
 export interface PublicationMembership {

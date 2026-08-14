@@ -579,6 +579,36 @@ export async function redeemFormulaForOwner(
   // D10: revoking cannot un-add — it stops FUTURE redemptions and nothing else.
   if (f.revoked_at) throw tagged("FORMULA_REVOKED");
 
+  // The feed exists before the first source lands, which is what makes a
+  // partial redeem survivable. Appearance travels verbatim (§5) — the look is
+  // part of the curatorial claim, and the recipient restyles it afterwards like
+  // any feed.
+  const feed = await createFeedForOwner(ownerId, f.name, pool, {
+    appearance: f.appearance ?? {},
+    fromFormulaId: f.id,
+  });
+
+  const { added, failed } = await populateFeedFromFormula(
+    feed.id,
+    ownerId,
+    formulaId,
+  );
+  return { feedId: feed.id, added, failed };
+}
+
+/**
+ * The source-population half of a redeem: resolve each frozen source by
+ * portable identity and land it on an ALREADY-EXISTING feed via the addSource
+ * core. Split from redeemFormulaForOwner so the starter-seed path can mint the
+ * feed inside its own short claim transaction and run this on the pool
+ * afterwards (§0s.4) — never call it while holding a pooled client, since
+ * every addSource inside opens a further transaction of its own.
+ */
+export async function populateFeedFromFormula(
+  feedId: string,
+  ownerId: string,
+  formulaId: string,
+): Promise<{ added: number; failed: RedeemFailure[] }> {
   const { rows: sources } = await pool.query<{
     position: number;
     source_type: string;
@@ -597,15 +627,6 @@ export async function redeemFormulaForOwner(
     [formulaId],
   );
 
-  // The feed exists before the first source lands, which is what makes a
-  // partial redeem survivable. Appearance travels verbatim (§5) — the look is
-  // part of the curatorial claim, and the recipient restyles it afterwards like
-  // any feed.
-  const feed = await createFeedForOwner(ownerId, f.name, pool, {
-    appearance: f.appearance ?? {},
-    fromFormulaId: f.id,
-  });
-
   const failed: RedeemFailure[] = [];
   let added = 0;
   for (let i = 0; i < sources.length; i++) {
@@ -617,7 +638,7 @@ export async function redeemFormulaForOwner(
         failed.push({ position: s.position, label, reason: "unresolvable" });
         continue;
       }
-      const result = await addSource(feed.id, ownerId, input, {
+      const result = await addSource(feedId, ownerId, input, {
         // skipProbe deliberately NOT set (§6): a formula can be months old and
         // its URLs can rot, so a genuinely new identity is probed. Everything
         // this instance already holds healthy short-circuits the probe anyway,
@@ -664,7 +685,7 @@ export async function redeemFormulaForOwner(
       );
     }
   }
-  return { feedId: feed.id, added, failed };
+  return { added, failed };
 }
 
 /**

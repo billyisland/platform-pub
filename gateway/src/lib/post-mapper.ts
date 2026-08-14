@@ -152,13 +152,16 @@ export const POST_JOINS = `
   LEFT JOIN external_authors xa ON xa.id = fi.external_author_id
   LEFT JOIN vote_tallies vt ON vt.target_nostr_event_id = fi.nostr_event_id`;
 
-// Operator brake for the D7 resonance glyph (step 4). Default OFF: the band
-// gates in migration 160 were tuned on dev volume, and the ADR flags that
-// band-3 incidence still needs per-protocol re-measurement on prod before the
-// glyph is a claim we want to stand behind. Gating HERE — the one mapper every
-// read path shares — means the band never leaves the gateway while it is off,
-// so there is no client-side flag to keep in sync. Set RESONANCE_GLYPH_ENABLED
-// =1 to light it up; the scoring crons are unaffected either way.
+// Operator brake for the D7 resonance glyph (step 4). Default ON since
+// 2026-08-10 (docker-compose defaults RESONANCE_GLYPH_ENABLED=1): the closed
+// beta inverted the old hold-dark gate — the operator browsing real posts IS
+// the prod measurement, and the band gates are platform_config dials, so a
+// wrong distribution is an UPDATE rather than a deploy. Revisit the default
+// the day the beta opens (CONSOLIDATED-TODO §9.12). Gating HERE — the one
+// mapper every read path shares — means the band never leaves the gateway
+// while it is off, so there is no client-side flag to keep in sync. Set
+// RESONANCE_GLYPH_ENABLED=0 in the root .env to douse it; the scoring crons
+// are unaffected either way.
 export function resonanceGlyphEnabled(): boolean {
   const v = process.env.RESONANCE_GLYPH_ENABLED;
   return v === "1" || v === "true";

@@ -177,9 +177,13 @@ export function tagged(
 }
 
 // Slice 14 — five-step volume bar mapping. Step 0 is muted (handled via
-// muted_at, not weight). Step 3 is the "default" weight kept in alignment
-// with feed_sources.weight DEFAULT 1.0 so a passive→committed transition at
-// step 3 doesn't change ranking once weight is wired.
+// muted_at, not weight). feed_sources.weight DEFAULTs to 4.0 = step 5, and
+// every add path inherits it (addSource's INSERT omits weight): a source you
+// just chose arrives at full volume, deliberately. Do NOT change the schema
+// default — weight multiplies live ranking (feed-rank.ts), so a new default
+// silently re-ranks every source on the platform, and follow-import's
+// post-import sampling guard hard-codes `weight = 4.0` as its "operator has
+// not touched this" sentinel (follow-import.ts).
 const VOLUME_WEIGHTS = [1.0, 0.25, 0.5, 1.0, 2.0, 4.0];
 export function stepToWeight(step: number): number {
   return VOLUME_WEIGHTS[Math.max(0, Math.min(5, step))] ?? 1.0;

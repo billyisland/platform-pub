@@ -238,8 +238,9 @@ export default function FormulaPage() {
               {formula.excludedCount === 1
                 ? 'One source in the original feed couldn’t be shared'
                 : `${formula.excludedCount} sources in the original feed couldn’t be shared`}{' '}
-              — newsletters arrive at a private address that belongs to one
-              subscriber, so they stay with the person who signed up for them.
+              — some sources can’t travel: newsletters arrive at a private
+              address that belongs to one subscriber, and a source may no
+              longer exist.
             </PublicBody>
           </PublicCard>
         )}

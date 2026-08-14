@@ -13,7 +13,7 @@ import {
   tagged,
 } from "./shared.js";
 import { removeSource } from "./sources.js";
-import { redeemFormulaForOwner } from "./formulas.js";
+import { populateFeedFromFormula } from "./formulas.js";
 
 const createFeedSchema = z.object({
   name: z.string().trim().max(80).default(""),
@@ -136,7 +136,20 @@ export async function seedStarterFeeds(ownerId: string): Promise<number> {
   );
   if (parseInt(pre, 10) > 0) return 0;
 
-  return withTransaction(async (client) => {
+  // The claim is a SHORT transaction that COMMITS before any source is added
+  // (§0s.4): take the per-owner seed lock, re-check, and mint the feed row —
+  // which is then the recorded "seeded" fact a concurrent first-load sees. The
+  // old shape held this pooled client open across the whole redemption while
+  // every addSource inside took a further client, so N concurrent first-loads
+  // ≥ pool size each held one and waited 5s for a second, and a signup burst
+  // minted members with silently partial starter feeds. Now the lock guards
+  // only the mint; population runs on the pool with nothing held.
+  //
+  // The failure mode this trades into: a crash between the claim committing
+  // and population finishing leaves a visibly EMPTY starter feed (it serves
+  // the explore placeholder) rather than a duplicate seed — the loud half of
+  // the bargain, same per-source partial-failure reporting as before below.
+  const claim = await withTransaction(async (client) => {
     // Serialise per owner. hashtextextended → bigint for the advisory key.
     await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
       `feed-seed:${ownerId}`,
@@ -147,45 +160,56 @@ export async function seedStarterFeeds(ownerId: string): Promise<number> {
       `SELECT COUNT(*) AS count FROM feeds WHERE owner_id = $1`,
       [ownerId],
     );
-    if (parseInt(count, 10) > 0) return 0;
+    if (parseInt(count, 10) > 0) return null;
 
     // At most one row can be designated and it can never be revoked — both are
     // schema guarantees (D11, migration 178), so this needs no ORDER BY and no
     // revoked filter to be deterministic.
-    //
-    // The redeem core runs on the POOL, not on `client`: redemption is
-    // deliberately not one transaction (§6), so addSource opens its own and
-    // cannot see anything uncommitted here. Nothing in this transaction needs
-    // it to — the transaction exists only to hold the per-owner seed lock while
-    // the redeem commits its feed, which is what keeps two concurrent first
-    // loads from both seeding. The two advisory keys are distinct
-    // (`feed-seed:` here, `feed_sub:` inside addSource) and only ever taken in
-    // this order, so there is no cycle to deadlock on.
     const {
       rows: [seed],
-    } = await client.query<{ id: string }>(
-      `SELECT id FROM feed_formulas WHERE is_default_seed`,
-    );
-    if (!seed) return 0;
+    } = await client.query<{
+      id: string;
+      name: string;
+      appearance: Record<string, unknown> | null;
+    }>(`SELECT id, name, appearance FROM feed_formulas WHERE is_default_seed`);
+    if (!seed) return null;
 
-    const result = await redeemFormulaForOwner(seed.id, ownerId);
-    if (result.failed.length > 0) {
-      // Never silent. A seed that quietly drops half its sources reads to a
-      // new member as the composition we chose for them, and the only witness
-      // is this line — the same class of failure as the starter template being
-      // deleted, one level down.
-      logger.error(
-        {
-          ownerId,
-          formulaId: seed.id,
-          added: result.added,
-          failed: result.failed,
-        },
-        "Default-seed formula redeemed with failures",
-      );
-    }
-    return 1;
+    // Minted on `client` so the feed commits WITH the claim — the same shape
+    // redeemFormulaForOwner mints (appearance travels, from_formula_id set),
+    // just inside the lock instead of after it.
+    const feed = await createFeedForOwner(ownerId, seed.name, client, {
+      appearance: seed.appearance ?? {},
+      fromFormulaId: seed.id,
+    });
+    return { feedId: feed.id, formulaId: seed.id };
   });
+  if (!claim) return 0;
+
+  // On the pool, holding nothing — each addSource opens its own transaction
+  // under its own `feed_sub:` advisory key, taken strictly after `feed-seed:`
+  // has been released, so there is no cycle to deadlock on and no client held
+  // while waiting for another.
+  const result = await populateFeedFromFormula(
+    claim.feedId,
+    ownerId,
+    claim.formulaId,
+  );
+  if (result.failed.length > 0) {
+    // Never silent. A seed that quietly drops half its sources reads to a
+    // new member as the composition we chose for them, and the only witness
+    // is this line — the same class of failure as the starter template being
+    // deleted, one level down.
+    logger.error(
+      {
+        ownerId,
+        formulaId: claim.formulaId,
+        added: result.added,
+        failed: result.failed,
+      },
+      "Default-seed formula redeemed with failures",
+    );
+  }
+  return 1;
 }
 
 // List the caller's feeds in rank order, seeding starter templates first for an

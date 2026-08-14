@@ -338,8 +338,9 @@ export function FeedFormulaSection({ feedId }: { feedId: string }) {
                   {preview.excludedCount === 1
                     ? "One source can’t be shared"
                     : `${preview.excludedCount} sources can’t be shared`}{" "}
-                  and won’t be in it. A newsletter arrives at a private address
-                  that belongs to you alone, so it stays with you.
+                  and won’t be in it — a newsletter’s private address belongs
+                  to you alone, and a source that no longer exists can’t
+                  travel.
                 </p>
               )}
 
