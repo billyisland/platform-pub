@@ -42,5 +42,14 @@ segregation-sequence-results.json
 seq-*.json
 seg-*.json
 
+# The prose tree — a plain-English mirror of this source, one page per file,
+# generated in ~3s by prose-tool. That tool lives OUTSIDE this repo (~/prose-tool,
+# its own git), so this line is the only trace it leaves here. The tree is derived
+# from nothing but the tool's lexicon and its header cache, both versioned there;
+# committing it would put ~9 MB of machine-written text into every diff for no
+# fact this repo doesn't already hold. Ignored here rather than in
+# .git/info/exclude so the guard survives a fresh clone.
+prose/
+
 # Local dev compose override (session-scoped port publishing; never committed)
 docker-compose.override.yml
