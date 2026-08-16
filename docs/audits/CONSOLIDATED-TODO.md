@@ -1287,9 +1287,18 @@ Deliberately deferred to a single session because the three knobs compose. Dedup
 
 ---
 
-## NEXT SESSION STARTS HERE (rewritten 2026-08-13, after §8.15)
+## NEXT SESSION STARTS HERE (rewritten 2026-08-16, after prose Phase 2)
 
 Read the box before the queue — this block says what work EXISTS, not what is deployed.
+
+**► Where THIS session ended (2026-08-16). Phase 2 of the prose tool is built, adopted and closed** (§8.17; phrase-book 0.13.0, in `~/prose-tool`'s own git at `6e0e305`). Imports render whole — 27 dropped bindings restored, 325 inline `type` specifiers marked, 81 renames carrying both names — and 2,103 tree-local imports now resolve to the page they refer to, every href checked against the file system. Four gates green, fallback census unmoved at identical source (predicted before it was looked at, fourth phase running), binding census 208 → 181 with its import line at zero, eight mechanisms mutation-proved. **Nothing in THIS repo changed but the tracker**, so there is nothing to deploy for it; the tool is a separate repository and `prose/` is gitignored.
+
+  - **A phase can disarm a check while leaving it green — and the check most at risk is the one built for that phase's own bug class.** The binding census stripped the italic module specifier precisely so a dropped binding could not be satisfied by its own module's text; Phase 2 retired that italic, so the guard was still running and guarding nothing. Re-breaking the fault deliberately reported **20 of 27**, and the seven it could not see were exactly the bindings whose name occurs in their own module. Every gate was green throughout, and only a mutation showed it.
+  - **The written briefing was between 1.9× and 2.9× low in every column it measured**, and its "28-row" table was 52. Set 6 recorded the same lesson the day before; two instances make it a rule. Measure before writing the plan that quotes the figure — and that includes this file.
+  - **Three defects were found by reading built pages and by a throwaway tree, none by any check**: a phrase that is a relative clause running into a frame that continues after it, a gate whose first firing was a false positive on a stylesheet, and a form with no site in the tree at all.
+  - **Next there is Phase 3** (vocabulary families, vitest first at 10,562 sites, ~a third retired by the D11 assertion frame). `~/prose-tool/CLAUDE.md` opens with the cold-start pointer; the tool's git has no remote, so its history lives only on this laptop.
+
+**► The platform's own unclaimed list is UNCHANGED by this session** — no code, migration, flag or money path was touched. The two standing silent-outage gaps the §0s audit re-affirmed are still the highest-value items and still have no code: **§0r.3** (the Postmark boot/periodic probe + send-failure count, the only defence against the next 17-day silent email outage) and **§9 item 12's resonance freshness check** (the scorer's silent-death class, which §8.15's Jobs panel does NOT cover because the crons log success throughout that failure mode). Also open: the §0s.6 NOTEs, no action decided.
 
 **► The §0s commit audit (Aug 10–13 window, filed 2026-08-14) is CLOSED — all five findings fixed the same day**, each per its inline correction (the seed-designation ownership scope to the admin SET, the dial trunc, both exclusion-copy homes, the seed claim-then-populate split, the stale-docs sweep). gateway 612/612, web 222/222, ESLint 0, `next build` clean, the two new test groups mutation-proved; FIX-PROGRAMME 2026-08-14 has the write-up. What the audit leaves open is unchanged: the §0s.6 NOTEs (no action decided) and the two standing silent-outage gaps it re-affirmed — §0r.3 (the Postmark probe — still no code) and §9 item 12's resonance freshness check (which §8.15's Jobs panel does NOT cover).
 
