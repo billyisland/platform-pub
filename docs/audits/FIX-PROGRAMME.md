@@ -79,8 +79,11 @@ starts.
   stack: boot log, the crimson banner rendered in a browser, a real `POST
   /auth/login` moving `attempted` to 1 and (with the bad token wired in)
   `failed` to 1 with the credential flipped by the send's own response. The 200
-  path is the one leg not exercised against the vendor — there is no Postmark
-  token in dev — so it rests on the classifier test and the documented endpoint.
+  path could not be exercised in dev (no Postmark token exists here), and **was
+  closed by the prod deploy the same day**: `Email credential CONFIRMED for the
+  first time since boot`, `firstProof: true`, against the live token. Both
+  verdicts are therefore proven against the vendor rather than one of them
+  resting on the documented endpoint.
 
   **Runbook:** `DEPLOYMENT.md` › *Troubleshooting: nobody is receiving email*,
   plus the two env-table rows (Server-token-not-Account-token, and what `console`
