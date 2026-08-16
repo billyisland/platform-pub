@@ -6,6 +6,7 @@ import {
 } from "@platform-pub/shared/lib/env.js";
 import { ADVISORY_LOCKS } from "@platform-pub/shared/lib/advisory-locks.js";
 import { assertInternalParity, getParityReport } from "./lib/internal-parity.js";
+import { startEmailHealthChecks } from "@platform-pub/shared/lib/email-health.js";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import cookie from "@fastify/cookie";
@@ -429,6 +430,14 @@ async function start() {
   // background while the gateway serves. Blocking here would couple all free
   // reading and auth to a money service being up. See lib/internal-parity.ts.
   void assertInternalParity();
+
+  // Prove the outbound email credential, and keep proving it. Same dependency
+  // shape as the shared secrets above and NEVER fatal — a third party can revoke
+  // a token at any hour, and email dying must not take reading and auth with it.
+  // Not awaited for the same reason. See shared/lib/email-health.ts: every send
+  // through this gateway failed for up to seventeen days in 2026 and no surface
+  // anywhere said so.
+  void startEmailHealthChecks();
 
   // Background workers — run periodically after startup
   // Advisory locks prevent duplicate execution when horizontally scaled

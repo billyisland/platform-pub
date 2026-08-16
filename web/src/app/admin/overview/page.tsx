@@ -155,6 +155,98 @@ export default function AdminOverviewPage() {
             </div>
           )}
 
+          {/* Outbound email. The third member of the same family as the two
+              banners above, and the incident that argues hardest for all of
+              them: for up to 17 days every email this platform sent failed on a
+              rejected Postmark token — magic links included, so nobody could log
+              in — and there was no symptom anywhere. The login route catches the
+              send error and still answers 200, deliberately, so that a delivery
+              failure can't be used to probe whether an account exists; that
+              choice is right and is also what made this invisible. It was found
+              by accident, weeks in.
+
+              Two independent faults, one banner: the credential can be rejected
+              (nothing sends at all) and sends can fail with a perfectly good
+              credential (unconfirmed sender signature, rate limit, suppressed
+              recipient). Both are shown when both are true. */}
+          {(data.email.credential === 'invalid' || data.email.failed > 0) && (
+            <div className="bg-glasshouse-well px-4 py-3 mb-8">
+              <p className="label-ui text-crimson mb-1">
+                {data.email.credential === 'invalid'
+                  ? 'Email is not being sent — the provider rejected our credential'
+                  : `${data.email.failed} email${data.email.failed === 1 ? '' : 's'} failed to send`}
+              </p>
+              {data.email.credential === 'invalid' && (
+                <p className="text-ui-xs text-black">
+                  {data.email.credentialDetail} Every outbound email is failing: magic links (so
+                  nobody can log in), publish notifications to subscribers, and the waitlist
+                  digest. Nothing else reports this — the login route answers 200 whether or not
+                  the email went. Put a working token in{' '}
+                  <span className="font-mono">gateway/.env</span> and{' '}
+                  <span className="font-mono">recreate</span> the container — a restart does not
+                  reload <span className="font-mono">env_file</span>.
+                </p>
+              )}
+              {data.email.failed > 0 && (
+                <p className="text-ui-xs text-black mt-2">
+                  {data.email.failed} of {data.email.attempted} send
+                  {data.email.attempted === 1 ? '' : 's'} failed since the gateway started{' '}
+                  {timeAgo(data.email.sinceBootAt)}
+                  {data.email.lastFailureAt && `, the last ${timeAgo(data.email.lastFailureAt)}`}.
+                  {data.email.credential === 'valid' &&
+                    ' The credential itself is good, so look past the token: an unconfirmed sender signature, a rate limit, or a suppressed recipient.'}
+                </p>
+              )}
+              {data.email.lastError && (
+                <p className="text-ui-xs text-grey-600 mt-2 font-mono break-words">
+                  {data.email.lastError}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* NOT CHECKED and NEVER CONFIRMED, the email twins of the parity
+              banner above, and quieter for its reason: neither is a known fault,
+              each is the absence of the evidence that there isn't one. A
+              `console` provider in production is its own silent outage — every
+              magic link written to a log file instead of sent — so it is said in
+              words here rather than left to be inferred from a missing alarm. */}
+          {data.email.credential !== 'invalid' &&
+            (!data.email.probeSupported || data.email.credential === null) && (
+              <div className="bg-glasshouse-well px-4 py-3 mb-8">
+                <p className="label-ui text-grey-600 mb-1">
+                  {data.email.provider === 'console'
+                    ? 'No email is being sent'
+                    : !data.email.probeSupported
+                      ? `Email credential not checked — ${data.email.provider}`
+                      : 'Email credential never confirmed'}
+                </p>
+                <p className="text-ui-xs text-black">
+                  {data.email.provider === 'console' ? (
+                    <>
+                      <span className="font-mono">EMAIL_PROVIDER</span> is{' '}
+                      <span className="font-mono">console</span>, so every magic link, publish
+                      notification and digest is being written to the gateway log instead of sent.
+                      Expected in development; in production it means nobody can log in.
+                    </>
+                  ) : !data.email.probeSupported ? (
+                    <>
+                      There is no credential probe for this provider, so a revoked key here would
+                      show up only as failed sends. That is not a mismatch and it is not an
+                      all-clear.
+                    </>
+                  ) : (
+                    <>
+                      The gateway has not been able to prove its email credential either way — every
+                      probe since boot went unanswered. Not a rejection, and not an all-clear: the
+                      token could be dead right now and nothing here would say so. Check that the
+                      gateway can reach the provider&rsquo;s API.
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
+
           {/* Ingest down. Beside the parity banner and for the same reason:
               this is the platform silently not working, not a control working
               as designed. On 2026-08-11 feed-ingest was stopped by a stray
@@ -523,6 +615,87 @@ export default function AdminOverviewPage() {
                   detail={`${p.activeSources} active source${p.activeSources === 1 ? '' : 's'}`}
                 />
               ))}
+            </StatGrid>
+          </StatSection>
+
+          <div className="slab-rule-4 mb-8" />
+          {/* Email. The numbers stay on the page whether or not anything is
+              wrong, which is the point: the banner above fires on a fault, and
+              the incident this was built for ran for weeks with no fault anyone
+              could see. A count of sends and failures, visible at a glance,
+              would have shown it on day one. */}
+          {/* "Outbound", because the Ingest panel directly above already has a
+              card labelled `email` — inbound newsletter ingest, the opposite
+              direction. Two adjacent panels both saying "Email" about different
+              things is how an operator reads the wrong number in a hurry. */}
+          <StatSection
+            label="Outbound email"
+            helper="Whether outbound email is authenticating and going out. Counts are since this gateway started — a restart clears them — and Postmark accepting a message is not the same as a human receiving it."
+          >
+            <StatGrid>
+              <StatCard
+                label="Credential"
+                value={
+                  data.email.credential === 'valid'
+                    ? 'OK'
+                    : data.email.credential === 'invalid'
+                      ? 'Rejected'
+                      : data.email.probeSupported
+                        ? 'Unconfirmed'
+                        : 'Unchecked'
+                }
+                detail={
+                  data.email.credentialCheckedAt
+                    ? `proven ${timeAgo(data.email.credentialCheckedAt)}`
+                    : data.email.probeSupported
+                      ? 'never proven either way'
+                      : 'no probe for this provider'
+                }
+                warn={data.email.credential === 'invalid'}
+              />
+              <StatCard
+                label="Sent"
+                value={data.email.attempted}
+                // The denominator, and it is load-bearing: zero failures out of
+                // zero sends is silence, not health, so the detail says which of
+                // the two this is rather than leaving the failure count to imply
+                // an all-clear.
+                detail={
+                  data.email.attempted === 0
+                    ? 'nothing sent since boot'
+                    : `since ${timeAgo(data.email.sinceBootAt)}`
+                }
+              />
+              <StatCard
+                label="Failed"
+                value={data.email.failed}
+                detail={
+                  data.email.attempted === 0
+                    ? 'nothing has been sent to fail'
+                    : data.email.lastFailureAt
+                      ? `last ${timeAgo(data.email.lastFailureAt)}`
+                      : 'none'
+                }
+                warn={data.email.failed > 0}
+              />
+              <StatCard
+                label="Provider"
+                value={data.email.provider}
+                detail={
+                  data.email.provider === 'console'
+                    ? 'writes to the log, sends nothing'
+                    : data.email.probeSupported
+                      ? 'credential re-probed every 15 min'
+                      : 'credential never probed'
+                }
+                // Deliberately not `warn`, even though a `console` provider in
+                // production is a real outage: this card is crimson on every dev
+                // machine every day, and an alarm that is always on is one the
+                // operator learns to read past — the failure mode the whole
+                // panel exists to avoid. The quiet banner above says it in
+                // words, which is the same treatment parity gives its own
+                // not-yet-a-known-fault state.
+              />
             </StatGrid>
           </StatSection>
 

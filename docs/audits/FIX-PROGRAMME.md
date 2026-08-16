@@ -23,6 +23,69 @@ starts.
 
 ## Progress
 
+- **2026-08-16 (§0r.3 — outbound email is proven, and its failures are counted)** —
+  the standing gap from the 2026-08-11 incident, in which every email this
+  platform sent failed for up to 17 days behind a rejected Postmark token with no
+  symptom on any surface. No migration, no flag, no money path. shared 141/141
+  (122 + 19 new), gateway 612/612 with a DB attached, root ESLint 0 errors,
+  `tsc` clean (shared, gateway, web), `next build` clean, hairline tripwire clean
+  on the touched web file.
+
+  **The module** is `shared/src/lib/email-health.ts`, built to `internal-parity.ts`'s
+  shape because it is the same class of dependency: prove the credential rather
+  than assume it, split terminal (401/403) from ambiguous (timeout / 5xx / DNS),
+  and stay sticky both ways so a Postmark outage cannot erase a proven rejection
+  or a blip flap the banner. Two deliberate departures. It is **never fatal** — a
+  vendor can revoke a token at 3am and email dying must not take reading and auth
+  with it. And **the sends are evidence too**: `notePostmarkResponse` feeds every
+  real send's own status back, so a revoked token is caught by the first magic
+  link rather than at the next tick.
+
+  **The counter is the other half, and it needs its denominator.** `trackSend`
+  wraps both `sendEmail` and `sendBroadcastEmail` (every send path in the
+  platform funnels through those two) and counts attempts and failures, rethrowing
+  always — several callers swallow a send failure by design, the login route
+  above all. `attempted` ships beside `failed` for the reason the allocation
+  reconciler reports an empty-denominator rate as absent: zero failures out of
+  zero sends is silence, not health, and it is exactly what the incident looked
+  like every quiet hour. The probe answers "is the token good"; only the counter
+  answers "is mail going out" (an unconfirmed sender signature, a rate limit or a
+  suppressed recipient all fail a send with a perfectly valid token).
+
+  **The surface** is `/admin/overview`, beside the parity and ingest banners and
+  for their reason — this fault gives an operator nothing to be suspicious about.
+  A crimson banner for a rejected credential or any failed send (carrying
+  Postmark's own `ErrorCode` and message, and the recreate-not-restart fix), a
+  quiet one for the two not-a-known-fault states (`console` provider = nothing is
+  being sent; never-confirmed = no probe has been answered), and an **Outbound
+  email** panel that is on the page whether or not anything is wrong, because the
+  incident ran for weeks with nothing wrong that anyone could see. `console` is
+  deliberately NOT a `warn` card: it is crimson on every dev machine every day,
+  and an alarm that is always on is one the operator learns to read past.
+
+  **Only Postmark is probed, and that is a decision rather than an omission.**
+  Resend's only credential endpoint rejects a correctly-scoped send-only key, so
+  probing it would raise a false alarm about a working credential on the one
+  surface built to be believed. `probeSupported: false` says nothing was checked;
+  it never says OK.
+
+  **Proof.** 19 unit tests, four mechanisms **mutation-proved** (drop 403 from the
+  classifier; let an unreachable probe overwrite a proven verdict; make
+  `trackSend` swallow; make the unprobeable provider claim `valid` — each turns
+  the suite red). Then driven for real, which is where the load-bearing
+  assumption was actually settled: probing live Postmark with a bogus token
+  returns **HTTP 401 / `ErrorCode 10` / "Request does not contain a valid Server
+  token."** — the same string as the prod log line in §0r. End-to-end on the dev
+  stack: boot log, the crimson banner rendered in a browser, a real `POST
+  /auth/login` moving `attempted` to 1 and (with the bad token wired in)
+  `failed` to 1 with the credential flipped by the send's own response. The 200
+  path is the one leg not exercised against the vendor — there is no Postmark
+  token in dev — so it rests on the classifier test and the documented endpoint.
+
+  **Runbook:** `DEPLOYMENT.md` › *Troubleshooting: nobody is receiving email*,
+  plus the two env-table rows (Server-token-not-Account-token, and what `console`
+  means in production).
+
 - **2026-08-14 (§0s findings 1–5: the whole audit batch closed in one sitting)** —
   all five findings from the Aug 10–13 commit audit fixed, each per its inline
   correction. No migration, no flag, no money path. gateway 612/612 with a DB

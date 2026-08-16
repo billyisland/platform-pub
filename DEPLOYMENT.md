@@ -155,8 +155,8 @@ Key variables:
 | `RESONANCE_RANKING_ENABLED`                 | gateway                                | Master switch for the D6 read-time proof blend in feed ranking (SOCIAL-PROOF-RESONANCE-ADR D6 / step 5). `0`/unset = `scored` feeds rank on the cron-baked `fi.score` exactly as before; `1` = every item in a scored feed — native and external alike — ranks by `proof_term / (age+2)^gravity × weight`, where `proof_term = α·clamp(resonance,0,4)/4 + (1−α)·ambient_pctl` and α is the constant `feed_alpha_following` (the per-feed explore α lost its discriminator when the reach source kind was retired, migration 177/§9.16 — `feed_alpha_explore` stays seeded but dormant). Reads only stored columns the crons already write, so flipping needs no backfill and is instantly reversible. **Independent of `RESONANCE_GLYPH_ENABLED`** — ranking on resonance and displaying the band are separate claims with separate evidence bars, so the explore A/B can run with the glyph still dark. Note this is the FIRST ranking signal external items have ever had (before it, `fi.score` is 0 for every external row, so a scored external feed orders by uuid) — expect explore composition to change qualitatively. Tune without a deploy via `feed_alpha_*` / `feed_gravity` / `feed_proof_floor` in `platform_config`. No web twin |
 | `NEXT_PUBLIC_PLEDGES_ENABLED`               | web (**build arg**)                    | Web twin of `PLEDGES_ENABLED` (parked 2026-07-13). `0`/unset = all pledge/commission UI hidden (Ledger pledges list, dashboard commissions+drives, DM Commission button, profile drive cards, commission-request notification pref; subscription offers unaffected). **Baked at build time** — flipping to `1` requires `docker compose build web`, not just a restart. Keep in lockstep with the gateway `PLEDGES_ENABLED` |
 | `SUBSCRIPTION_CONVERT_ENABLED`              | gateway                                | Master switch for spend-to-subscription conversion (`POST /subscriptions/:writerId/convert`). `0`/unset = ships dark (503 `conversion_unavailable`). **Do NOT flip to `1`** — the route is an unmetered money pump (deep-audit H2, four unfixed legs documented at the route) with no wired web UI; it stays off until the economic rework lands. See FIX-PROGRAMME 2026-07-16, CONSOLIDATED-TODO §0e item 4 |
-| `EMAIL_PROVIDER`                            | gateway                                | `postmark`, `resend`, or `console`                                                                                                  |
-| `POSTMARK_API_KEY` / `RESEND_API_KEY`       | gateway                                | Provider key (required for the chosen provider)                                                                                      |
+| `EMAIL_PROVIDER`                            | gateway                                | `postmark`, `resend`, or `console`. **`console` in production means nothing is emailed at all** — every magic link goes to a log file — which `/admin/overview` now says in words. Only `postmark` has a credential probe; see *Troubleshooting: nobody is receiving email* |
+| `POSTMARK_API_KEY` / `RESEND_API_KEY`       | gateway                                | Provider key (required for the chosen provider). **Must be a Postmark SERVER token**, not an Account token — both are rejected with `ErrorCode 10`, which is the 2026 outage. Proven at boot and every 15 min, and by every real send; a rejection raises a crimson banner on `/admin/overview` and is never fatal |
 | `POSTMARK_BROADCAST_STREAM`                 | gateway                                | Postmark broadcast message stream ID (default: `broadcast`)                                                                          |
 | `EMAIL_FROM` / `EMAIL_FROM_BROADCAST`       | gateway                                | From addresses for transactional / publish-notification emails                                                                       |
 | `BROADCAST_DAILY_SEND_LIMIT`                | gateway                                | Daily broadcast cap for stream warm-up; `0` = unlimited (default: `50`)                                                              |
@@ -522,6 +522,71 @@ it.
 not a report of zero. It reads a private graphile table (the public view omits
 the payload the cron/per-source split needs), so a graphile-worker upgrade can
 move it. Check the gateway log for `dead-job query failed`.
+
+## Troubleshooting: nobody is receiving email
+
+Symptom: a member says the login link never arrived. Or — much more likely, and
+the reason this section exists — **no symptom at all**. Every outbound email
+this platform sent failed for up to seventeen days in 2026 (a Postmark server
+token that had been rotated, revoked, or pasted in as an *Account* token) and
+nothing anywhere reported it. The login route catches the send error and still
+answers `200` with "check your email", deliberately, so a delivery failure
+cannot be used to probe whether an account exists. That choice is correct and it
+is also what makes this class invisible from the outside. It was found by
+accident, weeks in.
+
+**First, the Overview.** Since 2026-08-16 `/admin/overview` carries an
+**Outbound email** panel and, when something is wrong, one of two banners:
+
+- **crimson "Email is not being sent — the provider rejected our credential"**,
+  or **"N emails failed to send"**. The first means the token is being refused,
+  and the banner carries Postmark's own `ErrorCode` and message. The second
+  means sends are failing with the credential itself proven good — an
+  unconfirmed sender signature, a rate limit, or a suppressed recipient.
+- **grey "No email is being sent"** / **"Email credential never confirmed"**.
+  Neither is a proven fault. The first means `EMAIL_PROVIDER=console`, which on
+  production means every magic link is being written to a log file instead of
+  sent. The second means the probe has never got an answer either way — not a
+  rejection and not an all-clear.
+
+The panel's counts are **since the gateway last started**, so a fresh restart
+shows `Sent 0`. Zero sends is why `Sent` is shown beside `Failed`: no failures
+out of no sends is silence, not health.
+
+**Fixing a rejected token.** The token lives at Postmark → Servers → *server* →
+API Tokens, and it must be a **Server** token, not an Account token (both give
+`ErrorCode 10`).
+
+```bash
+nano gateway/.env          # POSTMARK_API_KEY=...
+docker compose up -d --force-recreate gateway
+```
+
+`restart` will **not** do — an `env_file` change needs the container recreated.
+Confirm from the gateway log; the probe runs a few seconds after boot:
+
+```bash
+docker compose logs gateway --since 2m | grep -i "email credential"
+```
+
+`Email credential CONFIRMED` or `RESTORED` is the proof. Then request a login
+link and watch the panel's `Sent` count move.
+
+**What the checker does and does not prove.** It probes `GET /server` at
+Postmark with the same token a send uses, at boot and every 15 minutes, and
+**every real send reports its own status too** — so a revoked token is caught by
+the first magic link after the revocation, not at the next tick. A 401/403 is
+treated as proof the token is bad; a timeout, a 5xx or a DNS failure is treated
+as no answer at all and never clears or sets anything (the same terminal /
+ambiguous split as the internal-parity probe and the Stripe classifiers). It is
+never fatal: an email fault must not take reading and auth down with it. And it
+proves the credential only — Postmark *accepting* a message is not delivery, so
+a bounce, a spam fold or a suppression is still a Postmark-dashboard question.
+
+Only Postmark is probed. With `EMAIL_PROVIDER=resend` the panel says
+`Unchecked` rather than `OK`, because Resend's credential endpoint rejects a
+correctly-scoped send-only key and probing it would raise a false alarm about a
+working credential.
 
 ## Troubleshooting: feature not appearing after a rebuild
 

@@ -1,4 +1,5 @@
 import logger from '../lib/logger.js'
+import { notePostmarkResponse, trackSend } from './email-health.js'
 
 // =============================================================================
 // Email Service
@@ -12,6 +13,15 @@ import logger from '../lib/logger.js'
 //
 // In dev, EMAIL_PROVIDER defaults to 'console' so magic link tokens appear
 // in the terminal. In production, set EMAIL_PROVIDER and the relevant API key.
+//
+// EVERY SEND GOES THROUGH `trackSend`, and the two Postmark paths additionally
+// report their HTTP status to `notePostmarkResponse`. Both belong to
+// `email-health.ts` — read its header for why: for seventeen days in 2026 every
+// send here threw, every caller caught it, and no surface anywhere carried the
+// fact. A send is also the best possible test of the credential it uses, so its
+// own response is fed back as proof rather than being thrown away with the
+// error. New send paths must be wrapped the same way; an unwrapped one is
+// invisible on the admin overview, which is where this is now read.
 // =============================================================================
 
 interface EmailParams {
@@ -24,15 +34,17 @@ interface EmailParams {
 export async function sendEmail(params: EmailParams): Promise<void> {
   const provider = process.env.EMAIL_PROVIDER ?? 'console'
 
-  switch (provider) {
-    case 'postmark':
-      return sendViaPostmark(params)
-    case 'resend':
-      return sendViaResend(params)
-    case 'console':
-    default:
-      return sendViaConsole(params)
-  }
+  return trackSend(() => {
+    switch (provider) {
+      case 'postmark':
+        return sendViaPostmark(params)
+      case 'resend':
+        return sendViaResend(params)
+      case 'console':
+      default:
+        return sendViaConsole(params)
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -175,15 +187,17 @@ interface BroadcastEmailParams extends EmailParams {
 export async function sendBroadcastEmail(params: BroadcastEmailParams): Promise<void> {
   const provider = process.env.EMAIL_PROVIDER ?? 'console'
 
-  switch (provider) {
-    case 'postmark':
-      return sendBroadcastViaPostmark(params)
-    case 'resend':
-      return sendViaResend(params) // Resend has no separate broadcast concept
-    case 'console':
-    default:
-      return sendBroadcastViaConsole(params)
-  }
+  return trackSend(() => {
+    switch (provider) {
+      case 'postmark':
+        return sendBroadcastViaPostmark(params)
+      case 'resend':
+        return sendViaResend(params) // Resend has no separate broadcast concept
+      case 'console':
+      default:
+        return sendBroadcastViaConsole(params)
+    }
+  })
 }
 
 // =============================================================================
@@ -215,10 +229,15 @@ async function sendViaPostmark(params: EmailParams): Promise<void> {
 
   if (!res.ok) {
     const body = await res.text()
+    // The send's own answer is the freshest evidence there is about the token —
+    // a 401 here is the incident, caught on its first occurrence instead of at
+    // the next probe. Ambiguous statuses are ignored by the classifier.
+    notePostmarkResponse(res.status, body)
     logger.error({ status: res.status, body }, 'Postmark email failed')
     throw new Error(`Postmark API error: ${res.status}`)
   }
 
+  notePostmarkResponse(res.status)
   logger.info({ to: params.to, subject: params.subject }, 'Email sent via Postmark')
 }
 
@@ -289,10 +308,15 @@ async function sendBroadcastViaPostmark(params: BroadcastEmailParams): Promise<v
 
   if (!res.ok) {
     const body = await res.text()
+    // Same token, same evidence — the broadcast stream is a MessageStream on the
+    // same server, so a rejection here says exactly what one on the transactional
+    // path says.
+    notePostmarkResponse(res.status, body)
     logger.error({ status: res.status, body }, 'Postmark broadcast email failed')
     throw new Error(`Postmark API error: ${res.status}`)
   }
 
+  notePostmarkResponse(res.status)
   logger.info({ to: params.to, subject: params.subject, stream }, 'Broadcast email sent via Postmark')
 }
 

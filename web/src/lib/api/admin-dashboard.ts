@@ -100,6 +100,34 @@ export interface AdminOverview {
     unverified: string[]
   }
   /**
+   * Is outbound email actually going out (prod incident 2026-08-11 — up to 17
+   * days in which every send failed on a rejected Postmark token, with no
+   * symptom anywhere: the login route swallows the error and still answers 200
+   * so a failure can't be used to probe whether an account exists).
+   *
+   * `credential` is the probe verdict and `null` is a real THIRD state —
+   * NEVER CONFIRMED, which must never render as healthy. `probeSupported`
+   * false means nothing was checked at all (a `console` provider sends no mail;
+   * Resend has no safe probe), which is also not an all-clear.
+   *
+   * `attempted` is the denominator and ships with `failed` for the reason the
+   * allocation reconciler reports an empty-denominator rate as absent: zero
+   * failures out of zero sends is silence, not health. Both are in-process and
+   * reset on a gateway restart — hence `sinceBootAt`.
+   */
+  email: {
+    provider: string
+    probeSupported: boolean
+    credential: 'valid' | 'invalid' | null
+    credentialCheckedAt: string | null
+    credentialDetail: string | null
+    sinceBootAt: string
+    attempted: number
+    failed: number
+    lastFailureAt: string | null
+    lastError: string | null
+  }
+  /**
    * Is content actually arriving (prod incident 2026-08-11 — 21 hours of no
    * ingest with every container green).
    *

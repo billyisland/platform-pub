@@ -9,6 +9,7 @@ import { getParityReport } from '../lib/internal-parity.js'
 import { provisionAccount } from '../lib/account-provision.js'
 import { freezeFeedIntoFormula, formulaMaxSources } from './feeds/formulas.js'
 import { sendWaitlistInviteEmail } from '@platform-pub/shared/lib/email.js'
+import { getEmailHealth } from '@platform-pub/shared/lib/email-health.js'
 
 // =============================================================================
 // Owner dashboard — operator visibility over the money pipeline, users,
@@ -545,6 +546,20 @@ export async function adminDashboardRoutes(app: FastifyInstance) {
         // ABOUT. This page is where money state is checked, so it is where a
         // silently broken paywall belongs. Read from process memory, no query.
         parity: getParityReport(),
+        // Outbound email. Here for the reason `parity` and `ingest` are, and it
+        // is the incident that stated the reason best: for up to 17 days every
+        // email this platform sent failed on a rejected Postmark token, and the
+        // one surface that would have shown it — a count of failed sends — did
+        // not exist. The login route catches the send error and still answers
+        // 200 (deliberately: a delivery failure must not reveal whether an
+        // account exists), so there is no user-visible symptom at all.
+        //
+        // `credential` is a probe verdict with a real THIRD state: `null` is
+        // never-confirmed, and rendering it as healthy is this feature's own
+        // failure mode. `attempted` ships beside `failed` because zero failures
+        // out of zero sends is not a healthy send path — it is silence.
+        // Process memory, no query; see shared/lib/email-health.ts.
+        email: getEmailHealth(),
         // Ingest liveness. Here for the same reason `parity` is: the fault this
         // reports is precisely the one that gives an operator nothing to be
         // suspicious about. On 2026-08-11 feed-ingest took a stray SIGTERM and
