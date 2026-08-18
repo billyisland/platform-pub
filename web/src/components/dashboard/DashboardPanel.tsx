@@ -719,6 +719,11 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
         </div>
       </form>
 
+      {/* Welcome message — its own form, because it saves independently of
+          pricing and a writer editing prose should not have to re-submit a
+          price to keep it. */}
+      <WelcomeMessageSection />
+
       {/* Stripe Connect status */}
       <div className="bg-glasshouse-well px-6 py-5">
         <p className="label-ui text-grey-400 mb-4">Stripe Connect</p>
@@ -736,6 +741,74 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
       </div>
 
     </div>
+  )
+}
+
+// =============================================================================
+// Welcome message — the writer's own words, sent to a reader on subscribing
+//
+// Plain text, 2000 characters, matching the zod bound on the route and the
+// CHECK on the column (migration 180). An empty box is saved as `null` and the
+// reader is sent the default template — which is a real welcome, not silence,
+// so leaving this alone is a perfectly good answer and the copy says so.
+// =============================================================================
+
+const WELCOME_MAX = 2000
+
+function WelcomeMessageSection() {
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    accountApi.getSubscriptionWelcome()
+      .then((r) => { if (live) setMessage(r.message ?? '') })
+      .catch(() => { /* leave the box empty; saving still works */ })
+      .finally(() => { if (live) setLoading(false) })
+    return () => { live = false }
+  }, [])
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true); setMsg(null)
+    try {
+      // Empty box → null, so the column records "not set" rather than an empty
+      // string, and the reader gets the default rather than a blank email.
+      const trimmed = message.trim()
+      await accountApi.updateSubscriptionWelcome(trimmed.length > 0 ? trimmed : null)
+      setMsg(trimmed.length > 0 ? 'Welcome message saved.' : 'Cleared — subscribers get the default welcome.')
+    } catch { setMsg('Failed to save.') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <form onSubmit={handleSave} className="bg-glasshouse-well px-6 py-5">
+      <p className="label-ui text-grey-400 mb-4">Welcome message</p>
+      <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
+        Sent to a reader the moment they subscribe — the one time you know they
+        are listening. Leave it empty and we send a short welcome in your name.
+      </p>
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        maxLength={WELCOME_MAX}
+        rows={6}
+        disabled={loading}
+        placeholder={loading ? '' : 'Thanks for subscribing. Here is what you can expect from me…'}
+        className="w-full bg-grey-100 px-4 py-2.5 text-ui-sm font-sans text-black placeholder-grey-300 focus:outline-none resize-none disabled:opacity-50"
+      />
+      <p className="text-ui-xs font-sans text-grey-300 mt-1 text-right">
+        {message.length}/{WELCOME_MAX}
+      </p>
+      <div className="mt-3">
+        <button type="submit" disabled={saving || loading} className="btn text-sm disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save welcome message'}
+        </button>
+        {msg && <p className="text-ui-xs font-sans text-grey-600 mt-2">{msg}</p>}
+      </div>
+    </form>
   )
 }
 

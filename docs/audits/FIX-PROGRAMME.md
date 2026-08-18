@@ -23,6 +23,48 @@ starts.
 
 ## Progress
 
+- **2026-08-18 (§4.2 — the writer's own words, at the one moment a reader is listening)** —
+  Subscriptions Phase 2, step 8 of `SUBSCRIPTIONS-GAP-ANALYSIS.md`. Migration
+  **180** (`accounts.subscription_welcome_message`), no flag, no money path.
+  shared 156/156 (141 + 15 new), gateway 624/624 with a DB attached,
+  payment-service 364/364, root ESLint 0 errors, `tsc` clean (shared, gateway,
+  web), `next build` clean, all seven schema-drift checks green, and the two
+  routes smoked against a rebuilt gateway.
+
+  **What was missing.** Subscribing is the only moment in the product where a
+  reader has just chosen a *particular* writer and is waiting to hear from them,
+  and it was silent on the reader's side: `sendNewSubscriberEmail` has always
+  told the WRITER they gained someone, and nothing told the reader anything.
+  This is the other half of that exchange, in the writer's own words.
+
+  **Plain text, escaped at send, and that is the whole security posture.** The
+  value is a writer-authored string that reaches every one of their subscribers'
+  inboxes, so storing HTML would make it a markup-injection surface for no gain
+  the template does not already supply. `welcomeParagraphs` splits blank lines
+  into paragraphs and single newlines into `<br>` — a writer who laid out a list
+  with line breaks must not have it run together into prose — and escapes each
+  paragraph, so `<b>No spam.</b>` arrives as visible text. The display name is
+  escaped separately in the button label, because `button()` interpolates its
+  label RAW and the name comes off the writer's own profile field.
+
+  **NULL is not the empty string.** NULL means "never set one" and sends a real
+  default naming the writer, not silence; `''` means the writer cleared the box.
+  Both send the default today and both are stored as written, so a later "send
+  nothing at all" opt-out has a value to hang on without a second column and
+  without reinterpreting rows that predate it. The route and the column agree on
+  2,000 characters — zod reports the writer's mistake, the CHECK is the ceiling
+  no other path can get past.
+
+  **Two mutation findings worth keeping.** The route tests caught all four
+  mutations first time. The email tests did not: dispatching the mocked
+  `pool.query` on the SQL TEXT made the transposition test — the one written to
+  prove the message comes off the writer's row and not the reader's — pass
+  against a function reading the wrong id, because both statements select
+  `FROM accounts WHERE id = $1` and differ only in their column list. Keyed on
+  the PARAMS instead, the same mutation fails seven tests. **The standing rule
+  says answer from what the mock is handed; this is the case where "what it is
+  handed" is the parameter and not the query**, and only the mutation said so.
+
 - **2026-08-16 (§0r.3 — outbound email is proven, and its failures are counted)** —
   the standing gap from the 2026-08-11 incident, in which every email this
   platform sent failed for up to 17 days behind a rejected Postmark token with no

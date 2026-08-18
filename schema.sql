@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DLyii8kQWj8HakONpKG7fjguuKofkOrAjaRpbcHLlQ3hzSXtcGlDglesTY5JhYD
+\restrict rKivghUNEOmOaYGhRkHfmJ7xDjWXE8Rhf9Zr0Q8HDHXQndQ6opMaUNO6VOzMOpa
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -772,8 +772,10 @@ CREATE TABLE public.accounts (
     card_action_required_at timestamp with time zone,
     free_allowance_granted_pence integer DEFAULT 500 NOT NULL,
     onboarded_at timestamp with time zone,
+    subscription_welcome_message text,
     CONSTRAINT accounts_annual_discount_pct_check CHECK (((annual_discount_pct >= 0) AND (annual_discount_pct <= 30))),
-    CONSTRAINT accounts_hosting_type_check CHECK ((hosting_type = ANY (ARRAY['hosted'::text, 'self_hosted'::text])))
+    CONSTRAINT accounts_hosting_type_check CHECK ((hosting_type = ANY (ARRAY['hosted'::text, 'self_hosted'::text]))),
+    CONSTRAINT accounts_subscription_welcome_message_length CHECK (((subscription_welcome_message IS NULL) OR (char_length(subscription_welcome_message) <= 2000)))
 );
 
 
@@ -789,6 +791,13 @@ COMMENT ON COLUMN public.accounts.free_allowance_granted_pence IS 'What this rea
 --
 
 COMMENT ON COLUMN public.accounts.onboarded_at IS 'When the first-session welcome was offered and answered (completed or dismissed). NULL = never offered. Records that the offer was made, never that the profile was filled in.';
+
+
+--
+-- Name: COLUMN accounts.subscription_welcome_message; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.accounts.subscription_welcome_message IS 'Writer-composed plain-text welcome, sent to a reader on subscribing. NULL = never set, send the default template. Escaped at send time; never store HTML.';
 
 
 --
@@ -7730,7 +7739,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DLyii8kQWj8HakONpKG7fjguuKofkOrAjaRpbcHLlQ3hzSXtcGlDglesTY5JhYD
+\unrestrict rKivghUNEOmOaYGhRkHfmJ7xDjWXE8Rhf9Zr0Q8HDHXQndQ6opMaUNO6VOzMOpa
 
 
 --
@@ -7916,4 +7925,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('176_accounts_onboarded_at.sql'),
     ('177_retire_reach_source_kind.sql'),
     ('178_feed_formulas.sql'),
-    ('179_drop_starter_template_flag.sql');
+    ('179_drop_starter_template_flag.sql'),
+    ('180_accounts_subscription_welcome_message.sql');

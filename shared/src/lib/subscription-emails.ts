@@ -208,3 +208,83 @@ export async function sendNewSubscriberEmail(
     ),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Welcome — sent to the READER on subscribing, in the writer's own words
+//
+// The writer's half of the exchange `sendNewSubscriberEmail` above is the
+// platform's half of. Subscribing is the one moment a reader has just chosen a
+// particular writer and is waiting to hear from them, and until this it was
+// silent on the reader's side.
+//
+// The message is the writer's, so it is PLAIN TEXT and escaped here — never
+// stored or sent as markup (migration 180 says why at length). A writer who has
+// set nothing gets the default below, which is a real welcome rather than a
+// placeholder: NULL means "never set one", not "wants no welcome".
+// ---------------------------------------------------------------------------
+
+// Split a writer's plain-text message into paragraphs on blank lines. Escaped
+// per paragraph, and single newlines inside one become `<br>` — a writer who
+// laid out a list with line breaks must not have it run together into prose.
+export function welcomeParagraphs(message: string): string {
+  return message
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((para) => para.trim())
+    .filter((para) => para.length > 0)
+    .map((para) => paragraph(escapeHtml(para).replace(/\n/g, "<br>")))
+    .join("");
+}
+
+export function defaultWelcomeText(writerName: string): string {
+  return `Thanks for subscribing to ${writerName}. Their new writing will arrive in your inbox, and everything they publish is yours to read.`;
+}
+
+export async function sendSubscriptionWelcomeEmail(
+  readerId: string,
+  writerId: string,
+): Promise<void> {
+  const reader = await getAccountInfo(readerId);
+  if (!reader) return;
+
+  // One query, and it is the writer's row that carries the message — so a
+  // caller never has to fetch it and can never pass a stale one.
+  const { rows } = await pool.query<{
+    email: string | null;
+    display_name: string | null;
+    username: string;
+    subscription_welcome_message: string | null;
+  }>(
+    `SELECT email, display_name, username, subscription_welcome_message
+       FROM accounts WHERE id = $1`,
+    [writerId],
+  );
+  if (rows.length === 0) return;
+
+  const writer = rows[0];
+  const writerName = writer.display_name ?? writer.username;
+  const profileUrl = `${APP_URL}/${writer.username}`;
+
+  // Empty string is a writer who cleared the box; today it reads the same as
+  // never having set one. Migration 180 keeps the two distinct in the column so
+  // a later "send nothing" opt-out has somewhere to live.
+  const custom = writer.subscription_welcome_message?.trim();
+  const body = custom && custom.length > 0 ? custom : defaultWelcomeText(writerName);
+
+  await sendEmail({
+    to: reader.email,
+    subject: `You're subscribed to ${writerName}`,
+    textBody: [
+      body,
+      "",
+      `Read ${writerName}: ${profileUrl}`,
+      `Manage your subscriptions: ${APP_URL}/account`,
+    ].join("\n"),
+    htmlBody: emailHtml(
+      `You're subscribed to ${escapeHtml(writerName)}`,
+      // `button` interpolates its label raw, so the name is escaped here —
+      // a display name reaches this from the writer's own profile field.
+      welcomeParagraphs(body) + button(profileUrl, `Read ${escapeHtml(writerName)}`),
+    ),
+  });
+}

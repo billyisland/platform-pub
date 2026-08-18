@@ -4,7 +4,7 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../../middleware/auth.js'
 import { signSubscriptionEvent } from '../../lib/nostr-publisher.js'
 import { enqueueRelayPublish } from '@platform-pub/shared/lib/relay-outbox.js'
-import { sendSubscriptionCancelledEmail, sendNewSubscriberEmail } from '@platform-pub/shared/lib/subscription-emails.js'
+import { sendSubscriptionCancelledEmail, sendNewSubscriberEmail, sendSubscriptionWelcomeEmail } from '@platform-pub/shared/lib/subscription-emails.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { anchorDayOf, firstPeriodEnd } from '@platform-pub/shared/lib/subscription-period.js'
 import { logSubscriptionCharge } from './shared.js'
@@ -202,6 +202,14 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
             logger.warn({ err, subscriptionId: sub.id }, 'New subscriber email failed')
           )
 
+          // And the reader's half of that exchange, in the writer's own words
+          // (§4.2). Non-blocking for the same reason: an email provider having
+          // a bad minute must not fail a subscription that is already charged,
+          // signed and enqueued. `trackSend` counts the attempt either way.
+          sendSubscriptionWelcomeEmail(readerId, writerId).catch(err =>
+            logger.warn({ err, subscriptionId: sub.id }, 'Subscription welcome email failed')
+          )
+
           return reply.status(200).send({ subscriptionId: sub.id, status: 'active', pricePence })
         }
 
@@ -258,6 +266,14 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
         // Notify writer of new subscriber — non-blocking
         sendNewSubscriberEmail(writerId, readerId, pricePence).catch(err =>
           logger.warn({ err, subscriptionId }, 'New subscriber email failed')
+        )
+
+        // And the reader's half of that exchange (§4.2) — see the reactivate
+        // path above. Both paths send it: a reader returning after a lapse is
+        // being welcomed back, and is exactly as much owed the writer's words
+        // as a first-time subscriber.
+        sendSubscriptionWelcomeEmail(readerId, writerId).catch(err =>
+          logger.warn({ err, subscriptionId }, 'Subscription welcome email failed')
         )
 
         return reply.status(201).send({

@@ -150,6 +150,18 @@ export const account = {
       }),
     }),
 
+  // The writer's welcome message, sent to a reader on subscribing.
+  // `null` means "never set one" and reads as the default template; the PATCH
+  // accepts null so the box can be cleared back to it.
+  getSubscriptionWelcome: () =>
+    request<{ message: string | null }>('/settings/subscription-welcome'),
+
+  updateSubscriptionWelcome: (message: string | null) =>
+    request<{ ok: boolean; message: string | null }>('/settings/subscription-welcome', {
+      method: 'PATCH',
+      body: JSON.stringify({ message }),
+    }),
+
   toggleSubscriptionVisibility: (writerId: string, hidden: boolean) =>
     request<{ ok: boolean; hidden: boolean }>(`/subscriptions/${writerId}/visibility`, {
       method: 'PATCH',
