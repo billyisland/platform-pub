@@ -50,6 +50,12 @@ seg-*.json
 # fact this repo doesn't already hold. Ignored here rather than in
 # .git/info/exclude so the guard survives a fresh clone.
 prose/
+# …and any throwaway rebuild beside it. The golden-master check builds to a
+# SECOND tree and diffs it against prose/ (prose-tool REVIEW P4.2), and those
+# trees are 12 MB each: a run named prose-gm3/ slipped straight past the line
+# above and 10,088 generated files went into a docs commit, because untracked
+# files do not show in `git diff --stat` and `git add -A` takes them anyway.
+prose-*/
 
 # Local dev compose override (session-scoped port publishing; never committed)
 docker-compose.override.yml
