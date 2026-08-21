@@ -91,6 +91,18 @@ export const FEED_SELECT = `
   ei.like_count AS ei_like_count, ei.reply_count AS ei_reply_count,
   ei.repost_count AS ei_repost_count,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
+  -- Is this row's source_id INHERITED rather than owned? A context-only row was
+  -- minted by thread/profile hydration and anchored on the HYDRATING FOCAL's
+  -- source (EXTERNAL-AUTHOR-HISTORY-ADR §4.2), so xs.display_name names the
+  -- account whose card was expanded, never this post's author. The mapper must
+  -- not read it as provenance. Real ingest PROMOTES such a row (flag cleared,
+  -- source_id re-homed to the author's own source), which is what makes the
+  -- flag the right discriminator: it is protocol-agnostic and self-healing,
+  -- where an author_uri = source_uri comparison is neither (nostr_external
+  -- writes no author_uri at ingest and an njump.me URL at hydration, so it
+  -- would suppress the name on every nostr row including the ones it is
+  -- correct on).
+  ei.is_context_only AS ei_is_context_only,
   -- Trust Layer 1 pip (NULL for external items — they default to 'unknown')
   tl.pip_status,
   -- Parent author for reply provenance — denormalised onto the row at ingest by the

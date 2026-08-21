@@ -1,4 +1,9 @@
-import { SignJWT, jwtVerify, type JWTPayload } from "jose";
+import {
+  SignJWT,
+  jwtVerify,
+  errors as joseErrors,
+  type JWTPayload,
+} from "jose";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import "@fastify/cookie";
 
@@ -75,7 +80,8 @@ export async function createSession(
 
 // ---------------------------------------------------------------------------
 // verifySession — extracts and validates session from cookie
-// Returns null if no session or invalid (not an error — unauthenticated is OK)
+// Returns null if no session or the token is no good (not an error —
+// unauthenticated is OK). A fault of OURS still throws: see below.
 // ---------------------------------------------------------------------------
 
 export async function verifySession(
@@ -84,15 +90,27 @@ export async function verifySession(
   const token = getCookie(req);
   if (!token) return null;
 
+  // Outside the try, deliberately. A missing or too-short SESSION_SECRET is a
+  // broken deployment, not a bad cookie: swallowing it returns null for every
+  // request, so every member is silently logged out and nothing anywhere says
+  // why. createSession() already throws on it (login/signup 500s loudly) —
+  // verification must fail the same way rather than look like mass expiry.
+  const key = getSigningKey();
+
   try {
-    const key = getSigningKey();
     const { payload } = await jwtVerify(token, key, {
       algorithms: ["HS256"],
     });
 
     return payload as SessionPayload;
-  } catch {
-    return null;
+  } catch (err) {
+    // Terminal vs ambiguous, the same split as the Stripe classifiers and the
+    // internal-parity probe. jose's own errors ARE the modelled outcome —
+    // expired, forged, malformed, wrong alg — i.e. an ordinary unauthenticated
+    // request. Anything else (a TypeError, a bug in here) is unexpected and
+    // stays loud; a bare `catch {}` made the two indistinguishable.
+    if (err instanceof joseErrors.JOSEError) return null;
+    throw err;
   }
 }
 

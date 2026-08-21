@@ -219,7 +219,17 @@ export function feedItemToPost(row: any): Post {
     : {
         protocol: row.source_protocol,
         uri: row.source_item_uri ?? "",
-        sourceName: row.source_display_name ?? null,
+        // The source name is a fact about the SUBSCRIPTION, not about this post,
+        // and the two only coincide while the row's source_id is its author's own.
+        // A context-only row is anchored on the hydrating focal's source, so a
+        // thread parent/child would otherwise be tagged with the display name of
+        // the account whose card was expanded ("VIA FEDIVERSE · Kaito · oli") —
+        // a byline-shaped falsehood in the one slot that claims provenance.
+        // NULL here also drops ExternalByline's sourceName name-fallback for such
+        // a row, which was the same misattribution one level up.
+        sourceName: row.ei_is_context_only
+          ? null
+          : row.source_display_name ?? null,
       };
 
   const body: PostBody = isNative

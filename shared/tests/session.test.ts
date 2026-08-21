@@ -1,5 +1,24 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest'
 import { SignJWT, jwtVerify } from 'jose'
+
+// jwtVerify delegates to the real implementation unless a test installs an
+// override — the only way to make it throw something that ISN'T a JOSEError,
+// which is the case verifySession must now re-throw rather than swallow.
+const hoisted = vi.hoisted(() => ({ verifyThrows: null as unknown }))
+vi.mock('jose', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('jose')>()
+  return {
+    ...actual,
+    jwtVerify: (...args: unknown[]) => {
+      if (hoisted.verifyThrows) throw hoisted.verifyThrows
+      return (actual.jwtVerify as any)(...args)
+    },
+  }
+})
+
+const reqWithCookie = (token?: string): any => ({
+  cookies: token === undefined ? {} : { pp_session: token },
+})
 
 // =============================================================================
 // Session Tests
@@ -14,6 +33,10 @@ const SECRET_KEY = new TextEncoder().encode(TEST_SECRET)
 
 beforeAll(() => {
   process.env.SESSION_SECRET = TEST_SECRET
+})
+
+afterEach(() => {
+  hoisted.verifyThrows = null
 })
 
 describe('JWT session tokens', () => {
@@ -39,7 +62,37 @@ describe('JWT session tokens', () => {
     expect(setCookie.mock.calls[0][1]).toBe(token)
   })
 
-  it('rejects a token signed with a different secret', async () => {
+})
+
+// ---------------------------------------------------------------------------
+// verifySession — a bad TOKEN is a value (null); a bad DEPLOYMENT is an error.
+// The prior tests here called jwtVerify directly, so they pinned jose's
+// behaviour and left verifySession's own catch untested.
+// ---------------------------------------------------------------------------
+
+describe('verifySession', () => {
+  it('returns the payload for a valid token', async () => {
+    const { verifySession } = await import('../src/auth/session.js')
+
+    const token = await new SignJWT({ pubkey: 'abc123hexkey' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject('account-uuid-1234')
+      .setIssuedAt()
+      .setExpirationTime('7d')
+      .sign(SECRET_KEY)
+
+    const session = await verifySession(reqWithCookie(token))
+    expect(session?.sub).toBe('account-uuid-1234')
+    expect(session?.pubkey).toBe('abc123hexkey')
+  })
+
+  it('returns null when there is no cookie', async () => {
+    const { verifySession } = await import('../src/auth/session.js')
+    expect(await verifySession(reqWithCookie())).toBeNull()
+  })
+
+  it('returns null for a token signed with a different secret', async () => {
+    const { verifySession } = await import('../src/auth/session.js')
     const wrongKey = new TextEncoder().encode('wrong-secret-that-is-also-32-chars!')
 
     const token = await new SignJWT({ pubkey: 'key' })
@@ -49,12 +102,12 @@ describe('JWT session tokens', () => {
       .setExpirationTime('7d')
       .sign(wrongKey)
 
-    await expect(
-      jwtVerify(token, SECRET_KEY, { algorithms: ['HS256'] })
-    ).rejects.toThrow()
+    expect(await verifySession(reqWithCookie(token))).toBeNull()
   })
 
-  it('rejects an expired token', async () => {
+  it('returns null for an expired token', async () => {
+    const { verifySession } = await import('../src/auth/session.js')
+
     const token = await new SignJWT({ pubkey: 'key' })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject('uuid')
@@ -62,9 +115,45 @@ describe('JWT session tokens', () => {
       .setExpirationTime(Math.floor(Date.now() / 1000) - 86400) // expired yesterday
       .sign(SECRET_KEY)
 
-    await expect(
-      jwtVerify(token, SECRET_KEY, { algorithms: ['HS256'] })
-    ).rejects.toThrow()
+    expect(await verifySession(reqWithCookie(token))).toBeNull()
+  })
+
+  it('returns null for a malformed cookie value', async () => {
+    const { verifySession } = await import('../src/auth/session.js')
+    expect(await verifySession(reqWithCookie('not-a-jwt'))).toBeNull()
+  })
+
+  it('re-throws a non-JOSE failure instead of reporting it as no session', async () => {
+    const { verifySession } = await import('../src/auth/session.js')
+
+    const token = await new SignJWT({ pubkey: 'key' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject('uuid')
+      .setIssuedAt()
+      .setExpirationTime('7d')
+      .sign(SECRET_KEY)
+
+    hoisted.verifyThrows = new TypeError('something of ours is broken')
+
+    await expect(verifySession(reqWithCookie(token))).rejects.toThrow(
+      'something of ours is broken'
+    )
+  })
+
+  it('throws when SESSION_SECRET is missing, rather than logging everyone out', async () => {
+    const saved = process.env.SESSION_SECRET
+    delete process.env.SESSION_SECRET
+    vi.resetModules() // drop the cached signingKey
+
+    try {
+      const { verifySession } = await import('../src/auth/session.js')
+      await expect(verifySession(reqWithCookie('any.token.value'))).rejects.toThrow(
+        /SESSION_SECRET/
+      )
+    } finally {
+      process.env.SESSION_SECRET = saved
+      vi.resetModules()
+    }
   })
 })
 
