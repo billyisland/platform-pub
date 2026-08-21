@@ -76,11 +76,33 @@ describe.skipIf(!DB_URL)("engagement baseline refresh (step 2)", () => {
     await client.query("ROLLBACK");
   });
 
+  /**
+   * Fixture baselines only — scoped like baselineFor(), and it MUST stay scoped.
+   *
+   * refresh() selects its corpus through a window bounded at BOTH ends by now()
+   * (`published_at < now() - 48h AND published_at > now() - 180d`) and takes the
+   * median over the author's last <=20 qualifying posts. Read unscoped, this
+   * returned the whole dev corpus, and the idempotency test below compares two
+   * snapshots taken in two SEPARATE transactions (refresh()'s temp table is
+   * ON COMMIT DROP, so it can run at most once per transaction) — i.e. separated
+   * by real wall-clock time. Any real post sitting near the 48h boundary becomes
+   * eligible between them and, because the sample is capped at 20, pushes the
+   * oldest out: n stays 20 while the value set shifts, moving the median. That
+   * flaked roughly one run in three (`activitypub|all|12.5|20` vs `11.5|20`) and
+   * it got worse as the dev corpus grew.
+   *
+   * It never indicated a fold defect — refresh() is genuinely idempotent over a
+   * FIXED corpus; the unscoped read simply did not hold the corpus fixed. The
+   * fixtures are seeded well clear of the boundary (>=120h), so scoped, the
+   * comparison is deterministic and still tests the property.
+   */
   async function snapshot(): Promise<BaselineRow[]> {
     const { rows } = await client.query<BaselineRow>(
       `SELECT author_ref, protocol, post_type, median_e::text, n
        FROM author_engagement_baseline
+       WHERE protocol = $1
        ORDER BY author_ref, protocol, post_type`,
+      [TEST_PROTOCOL],
     );
     return rows;
   }
@@ -261,26 +283,42 @@ describe.skipIf(!DB_URL)("engagement baseline refresh (step 2)", () => {
 
   it("is a no-op on median_e and n when run twice over the same corpus", async () => {
     // The property that makes recompute safe to repeat: two independent runs
-    // over the whole dev corpus must agree exactly. Each runs in its own
-    // transaction (the temp table is ON COMMIT DROP) and is rolled back, so
-    // the comparison is carried in JS rather than in the database.
-    await seedAuthor([
-      { ageHours: 120, likes: 7 },
-      { ageHours: 144, likes: 9 },
-    ]);
+    // over the same corpus must agree exactly. Each runs in its own transaction
+    // (the temp table is ON COMMIT DROP) and is rolled back, so the comparison
+    // is carried in JS rather than in the database.
+    //
+    // "The same corpus" means the FIXTURES — snapshot() is scoped to
+    // TEST_PROTOCOL, and the comment on it records why reading the whole dev
+    // corpus here could never be deterministic. Two authors with different
+    // shapes, so a refresh that wrote a constant or collapsed the two rows
+    // together would not pass.
+    const shapes: Array<Array<{ ageHours: number; likes: number }>> = [
+      [
+        { ageHours: 120, likes: 7 },
+        { ageHours: 144, likes: 9 },
+      ],
+      [
+        { ageHours: 168, likes: 2 },
+        { ageHours: 192, likes: 40 },
+        { ageHours: 216, likes: 11 },
+      ],
+    ];
+
+    for (const posts of shapes) await seedAuthor(posts);
     await refresh(client, WEIGHTS);
     const first = await snapshot();
 
     await client.query("ROLLBACK");
     await client.query("BEGIN");
 
-    await seedAuthor([
-      { ageHours: 120, likes: 7 },
-      { ageHours: 144, likes: 9 },
-    ]);
+    for (const posts of shapes) await seedAuthor(posts);
     await refresh(client, WEIGHTS);
     const second = await snapshot();
 
+    // Both runs must actually have produced the fixture rows — an empty
+    // snapshot compared against an empty snapshot is equality that proves
+    // nothing, and scoping the read is exactly what makes that reachable.
+    expect(first.length).toBe(shapes.length);
     expect(second.length).toBe(first.length);
 
     // Compare on the value columns only: the two runs seed different author
