@@ -107,6 +107,8 @@ cp web/.env.example web/.env
 cp traffology-ingest/.env.example traffology-ingest/.env  # if present
 ```
 
+**`DATABASE_URL` in a service `.env` is not the one that runs.** `docker-compose.yml` sets `DATABASE_URL` in each service's `environment:` block, which overrides the `env_file` — so in Docker every service connects as `platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub`, built from the **root `.env`**. The copied `.env.example` value ships as `CHANGE_ME` and applies only when a service is run natively (`npm run dev`), where the host is `localhost`. Set it to match the root `POSTGRES_PASSWORD` if you run natively; otherwise leave it — it is inert. It is deliberately not a working password: a copyable one propagates to real hosts, and this field fails closed (a wrong value cannot connect) rather than silently accepting a guessable one.
+
 `feed-ingest`, `traffology-worker`, and `web` (build args) draw their variables from the compose `environment:`/`args:` blocks, which reference the **root `.env`**. Ensure the root `.env` carries `POSTGRES_PASSWORD`, `LINKED_ACCOUNT_KEY_HEX`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and (optionally) `ATPROTO_PRIVATE_JWK` / `ATPROTO_CLIENT_BASE_URL`. Set `NOSTR_ENGAGEMENT_COUNTS_ENABLED=1` (read by `feed-ingest`) to turn on the Nostr reaction/reply count refresh on external cards — it ships dark (default off) because the relay REQ sweep is the heaviest engagement source (UNIVERSAL-FEED-ADR §VI.2).
 
 Key variables:

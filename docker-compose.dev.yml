@@ -1,0 +1,6 @@
+services:
+  nginx:
+    volumes:
+      - ./certs:/etc/letsencrypt:ro
+  certbot:
+    profiles: ["prod"]

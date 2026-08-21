@@ -59,3 +59,4 @@ prose-*/
 
 # Local dev compose override (session-scoped port publishing; never committed)
 docker-compose.override.yml
+certs/
