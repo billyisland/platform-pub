@@ -590,6 +590,49 @@ Only Postmark is probed. With `EMAIL_PROVIDER=resend` the panel says
 correctly-scoped send-only key and probing it would raise a false alarm about a
 working credential.
 
+## Troubleshooting: every member appears logged out
+
+Symptom: members report being signed out, and signing back in does not hold —
+or the site simply looks empty of anyone. The reason this section exists is that
+the shape of the failure is **reassuring**: a session that will not verify is
+indistinguishable, from the outside, from a session that has legitimately
+expired, and mass expiry is a thing that plausibly just happens.
+
+**The cause to rule out first is `SESSION_SECRET`.** It signs the JWT in the
+httpOnly cookie, and if it is missing, empty, or shorter than the 32-character
+minimum, no cookie the gateway ever issued can be verified again. Check it on
+the gateway:
+
+```bash
+docker compose exec gateway sh -c 'echo ${#SESSION_SECRET}'
+```
+
+A number below 32 (or `0`) is the fault. Set it in `gateway/.env`, then
+`docker compose up -d gateway`. Generate one with `openssl rand -base64 48`.
+
+**Changing it logs everyone out, once.** Every existing cookie was signed with
+the old value and cannot be verified with the new one, so members sign in again
+and it holds. That is the expected cost and it is not a reason to hesitate — a
+secret you cannot verify against is already logging everyone out, permanently.
+
+**What you should see in the logs.** Since 2026-08-21, `verifySession` no longer
+swallows this. A bad `SESSION_SECRET` throws out of the gateway's request path
+and appears in `docker compose logs gateway`; only jose's own errors — expired,
+forged, malformed, wrong algorithm — return "unauthenticated" quietly, because
+those genuinely are ordinary unauthenticated requests. Silence in the logs
+therefore means the secret is fine and the cause is elsewhere.
+
+Before that change the two were the same `null` and nothing was logged at all,
+which is what this runbook is written against: if you are debugging a gateway
+older than that commit, the absence of an error proves nothing. Check the length
+directly.
+
+**If the secret is fine**, the next candidates are ordinary: the cookie's
+`Secure`/`SameSite` attributes against the scheme actually being served (a
+site reached over plain HTTP will not send a `Secure` cookie), a clock skew
+large enough to make freshly-issued tokens read as expired, and — if only *some*
+members are affected — nothing systemic at all.
+
 ## Troubleshooting: feature not appearing after a rebuild
 
 Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviour doesn't show.

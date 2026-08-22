@@ -23,6 +23,115 @@ starts.
 
 ## Progress
 
+- **2026-08-21 (three faults that all present as something ordinary)** — an
+  unplanned sitting: the laptop lost power mid-session and the stack came back
+  up, so the work began as a recovery check and became three fixes with nothing
+  in common but their shape. Commits `9122c0b2`, `c6749644`, `0cbb13b7`. No
+  migration (schema unchanged at **180**), no flag, no money path. shared
+  161/161, gateway 625/625, payment-service 364/364, feed-ingest 297/297,
+  key-service 11/11, key-custody 19/19, root ESLint 0 errors, `tsc` clean
+  (shared, gateway, feed-ingest), all eight schema-drift checks green.
+
+  **The recovery itself was clean and is worth recording as a negative result.**
+  Postgres logged `database system was not properly shut down`, replayed WAL from
+  `6/5C0DC580` and checkpointed; no corruption, no lost migrations. The alarming
+  artefact was ~1,112 graphile jobs sitting at `attempts >= max_attempts`, which
+  is **§8.15's own lesson arriving unprompted**: every one of them had
+  `last_error IS NULL` — interrupted mid-run at `maxAttempts: 1`, never actually
+  failed. The 157 with a real error were all historical (76 DNS failures inside a
+  25-minute window on 08-20, the rest Bluesky 503/504 from 08-16), and all 623
+  atproto sources had handles, so the self-healing enrichment had done its job.
+  **A pile's size is not its contents**, and the count alone would have read as a
+  fabricated outage.
+
+  **`verifySession` swallowed a broken deployment and served it as mass expiry.**
+  A missing or too-short `SESSION_SECRET` returned `null` — the same value as an
+  expired cookie — so every member is silently logged out and nothing anywhere
+  says why. `createSession` already threw on the identical secret, so login 500s
+  loudly while *verification* went quiet: the two halves of one secret
+  disagreeing about whether it is optional. `getSigningKey()` moved outside the
+  `try`, and the catch now splits terminal from ambiguous exactly as the Stripe
+  classifiers and the parity probe do — `joseErrors.JOSEError` (expired, forged,
+  malformed, wrong alg) IS the modelled unauthenticated outcome and returns
+  `null`; anything else re-throws. New CLAUDE.md invariant (*a "normal" return
+  value must never also mean "we are broken"*) and a `DEPLOYMENT.md` runbook,
+  which carries the awkward part in words: **on a gateway older than this commit
+  the absence of an error proves nothing**, so check the secret's length
+  directly.
+
+  **A hydrated thread node was wearing the focal author's name in the provenance
+  slot.** A context-only row inherits its `source_id` from the account whose card
+  was expanded (EXTERNAL-AUTHOR-HISTORY-ADR §4.2), so `xs.display_name` is not a
+  fact about that post — every thread parent and child rendered as
+  `VIA FEDIVERSE · Kaito · oli`, where Kaito wrote none of it. `FEED_SELECT` now
+  carries `ei_is_context_only` and `post-mapper` suppresses `origin.sourceName`
+  on it. **The flag is the discriminator because it self-heals on promotion**,
+  where the tempting `author_uri = source_uri` comparison does not: nostr_external
+  writes no `author_uri` at ingest and an njump.me URL at hydration, so that test
+  would blank the name on every nostr row including the ones it is right on. The
+  test is DB-backed on purpose — the defect lived in the JOIN, so a mocked
+  `pool.query` handing back a written-by-hand `source_display_name` would pass
+  against the bug and the fix alike. CLAUDE.md's hydration invariant extended.
+
+  **The `.env.example` files shipped a working database password to production.**
+  `DEPLOYMENT.md` §2 generates a strong `POSTGRES_PASSWORD` into the root `.env`
+  and then copies each `.env.example` verbatim onto the host — and those carried
+  `platformpub:password@`. It was **never a live credential**, because
+  `docker-compose.yml` sets `DATABASE_URL` in every service's `environment:`
+  block and that overrides the `env_file`; which is exactly what made it a trap,
+  since nothing in Docker reads the copied value and skipping the "edit each with
+  real keys" step is therefore invisible. The four examples now say `CHANGE_ME`
+  (fails closed rather than accepting a guessable value) and `DEPLOYMENT.md`
+  explains which `DATABASE_URL` actually runs. Verified prod's own password is
+  the generated one, not this.
+
+  **The resonance baseline idempotency test had been failing about one run in
+  three, and it was the test, not the fold.** `snapshot()` read
+  `author_engagement_baseline` **unscoped** — the whole ~738-row dev corpus —
+  while the two snapshots must sit in two separate transactions (the temp table
+  is `ON COMMIT DROP`), i.e. separated by real wall-clock time. `refresh()`
+  selects through a window bounded at BOTH ends by `now()` and medians the
+  author's last ≤20 posts, so a real post crossing the 48-hour boundary between
+  the runs becomes eligible and, because the sample is capped, pushes the oldest
+  out: **`n` stays 20 while the value set shifts**. The captured diff was exactly
+  that — `activitypub|all|12.5|20` against `11.5|20`. Now scoped to
+  `TEST_PROTOCOL`, matching `baselineFor()` which every other test in the file
+  already used; `snapshot()` was the lone outlier. Two fixture authors with
+  different shapes so the comparison is not one row, and a length assertion for
+  the failure mode scoping *introduces* — two empty snapshots compare equal and
+  prove nothing. Mutation-proved both ways (emptying the snapshot fails the
+  length guard; `floor(random()*3)` in the median fails the equality), then 15
+  consecutive clean runs including the sequential-suite repro that produced the
+  original failures.
+
+  **Two wrong hypotheses on the way, both killed by testing rather than
+  reasoning.** First guess was live ingest committing rows between the two runs —
+  stopping the `feed-ingest` container made it fail *more* (4/5), not less.
+  Second was tie-break non-determinism in the sample's `ORDER BY published_at
+  DESC`; the fixtures sit under the 20-cap, so that could not be it either. Only
+  capturing the actual assertion diff produced the real cause. **A plausible
+  mechanism is not a diagnosis** — the same §8.15 shape as the job pile above,
+  twice in one sitting.
+
+  **Residual, queued not fixed:** that `ORDER BY published_at DESC` inside
+  `row_number()` is genuinely not a total order, so an author with posts sharing
+  a `published_at` can get a different sample across runs at the 20-post cut.
+  Real non-determinism in shipping code, invisible to both the old test and the
+  new one. → §9.12.
+
+  **Also this sitting, operational and not in git:** the dev stack's nginx was
+  moved onto self-signed mkcert certs with `certbot` parked behind a `prod`
+  profile (`docker-compose.dev.yml`), and the root `.env` — gitignored, so prod
+  is untouched — gained `COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml`.
+  **That line is load-bearing**: compose does not auto-load a file by that name,
+  so without it the next bare `docker compose up -d` recreates nginx against the
+  empty `certbot_certs` volume (no `fullchain.pem`, nginx dies) and starts
+  certbot on the laptop. `docker compose config --services` must not list
+  certbot. The power loss itself logged no thermal event, no OOM and no panic —
+  the journal simply stops mid-line — so it was not certbot or nginx, which
+  cannot cut power from userspace; the surrounding ACPI/UCSI errors point at
+  USB-C power delivery.
+
 - **2026-08-18 (§4.2 — the writer's own words, at the one moment a reader is listening)** —
   Subscriptions Phase 2, step 8 of `SUBSCRIPTIONS-GAP-ANALYSIS.md`. Migration
   **180** (`accounts.subscription_welcome_message`), no flag, no money path.
